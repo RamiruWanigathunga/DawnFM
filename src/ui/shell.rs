@@ -4,6 +4,7 @@ use egui::{Align2, Color32, Pos2, Rect, Sense, Ui, Vec2, pos2, vec2};
 
 use super::widgets::{self, icon_at, icon_button, named, paint_cover, text_at};
 use super::{Action, App, LibTab, NpTab, Page, Repeat, fmt_time, glyphs};
+use crate::i18n::t;
 use crate::model::Target;
 use crate::shader::Params;
 use crate::theme::{self, icon};
@@ -293,20 +294,20 @@ pub fn sidebar(app: &mut App, ui: &mut Ui) {
     search_field(app, ui, ui.available_width());
     ui.add_space(6.0);
     if section(ui, "YouTube Music") {
-        nav(ui, glyphs::HOME, APPLE, "Home", Page::Home, p == Page::Home, &mut go_to);
-        nav(ui, glyphs::EXPLORE, APPLE, "New", Page::New, p == Page::New, &mut go_to);
+        nav(ui, glyphs::HOME, APPLE, &t!("home"), Page::Home, p == Page::Home, &mut go_to);
+        nav(ui, glyphs::EXPLORE, APPLE, &t!("new"), Page::New, p == Page::New, &mut go_to);
     }
     ui.add_space(4.0);
-    if section(ui, "Library") {
+    if section(ui, &t!("library")) {
         let lib = |tab: LibTab| p == Page::Library(tab);
-        nav(ui, glyphs::LIBRARY, APPLE, "Playlists", Page::Library(LibTab::Playlists), lib(LibTab::Playlists), &mut go_to);
-        icon_row(ui, icon::MUSIC, "Songs", Page::Library(LibTab::Songs), lib(LibTab::Songs), &mut go_to);
-        icon_row(ui, icon::DISC_3, "Albums", Page::Library(LibTab::Albums), lib(LibTab::Albums), &mut go_to);
-        icon_row(ui, icon::HISTORY, "Recently Played", Page::Library(LibTab::History), lib(LibTab::History), &mut go_to);
-        nav(ui, glyphs::DOWNLOAD, APPLE, "Downloads", Page::Downloads, p == Page::Downloads, &mut go_to);
+        nav(ui, glyphs::LIBRARY, APPLE, &t!("playlists"), Page::Library(LibTab::Playlists), lib(LibTab::Playlists), &mut go_to);
+        icon_row(ui, icon::MUSIC, &t!("songs"), Page::Library(LibTab::Songs), lib(LibTab::Songs), &mut go_to);
+        icon_row(ui, icon::DISC_3, &t!("albums"), Page::Library(LibTab::Albums), lib(LibTab::Albums), &mut go_to);
+        icon_row(ui, icon::HISTORY, &t!("recently_played"), Page::Library(LibTab::History), lib(LibTab::History), &mut go_to);
+        nav(ui, glyphs::DOWNLOAD, APPLE, &t!("downloads"), Page::Downloads, p == Page::Downloads, &mut go_to);
     }
     ui.add_space(4.0);
-    let playlists_open = section(ui, "Playlists");
+    let playlists_open = section(ui, &t!("playlists"));
 
     // Playlists that appeared since the order was last changed join it at the end, so a
     // drag can place any of them.
@@ -329,9 +330,9 @@ pub fn sidebar(app: &mut App, ui: &mut Ui) {
     let list_h = (ui.available_height() - bottom_h).max(0.0);
     ui.allocate_ui(vec2(ui.available_width(), list_h), |ui| {
         if !app.logged_in {
-            ui.label(egui::RichText::new("Sign in to see your playlists").color(theme::text_dim()));
+            ui.label(egui::RichText::new(t!("sign_in_to_see_playlists")).color(theme::text_dim()));
             ui.add_space(8.0);
-            if widgets::pill(ui, "Sign in", None, false).clicked() {
+            if widgets::pill(ui, &t!("sign_in"), None, false).clicked() {
                 app.start_sign_in(ui.ctx());
             }
             return;
@@ -349,9 +350,9 @@ pub fn sidebar(app: &mut App, ui: &mut Ui) {
                         ui.spinner();
                     });
                 } else {
-                    ui.label(egui::RichText::new("Couldn't load your playlists").color(theme::text_dim()));
+                    ui.label(egui::RichText::new(t!("could_not_load_playlists")).color(theme::text_dim()));
                     ui.add_space(8.0);
-                    if widgets::pill(ui, "Try again", None, false).clicked() {
+                    if widgets::pill(ui, &t!("try_again"), None, false).clicked() {
                         app.request_library();
                     }
                 }
@@ -401,7 +402,7 @@ pub fn sidebar(app: &mut App, ui: &mut Ui) {
                 text_at(ui, pos2(rect.left() + 44.0, rect.center().y - 8.5), &c.title, theme::regular(13.0), fg, w);
                 egui::Popup::context_menu(&resp).show(|ui| {
                     ui.set_min_width(190.0);
-                    if ui.button("Hide from sidebar").clicked() {
+                    if ui.button(t!("hide_from_sidebar")).clicked() {
                         hide = Some(id.clone());
                         ui.close();
                     }
@@ -430,18 +431,18 @@ pub fn sidebar(app: &mut App, ui: &mut Ui) {
     });
     let mut restart = false;
     ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
-        nav(ui, glyphs::SETTINGS, LUCIDE, "Settings", Page::Settings, p == Page::Settings, &mut go_to);
+        nav(ui, glyphs::SETTINGS, LUCIDE, &t!("settings"), Page::Settings, p == Page::Settings, &mut go_to);
         if transferring {
             super::transfer::sidebar_card(app, ui, ICON_X);
         }
         if let Some(v) = &ready {
             ui.add_space(6.0);
             let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 52.0), Sense::click());
-            let resp = named(resp, "Restart to update").on_hover_cursor(egui::CursorIcon::PointingHand);
+            let resp = named(resp, &t!("restart_to_update")).on_hover_cursor(egui::CursorIcon::PointingHand);
             let h = if resp.hovered() { 1.0 } else { 0.0 };
             ui.painter().rect_filled(rect, 12.0, theme::with_alpha(look.accent, 0.22 + 0.12 * h));
             glyphs::draw(ui, pos2(rect.left() + ICON_X, rect.center().y), LUCIDE, glyphs::SPARKLES, theme::text());
-            ui.painter().text(pos2(rect.left() + 46.0, rect.top() + 17.0), Align2::LEFT_CENTER, "Restart to update", theme::semibold(13.5), theme::text());
+            ui.painter().text(pos2(rect.left() + 46.0, rect.top() + 17.0), Align2::LEFT_CENTER, t!("restart_to_update"), theme::semibold(13.5), theme::text());
             ui.painter().text(pos2(rect.left() + 46.0, rect.top() + 35.0), Align2::LEFT_CENTER, format!("Dawn FM {v}"), theme::regular(12.0), theme::with_alpha(theme::text(), 0.75));
             restart = resp.clicked();
         }
@@ -513,7 +514,7 @@ pub fn search_field(app: &mut App, ui: &mut Ui, width: f32) {
     let edit = ui.put(
         inner,
         egui::TextEdit::singleline(&mut app.search_text)
-            .hint_text(egui::RichText::new("Search").color(theme::text_faint()))
+            .hint_text(egui::RichText::new(t!("search")).color(theme::text_faint()))
             .font(theme::regular(13.5))
             .frame(egui::Frame::NONE)
             .align(egui::Align2::LEFT_CENTER)
@@ -962,20 +963,21 @@ pub fn player_bar(app: &mut App, ui: &mut Ui, now: f64, frosted: bool) {
     };
     let mid = run_l + (run_w - 8.0) / 2.0;
     if !narrow {
-        let r = tbtn(ui, run_l + 14.0, "shuffle", "Shuffle up next");
+        let r = tbtn(ui, run_l + 14.0, "shuffle", &t!("shuffle_up_next"));
         let h = if r.hovered() { 1.0 } else { 0.0 };
         glyphs::draw(ui, r.rect.center(), 28.0, glyphs::SHUFFLE, ink(h));
         if r.clicked() {
             app.shuffle_upcoming();
         }
     }
-    let r = tbtn(ui, mid - 33.0, "prev", "Previous");
+    let r = tbtn(ui, mid - 33.0, "prev", &t!("previous"));
     let h = if r.hovered() { 1.0 } else { 0.0 };
     glyphs::draw(ui, r.rect.center(), 26.0, glyphs::PREVIOUS, ink(h));
     if r.clicked() && enabled {
         app.prev();
     }
-    let r = tbtn(ui, mid, "play", if playing { "Pause" } else { "Play" });
+    let play_label = if playing { t!("pause") } else { t!("play") };
+    let r = tbtn(ui, mid, "play", &play_label);
     let h = if r.hovered() { 1.0 } else { 0.0 };
     let c = r.rect.center();
     let morph = theme::anim_bool(&ctx, "bar-play-morph", playing || app.buffering, 0.18);
@@ -999,7 +1001,7 @@ pub fn player_bar(app: &mut App, ui: &mut Ui, now: f64, frosted: bool) {
     if r.clicked() && enabled {
         app.toggle();
     }
-    let r = tbtn(ui, mid + 33.0, "next", "Next");
+    let r = tbtn(ui, mid + 33.0, "next", &t!("next"));
     let h = if r.hovered() { 1.0 } else { 0.0 };
     glyphs::draw(ui, r.rect.center(), 26.0, glyphs::NEXT, ink(h));
     if r.clicked() && enabled {
@@ -1011,7 +1013,7 @@ pub fn player_bar(app: &mut App, ui: &mut Ui, now: f64, frosted: bool) {
             Repeat::All => (glyphs::REPEAT, true),
             Repeat::One => (glyphs::REPEAT_ONE, true),
         };
-        let r = tbtn(ui, run_l + run_w - 8.0 - 14.0, "repeat", "Repeat");
+        let r = tbtn(ui, run_l + run_w - 8.0 - 14.0, "repeat", &t!("repeat"));
         let h = if r.hovered() { 1.0 } else { 0.0 };
         // On is the bright mark, not the accent: that's the equalizer's alone.
         glyphs::draw(ui, r.rect.center(), 28.0, glyph, if on { ink(1.0) } else { ink(h) });
@@ -1196,7 +1198,8 @@ pub fn player_bar(app: &mut App, ui: &mut Ui, now: f64, frosted: bool) {
         // What's heard, like Now playing's menu: a song version standing in for the video.
         let heard = if held { track.clone() } else { app.playing_track().cloned().or_else(|| track.clone()) };
         let liked = heard.as_ref().is_some_and(|t| app.liked.contains(&t.id));
-        let r = rbtn(ui, 0, "like", if liked { "Remove from favourites" } else { "Add to favourites" });
+        let like_label = if liked { t!("remove_from_favourites") } else { t!("add_to_favourites") };
+        let r = rbtn(ui, 0, "like", &like_label);
         let h = if r.hovered() { 1.0 } else { 0.0 };
         let pop = heard.as_ref().map_or(0.0, |t| theme::anim_bool(&ctx, ("liked", &t.id), liked, 0.3));
         let dim = if heard.is_some() { 1.0 } else { 0.4 };
@@ -1215,14 +1218,15 @@ pub fn player_bar(app: &mut App, ui: &mut Ui, now: f64, frosted: bool) {
             app.actions.push(Action::Like(t, !liked));
         }
         let lyrics_on = if app.np_open { app.np_tab == NpTab::Lyrics && !app.no_lyrics() } else { app.lyrics_drawer && !app.queue_open };
-        let r = rbtn(ui, 1, "lyrics", "Lyrics (⌘L)");
+        let lyrics_label = format!("{} (⌘L)", t!("lyrics"));
+        let r = rbtn(ui, 1, "lyrics", &lyrics_label);
         let h = if r.hovered() { 1.0 } else { 0.0 };
         glyphs::draw(ui, r.rect.center(), 18.0, if lyrics_on { glyphs::LYRICS } else { glyphs::LYRICS_OFF }, if lyrics_on { accent } else { ink(h) });
         if r.clicked() {
             app.toggle_lyrics();
         }
         let queue_open = if app.np_open { app.np_tab == NpTab::UpNext } else { app.queue_open };
-        let r = rbtn(ui, 2, "queue", "Up next");
+        let r = rbtn(ui, 2, "queue", &t!("up_next"));
         let h = if r.hovered() { 1.0 } else { 0.0 };
         glyphs::draw(ui, r.rect.center(), 18.0, glyphs::QUEUE, if queue_open { accent } else { ink(h) });
         if r.clicked() {

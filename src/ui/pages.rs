@@ -9,6 +9,7 @@ use egui::{Align2, Color32, Rect, RichText, Sense, Ui, Vec2, pos2, vec2};
 use super::widgets::{self, RowOpts, card, chip, h_scroll, named, paint_cover, pill, shelf_header, track_row};
 use super::{Action, App, LibTab, Page, Selection};
 use crate::backend::compact;
+use crate::i18n::t;
 use crate::model::{Card, ShelfKind, Target, Track};
 use crate::theme::{self, icon};
 
@@ -206,8 +207,9 @@ fn circle_action(ui: &mut Ui, glyph: CircleGlyph, name: &str, active: bool) -> e
 /// is playing, and toggles instead of restarting when it's already loaded.
 fn play_pill(ui: &mut Ui, acts: &mut Vec<Action>, target: &Target, tracks: &[Track]) {
     let active = widgets::active_state(ui, target);
-    let (label, glyph) = if active == Some(true) { ("Pause", icon::PAUSE) } else { ("Play", icon::PLAY) };
-    if pill(ui, label, Some(glyph), true).clicked() {
+    let label = if active == Some(true) { t!("pause") } else { t!("play") };
+    let glyph = if active == Some(true) { icon::PAUSE } else { icon::PLAY };
+    if pill(ui, &label, Some(glyph), true).clicked() {
         if active.is_some() {
             acts.push(Action::TogglePlay);
         } else if !tracks.is_empty() {
@@ -806,7 +808,7 @@ fn collection(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing = vec2(10.0, 0.0);
                 play_pill(ui, acts, &target, tracks);
-                if pill(ui, "Shuffle", Some(icon::SHUFFLE), true).clicked() && !tracks.is_empty() {
+                if pill(ui, &t!("shuffle"), Some(icon::SHUFFLE), true).clicked() && !tracks.is_empty() {
                     let mut t = tracks.clone();
                     super::shuffle(&mut t);
                     acts.push(Action::Play(t, 0));
@@ -1035,13 +1037,13 @@ fn artist(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 10.0;
         play_pill(ui, acts, &Target::Artist(id.to_owned()), top);
-        if pill(ui, "Shuffle", Some(icon::SHUFFLE), false).clicked() && !top.is_empty() {
+        if pill(ui, &t!("shuffle"), Some(icon::SHUFFLE), false).clicked() && !top.is_empty() {
             let mut t = top.clone();
             super::shuffle(&mut t);
             acts.push(Action::Play(t, 0));
         }
         if let Some(first) = top.first()
-            && pill(ui, "Radio", Some(icon::RADIO), false).clicked() {
+            && pill(ui, &t!("radio"), Some(icon::RADIO), false).clicked() {
                 acts.push(Action::Radio(first.clone()));
             }
     });
@@ -1159,10 +1161,10 @@ fn library(app: &mut App, ui: &mut Ui, tab: LibTab, now: f64) {
             let liked = &o.c.tracks;
             if !liked.is_empty() {
                 ui.horizontal(|ui| {
-                    if pill(ui, "Play", Some(icon::PLAY), true).clicked() {
+                    if pill(ui, &t!("play"), Some(icon::PLAY), true).clicked() {
                         app.actions.push(Action::Play(liked.clone(), 0));
                     }
-                    if pill(ui, "Shuffle", Some(icon::SHUFFLE), false).clicked() {
+                    if pill(ui, &t!("shuffle"), Some(icon::SHUFFLE), false).clicked() {
                         let mut t = liked.clone();
                         super::shuffle(&mut t);
                         app.actions.push(Action::Play(t, 0));
@@ -1218,10 +1220,10 @@ fn downloads(app: &mut App, ui: &mut Ui, now: f64) {
         return;
     }
     ui.horizontal(|ui| {
-        if pill(ui, "Play", Some(icon::PLAY), true).clicked() {
+        if pill(ui, &t!("play"), Some(icon::PLAY), true).clicked() {
             app.actions.push(Action::Play(songs.clone(), 0));
         }
-        if pill(ui, "Shuffle", Some(icon::SHUFFLE), false).clicked() {
+        if pill(ui, &t!("shuffle"), Some(icon::SHUFFLE), false).clicked() {
             let mut t = songs.clone();
             super::shuffle(&mut t);
             app.actions.push(Action::Play(t, 0));
@@ -1924,8 +1926,9 @@ fn network(app: &mut App, ui: &mut Ui) {
             let custom = Setting::Custom(app.proxy_url.trim().to_owned());
             let saved = app.proxy_saved == custom;
             let mut save = false;
+            let save_label = if saved { t!("saved") } else { t!("save") };
             ui.horizontal(|ui| {
-                save = pill(ui, if saved { "Saved" } else { "Save" }, None, !saved).clicked() && !saved;
+                save = pill(ui, &save_label, None, !saved).clicked() && !saved;
                 ui.add_space(8.0);
                 ui.label(RichText::new("The address, password included, is kept in your macOS Keychain.").font(theme::regular(12.5)).color(theme::text_dim()));
             });

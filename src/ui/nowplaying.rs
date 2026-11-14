@@ -6,6 +6,7 @@ use egui::{Color32, Rect, Sense, Ui, Vec2, pos2, vec2};
 
 use super::widgets::{self, icon_button, named, text_at};
 use super::{Action, App, NpTab, Repeat, karaoke};
+use crate::i18n::t;
 use crate::lyrics::{Lyrics, Sync, SyncKind};
 use crate::shader::Params;
 use crate::theme::{self, icon};
@@ -128,7 +129,7 @@ fn body(app: &mut App, ui: &mut Ui, now: f64) {
         ui.add_space(super::titlebar::right_gap(ui.ctx(), ui.max_rect(), 0.0));
         // The player's own close (minimise back to the pages), top right: the macOS
         // window buttons have the top left.
-        close = icon_button(ui, icon::CHEVRON_DOWN, 22.0, "Minimise now playing", false).clicked();
+        close = icon_button(ui, icon::CHEVRON_DOWN, 22.0, &t!("minimise_now_playing"), false).clicked();
         // Its actions (like, download, share…) are for what's heard: a song version
         // standing in for the music video. It lives beside the star under the cover;
         // only when the cover column is hidden (a narrow window showing lyrics) does
@@ -393,7 +394,8 @@ fn sleeve(app: &mut App, ui: &mut Ui, x0: f32, w: f32, info_y: f32, track: &crat
     let liked = app.liked.contains(&heard.id);
     let star = Rect::from_center_size(pos2((x0 + w) - 55.0, info_y + 14.0), Vec2::splat(30.0));
     let sr = ui.interact(star, ui.scope_id().with(("np-like", &heard.id)), Sense::click());
-    let sr = named(sr, if liked { "Remove from favourites" } else { "Add to favourites" }).on_hover_cursor(egui::CursorIcon::PointingHand);
+    let like_label = if liked { t!("remove_from_favourites") } else { t!("add_to_favourites") };
+    let sr = named(sr, &like_label).on_hover_cursor(egui::CursorIcon::PointingHand);
     let sh = theme::anim_bool(ui.ctx(), sr.id.with("h"), sr.hovered(), 0.1);
     let pop = theme::anim_bool(ui.ctx(), ("liked", &heard.id), liked, 0.3);
     // The same translucent disc as the ⋯ beside it, a little brighter once liked.
@@ -527,17 +529,18 @@ fn sleeve(app: &mut App, ui: &mut Ui, x0: f32, w: f32, info_y: f32, track: &crat
         }
         (resp, h, p)
     };
-    let (r, h, p) = btn(ui, 0, "shuffle", "Shuffle up next", true);
+    let (r, h, p) = btn(ui, 0, "shuffle", &t!("shuffle_up_next"), true);
     super::glyphs::draw(ui, r.rect.center(), icons[0] * (1.0 - 0.1 * p), super::glyphs::SHUFFLE, ink(h, 0.55, 1.0));
     if r.clicked() {
         app.shuffle_upcoming();
     }
-    let (r, h, p) = btn(ui, 1, "prev", "Previous", enabled);
+    let (r, h, p) = btn(ui, 1, "prev", &t!("previous"), enabled);
     super::glyphs::draw(ui, r.rect.center(), icons[1] * (1.0 - 0.1 * p), super::glyphs::PREVIOUS, ink(h, 1.0, dim));
     if r.clicked() && enabled {
         app.prev();
     }
-    let (r, h, p) = btn(ui, 2, "play", if app.playing() || app.buffering { "Pause" } else { "Play" }, enabled);
+    let play_label = if app.playing() || app.buffering { t!("pause") } else { t!("play") };
+    let (r, h, p) = btn(ui, 2, "play", &play_label, enabled);
     let c = r.rect.center();
     let size = icons[2] * (1.0 - 0.1 * p);
     let mark = ink(h, 1.0, dim);
@@ -560,7 +563,7 @@ fn sleeve(app: &mut App, ui: &mut Ui, x0: f32, w: f32, info_y: f32, track: &crat
     if r.clicked() && enabled {
         app.toggle();
     }
-    let (r, h, p) = btn(ui, 3, "next", "Next", enabled);
+    let (r, h, p) = btn(ui, 3, "next", &t!("next"), enabled);
     super::glyphs::draw(ui, r.rect.center(), icons[3] * (1.0 - 0.1 * p), super::glyphs::NEXT, ink(h, 1.0, dim));
     if r.clicked() && enabled {
         app.next();
@@ -570,7 +573,7 @@ fn sleeve(app: &mut App, ui: &mut Ui, x0: f32, w: f32, info_y: f32, track: &crat
         Repeat::All => (super::glyphs::REPEAT, true),
         Repeat::One => (super::glyphs::REPEAT_ONE, true),
     };
-    let (r, h, p) = btn(ui, 4, "repeat", "Repeat", true);
+    let (r, h, p) = btn(ui, 4, "repeat", &t!("repeat"), true);
     super::glyphs::draw(ui, r.rect.center(), icons[4] * (1.0 - 0.1 * p), glyph, if on { app.accent_color() } else { ink(h, 0.55, 1.0) });
     if r.clicked() {
         app.queue.repeat = match app.queue.repeat {
@@ -586,7 +589,7 @@ fn sleeve(app: &mut App, ui: &mut Ui, x0: f32, w: f32, info_y: f32, track: &crat
         let a = (1.0 - ((now - since - 3.0) / 1.0) as f32).clamp(0.0, 1.0);
         if a > 0.0 {
             let c = theme::with_alpha(theme::text_dim(), a * 0.8);
-            text_at(ui, pos2(x0, ty + 40.0), "No lyrics for this song", theme::regular(14.0), c, w);
+            text_at(ui, pos2(x0, ty + 40.0), &t!("no_lyrics_for_this_song"), theme::regular(14.0), c, w);
             // Frames only for the fade-out.
             let wait = (since + 3.0 - now).max(0.0);
             ui.ctx().request_repaint_after(std::time::Duration::from_secs_f64(if wait > 0.0 { wait } else { 0.033 }));
@@ -603,7 +606,7 @@ pub(super) fn lyrics_drawer(app: &mut App, ui: &mut Ui, now: f64) {
     if app.current().is_none() {
         ui.add_space(rect.height() * 0.4);
         ui.vertical_centered(|ui| {
-            ui.label(egui::RichText::new("Play a song to see its lyrics").font(theme::semibold(16.0)).color(theme::text_dim()));
+            ui.label(egui::RichText::new(t!("play_song_to_see_lyrics")).font(theme::semibold(16.0)).color(theme::text_dim()));
         });
         return;
     }
@@ -632,10 +635,10 @@ fn lyrics_wait(app: &mut App, ui: &mut Ui, rect: Rect, now: f64) -> bool {
     ui.vertical_centered(|ui| {
         if now - since < 20.0 {
             ui.spinner();
-            ui.label(egui::RichText::new("Loading lyrics…").color(theme::text_dim()));
+            ui.label(egui::RichText::new(t!("loading_lyrics")).color(theme::text_dim()));
             ui.ctx().request_repaint_after(std::time::Duration::from_millis(500));
         } else {
-            ui.label(egui::RichText::new("No lyrics yet").font(theme::semibold(16.0)).color(theme::text_dim()));
+            ui.label(egui::RichText::new(t!("no_lyrics_yet")).font(theme::semibold(16.0)).color(theme::text_dim()));
         }
     });
     true
@@ -647,7 +650,7 @@ fn lyrics_panel(app: &mut App, ui: &mut Ui, rect: Rect, now: f64, centered: bool
         ui.add_space(rect.height() * 0.35);
         ui.vertical_centered(|ui| {
             ui.spinner();
-            ui.label(egui::RichText::new("Loading lyrics…").color(theme::text_dim()));
+            ui.label(egui::RichText::new(t!("loading_lyrics")).color(theme::text_dim()));
         });
         return;
     };
@@ -661,7 +664,7 @@ fn lyrics_panel(app: &mut App, ui: &mut Ui, rect: Rect, now: f64, centered: bool
     } else {
         ui.add_space(rect.height() * 0.4);
         ui.vertical_centered(|ui| {
-            ui.label(egui::RichText::new("No lyrics found for this song").font(theme::semibold(20.0)).color(theme::text_dim()));
+            ui.label(egui::RichText::new(t!("no_lyrics_found")).font(theme::semibold(20.0)).color(theme::text_dim()));
         });
     }
     app.lyrics = Some((id, set));
@@ -762,13 +765,14 @@ fn synced(app: &mut App, ui: &mut Ui, rect: Rect, id: &str, lyrics: &Lyrics, now
     if shown > 0.0 {
         let font = theme::lyric_font(&style.font, crate::preset::Weight::Semibold, 17.5);
         let resume_color = if bg_light { Color32::from_rgb(0x18, 0x14, 0x1c) } else { theme::text() };
-        let g = widgets::galley(ui, "Resume Autoscroll", font, resume_color, rect.width() - 40.0);
+        let resume_label = t!("resume_autoscroll");
+        let g = widgets::galley(ui, &resume_label, font, resume_color, rect.width() - 40.0);
         let size = g.size() + vec2(20.0, 10.0) + Vec2::splat(2.0);
         let em = 17.5;
         let y = rect.top() + 8.0 + egui::lerp(-3.0 * em..=0.5 * em, theme::ease_out(shown));
         let r = Rect::from_min_size(pos2(rect.center().x - size.x / 2.0, y), size);
         let resp = ui.interact(r, ui.scope_id().with("lyr-resume-btn"), if out.user_scrolling { Sense::click() } else { Sense::hover() });
-        let resp = named(resp, "Resume Autoscroll").on_hover_cursor(egui::CursorIcon::PointingHand);
+        let resp = named(resp, &resume_label).on_hover_cursor(egui::CursorIcon::PointingHand);
         let hover = theme::anim_bool(ui.ctx(), "lyr-resume-h", resp.hovered() && out.user_scrolling, 0.25);
         let p = ui.painter().with_clip_rect(rect.expand2(vec2(0.0, 4.0)));
         p.rect_filled(r, 10.0, theme::glass(0.10 * shown));
@@ -797,7 +801,7 @@ fn plain_lyrics(app: &mut App, ui: &mut Ui, rect: Rect, lyrics: &Lyrics) {
     let default_text = if bg_light { Color32::from_rgb(0x18, 0x14, 0x1c) } else { theme::text() };
     let faint_text = if bg_light { Color32::from_black_alpha(140) } else { theme::text_faint() };
     egui::ScrollArea::vertical().id_salt("plain-lyrics").auto_shrink(false).show(&mut child, |ui| {
-        ui.label(egui::RichText::new("These lyrics aren't synced").font(theme::regular(13.0)).color(faint_text));
+        ui.label(egui::RichText::new(t!("lyrics_not_synced")).font(theme::regular(13.0)).color(faint_text));
         ui.add_space(14.0);
         let style = &app.look().lyrics;
         let size = (32.0 * style.size.clamp(0.6, 1.6)).min(rect.width() / 12.5).max(18.0);
@@ -843,7 +847,7 @@ fn sync_label(k: SyncKind) -> &'static str {
 /// translation and romanization toggles, and this song's timing offset above them.
 fn options_menu(app: &mut App, ui: &mut Ui, rect: Rect, track: &crate::model::Track, lyrics: bool) {
     let resp = ui.interact(rect, ui.scope_id().with("np-options"), Sense::click());
-    let resp = named(resp, "Options").on_hover_cursor(egui::CursorIcon::PointingHand);
+    let resp = named(resp, &t!("options")).on_hover_cursor(egui::CursorIcon::PointingHand);
     let open = egui::Popup::is_id_open(ui.ctx(), egui::Popup::default_response_id(&resp));
     let h = theme::anim_bool(ui.ctx(), resp.id.with("h"), resp.hovered() || open, 0.12);
     ui.painter().circle_filled(rect.center(), 17.0, theme::glass(0.09 + 0.07 * h));
@@ -910,11 +914,11 @@ fn lyric_options(app: &mut App, ui: &mut Ui) {
     menu_divider(ui);
     let tip = format!("Translation · {}", lang_name(&app.lyric_prefs.target));
     switch_row(ui, &tip, &mut app.show_trans);
-    switch_row(ui, "Romanization", &mut app.show_roman);
+    switch_row(ui, &t!("romanization"), &mut app.show_roman);
     // This song's timing for the shown source: ‹ +0.0s ›
     let off = app.lyric_prefs.song_offset(&id, shown);
     let (row, _) = ui.allocate_exact_size(vec2(ui.available_width(), 40.0), Sense::hover());
-    ui.painter().text(pos2(row.left() + 12.0, row.center().y), egui::Align2::LEFT_CENTER, "Timing", theme::regular(14.0), theme::text());
+    ui.painter().text(pos2(row.left() + 12.0, row.center().y), egui::Align2::LEFT_CENTER, t!("timing"), theme::regular(14.0), theme::text());
     let mut sub = ui.new_child(egui::UiBuilder::new().max_rect(row.shrink2(vec2(8.0, 0.0))).layout(egui::Layout::right_to_left(egui::Align::Center)));
     sub.spacing_mut().item_spacing.x = 2.0;
     if mini_icon(&mut sub, icon::CHEVRON_RIGHT, "Lyrics later (+0.1 s)", true).clicked() {
@@ -942,13 +946,13 @@ fn sleep_options(app: &mut App, ui: &mut Ui) {
     let open_id = egui::Id::unique("np-sleep-open");
     let mut open = ui.data(|d| d.get_temp::<bool>(open_id).unwrap_or(false));
     let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 34.0), Sense::click());
-    let resp = named(resp, "Sleep timer").on_hover_cursor(egui::CursorIcon::PointingHand);
+    let resp = named(resp, &t!("sleep_timer")).on_hover_cursor(egui::CursorIcon::PointingHand);
     if resp.hovered() {
         ui.painter().rect_filled(rect, 7.0, theme::glass(0.12));
     }
     let color = if resp.hovered() { theme::text() } else { theme::text_dim() };
     widgets::icon_at(ui, pos2(rect.right() - 19.0, rect.center().y), if open { icon::CHEVRON_UP } else { icon::CHEVRON_DOWN }, 16.0, color);
-    ui.painter().text(pos2(rect.left() + 12.0, rect.center().y), egui::Align2::LEFT_CENTER, "Sleep timer", theme::regular(14.0), theme::text());
+    ui.painter().text(pos2(rect.left() + 12.0, rect.center().y), egui::Align2::LEFT_CENTER, t!("sleep_timer"), theme::regular(14.0), theme::text());
     let on = app.sleep.active();
     let value = if on { theme::text() } else { theme::text_faint() };
     ui.painter().text(pos2(rect.right() - 36.0, rect.center().y), egui::Align2::RIGHT_CENTER, app.sleep.label(now), theme::semibold(12.5), value);
@@ -969,17 +973,17 @@ fn sleep_options(app: &mut App, ui: &mut Ui) {
             pick = Some(Sleep::after(m, now));
         }
     }
-    if sleep_row(ui, "End of this song", app.sleep == Sleep::EndOfSong) {
+    if sleep_row(ui, &t!("end_of_this_song"), app.sleep == Sleep::EndOfSong) {
         pick = Some(Sleep::EndOfSong);
     }
-    if on && sleep_row(ui, "Turn off timer", false) {
+    if on && sleep_row(ui, &t!("turn_off_timer"), false) {
         pick = Some(Sleep::Off);
     }
     if let Some(s) = pick {
         app.sleep = s;
         ui.data_mut(|d| d.insert_temp(open_id, false));
         app.toast(match s {
-            Sleep::Off => "Sleep timer off".to_owned(),
+            Sleep::Off => t!("sleep_timer_off").to_string(),
             Sleep::At(_) => format!("Pausing in {}", s.label(now)),
             Sleep::EndOfSong => "Pausing at the end of this song".to_owned(),
         });

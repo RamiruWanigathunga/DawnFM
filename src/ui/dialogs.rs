@@ -3,6 +3,7 @@
 use egui::{Color32, Ui};
 
 use crate::backend::Req;
+use crate::i18n::t;
 use crate::model::Target;
 use crate::theme;
 
@@ -26,22 +27,22 @@ impl App {
         let accent = self.accent_color();
         let mut done = false;
         let heading = match &dialog {
-            Dialog::PickPlaylist(_) => "Add to playlist",
-            Dialog::NewPlaylist { .. } => "New playlist",
-            Dialog::EditPlaylist { .. } => "Edit playlist",
-            Dialog::ConfirmDelete { .. } => "Delete playlist",
-            Dialog::Collaborate { .. } => "Collaborate",
+            Dialog::PickPlaylist(_) => t!("add_to_playlist"),
+            Dialog::NewPlaylist { .. } => t!("new_playlist"),
+            Dialog::EditPlaylist { .. } => t!("edit_playlist"),
+            Dialog::ConfirmDelete { .. } => t!("delete_playlist"),
+            Dialog::Collaborate { .. } => t!("collaborate"),
         };
         // The same modal card as "Delete playlist?" and the update dialog.
         let modal = egui::Modal::new(egui::Id::unique("playlist-dialog")).frame(notes::surface()).backdrop_color(theme::shade(0.55)).show(ctx, |ui| {
             ui.set_width(440.0_f32.min(ctx.content_rect().width() - 48.0));
             egui::Frame::new().inner_margin(egui::Margin { left: 26, right: 26, top: 24, bottom: 22 }).show(ui, |ui| {
                 ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
-                ui.label(egui::RichText::new(heading).font(theme::bold(22.0)).color(theme::text()));
+                ui.label(egui::RichText::new(&*heading).font(theme::bold(22.0)).color(theme::text()));
                 ui.add_space(18.0);
                 match &mut dialog {
                     Dialog::PickPlaylist(tracks) => {
-                        if dialog_row(ui, None, Some(theme::icon::LIST_PLUS), "New playlist") {
+                        if dialog_row(ui, None, Some(theme::icon::LIST_PLUS), &t!("new_playlist")) {
                             self.actions.push(Action::NewPlaylist(tracks.clone()));
                             done = true;
                         }
@@ -63,13 +64,13 @@ impl App {
                         });
                     }
                     Dialog::NewPlaylist { title, tracks } => {
-                        let name = text_field(ui, "Name", title, false, "My playlist");
+                        let name = text_field(ui, &t!("name"), title, false, &t!("my_playlist"));
                         if ui.memory(|m| m.focused().is_none()) { name.request_focus(); }
                         ui.add_space(8.0);
-                        ui.label(egui::RichText::new("Private · only you can see it").font(theme::regular(12.5)).color(theme::text_faint()));
+                        ui.label(egui::RichText::new(t!("private_only_you")).font(theme::regular(12.5)).color(theme::text_faint()));
                         ui.add_space(24.0);
                         let enter = name.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-                        let (ok, cancel) = dialog_buttons(ui, "Create", !title.trim().is_empty(), accent);
+                        let (ok, cancel) = dialog_buttons(ui, &t!("create"), !title.trim().is_empty(), accent);
                         if (ok || enter) && !title.trim().is_empty() {
                             self.backend.request(Req::CreatePlaylist { title: title.trim().to_owned(), video_ids: tracks.iter().map(|t| t.id.clone()).collect() });
                             done = true;
@@ -77,14 +78,14 @@ impl App {
                         done |= cancel;
                     }
                     Dialog::EditPlaylist { id, title, description, privacy } => {
-                        text_field(ui, "Name", title, false, "Playlist name");
+                        text_field(ui, &t!("name"), title, false, &t!("playlist_name"));
                         ui.add_space(16.0);
-                        text_field(ui, "Description", description, true, "Add an optional description");
+                        text_field(ui, &t!("description"), description, true, &t!("add_optional_description"));
                         ui.add_space(16.0);
                         field_label(ui, "Visibility");
                         privacy_picker(ui, privacy);
                         ui.add_space(26.0);
-                        let (ok, cancel) = dialog_buttons(ui, "Save", !title.trim().is_empty(), accent);
+                        let (ok, cancel) = dialog_buttons(ui, &t!("save"), !title.trim().is_empty(), accent);
                         if ok {
                             self.backend.request(Req::EditPlaylist { id: id.clone(), title: title.trim().to_owned(), description: description.clone(), privacy: privacy.clone() });
                             done = true;
@@ -247,14 +248,14 @@ fn dialog_buttons(ui: &mut Ui, primary: &str, enabled: bool, accent: Color32) ->
         ui.painter().rect_filled(rect, 19.0, theme::with_alpha(fill, if enabled { 1.0 } else { 0.35 }));
         ui.painter().galley_with_override_text_color(rect.center() - g.size() / 2.0, g, theme::with_alpha(fg, if enabled { 1.0 } else { 0.6 }));
         ok = resp.clicked();
-        cancel = widgets::pill(ui, "Cancel", None, false).clicked();
+        cancel = widgets::pill(ui, &t!("cancel"), None, false).clicked();
     });
     (ok, cancel)
 }
 
 /// A lone right-aligned Done for a dialog whose changes apply as they're made.
 fn done_button(ui: &mut Ui) -> bool {
-    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| widgets::pill(ui, "Done", None, true).clicked()).inner
+    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| widgets::pill(ui, &t!("done"), None, true).clicked()).inner
 }
 
 /// A playlist (or "New playlist") row in the Add to playlist dialog.
@@ -285,7 +286,7 @@ fn confirm_delete(ctx: &egui::Context, title: &str, _accent: Color32) -> Option<
         ui.set_width(400.0_f32.min(ctx.content_rect().width() - 48.0));
         egui::Frame::new().inner_margin(egui::Margin { left: 26, right: 26, top: 24, bottom: 22 }).show(ui, |ui| {
             ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
-            ui.label(egui::RichText::new("Delete playlist?").font(theme::bold(22.0)).color(theme::text()));
+            ui.label(egui::RichText::new(t!("delete_playlist_confirm")).font(theme::bold(22.0)).color(theme::text()));
             ui.add_space(10.0);
             let body = format!("\u{201c}{title}\u{201d} will be removed from your YouTube Music library. This can't be undone.");
             ui.add(egui::Label::new(egui::RichText::new(body).font(theme::regular(14.0)).color(theme::text_dim())).wrap());
@@ -293,17 +294,17 @@ fn confirm_delete(ctx: &egui::Context, title: &str, _accent: Color32) -> Option<
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.spacing_mut().item_spacing.x = 10.0;
                 // Destructive action in red, white text.
-                let label = "Delete";
-                let g = ui.painter().layout_no_wrap(label.to_owned(), theme::semibold(14.0), Color32::WHITE);
+                let label = t!("delete");
+                let g = ui.painter().layout_no_wrap(label.to_string(), theme::semibold(14.0), Color32::WHITE);
                 let (rect, resp) = ui.allocate_exact_size(egui::vec2(g.size().x + 40.0, 38.0), egui::Sense::click());
-                let resp = widgets::named(resp, "Delete playlist").on_hover_cursor(egui::CursorIcon::PointingHand);
+                let resp = widgets::named(resp, &t!("delete_playlist")).on_hover_cursor(egui::CursorIcon::PointingHand);
                 let h = theme::anim_bool(ui.ctx(), resp.id.with("h"), resp.hovered(), 0.15);
                 ui.painter().rect_filled(rect, 19.0, theme::lerp_color(Color32::from_rgb(214, 40, 57), Color32::from_rgb(236, 56, 72), h));
                 ui.painter().galley(rect.center() - g.size() / 2.0, g, Color32::WHITE);
                 if resp.clicked() {
                     answer = Some(true);
                 }
-                if widgets::pill(ui, "Cancel", None, false).clicked() {
+                if widgets::pill(ui, &t!("cancel"), None, false).clicked() {
                     answer = Some(false);
                 }
             });
