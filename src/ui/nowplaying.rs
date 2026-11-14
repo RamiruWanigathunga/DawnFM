@@ -4,7 +4,7 @@
 
 use egui::{Color32, Rect, Sense, Ui, Vec2, pos2, vec2};
 
-use super::widgets::{self, icon_button, named, text_at};
+use super::widgets::{self, icon_at, icon_button, named, text_at};
 use super::{Action, App, NpTab, Repeat, karaoke};
 use crate::i18n::t;
 use crate::lyrics::{Lyrics, Sync, SyncKind};
@@ -34,44 +34,12 @@ pub fn overlay(app: &mut App, ctx: &egui::Context, now: f64, screen: Rect) {
                 super::titlebar::drag_area(ui, Rect::from_min_size(rect.min, vec2(rect.width(), super::titlebar::HEIGHT)), "now-playing");
             }
             let painter = ui.painter_at(rect);
-            let art = matches!(b.mode, BgMode::Kawarp | BgMode::CoverStatic);
-            if b.mode == BgMode::CoverFullbleed {
-                // The cover itself fills the screen behind a scrim. With the lyrics-only
-                // layout on a wide window it fills the height on the left instead and
-                // fades out toward the lyrics (reCover).
-                // What it fades into is the dominant / most-used colour of the artwork,
-                // managed so it is neither too dark nor too white, gliding to the next song's.
-                let dom = app.dominant_color().to_array();
-                let ch = |i: usize| theme::anim(ctx, ("np-dom-shade", i), f32::from(dom[i]), 0.9).round() as u8;
-                let solid = Color32::from_rgb(ch(0), ch(1), ch(2));
-                painter.rect_filled(rect, 0.0, solid);
-
-                if let Some(track) = app.shown().or_else(|| app.current()) {
-                    let side_by_side = look.cover.layout == crate::preset::Layout::LyricsOnly && rect.width() >= 860.0;
-                    let area = if side_by_side { Rect::from_min_size(rect.min, Vec2::splat(rect.height())) } else { rect };
-                    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(area));
-                    child.set_clip_rect(area);
-                    widgets::paint_cover_fill(&child, area, &track.thumbs, Color32::from_gray((b.np_dim.clamp(0.0, 1.0) * 255.0) as u8));
-                    if side_by_side {
-                        // Smooth multi-stop horizontal gradient fade from artwork to the background,
-                        // painted on child's painter directly over the cover image so it blends seamlessly into solid.
-                        let fade_start = area.center().x - area.width() * 0.15;
-                        let fade_w = area.right() - fade_start;
-                        let step1 = fade_start + fade_w * 0.35;
-                        let step2 = fade_start + fade_w * 0.70;
-                        let r1 = Rect::from_min_max(pos2(fade_start, area.top()), pos2(step1, area.bottom()));
-                        let r2 = Rect::from_min_max(pos2(step1, area.top()), pos2(step2, area.bottom()));
-                        let r3 = Rect::from_min_max(pos2(step2, area.top()), area.max);
-                        let c1 = theme::with_alpha(solid, 0.30);
-                        let c2 = theme::with_alpha(solid, 0.70);
-                        let cp = child.painter();
-                        super::shell::hgradient(cp, r1, Color32::TRANSPARENT, c1);
-                        super::shell::hgradient(cp, r2, c1, c2);
-                        super::shell::hgradient(cp, r3, c2, solid);
-                    }
-                }
-            } else if let Some(bg) = app.bg.as_ref().filter(|_| art) {
+            let art = matches!(b.mode, BgMode::Kawarp | BgMode::CoverStatic | BgMode::CoverFullbleed);
+            if let Some(bg) = app.bg.as_ref().filter(|_| art) {
                 let blend = theme::ease_in_out(((now - app.art_changed) / 1.4) as f32);
+                if blend < 1.0 || (app.anim_bg && b.mode != BgMode::CoverStatic && app.playing()) {
+                    super::animate(ctx);
+                }
                 let level = if app.reactive_bg && app.playing() { app.audio.status.level() * b.reactive } else { 0.0 };
                 bg.paint(
                     &painter,
@@ -88,7 +56,10 @@ pub fn overlay(app: &mut App, ctx: &egui::Context, now: f64, screen: Rect) {
             } else if b.mode == BgMode::Solid {
                 painter.rect_filled(rect, 0.0, look.solid());
             } else {
-                painter.rect_filled(rect, 0.0, theme::lerp_color(theme::bg(), app.accent_color(), 0.25));
+                let dom = app.dominant_color().to_array();
+                let ch = |i: usize| theme::anim(ctx, ("np-dom-shade", i), f32::from(dom[i]), 0.9).round() as u8;
+                let solid = Color32::from_rgb(ch(0), ch(1), ch(2));
+                painter.rect_filled(rect, 0.0, solid);
             }
             let k = b.scrim / 0.3;
             if app.bg_is_light() {
@@ -123,24 +94,73 @@ fn body(app: &mut App, ui: &mut Ui, now: f64) {
     // Header: on the window buttons' line, when the app draws them.
     let lift = 20.0 - f32::from(super::titlebar::top_margin(20, 44.0));
     let header = Rect::from_min_size(area.min - vec2(0.0, if app.fullscreen { 0.0 } else { lift }), vec2(area.width(), 44.0));
-    let mut hui = ui.new_child(egui::UiBuilder::new().max_rect(header).layout(egui::Layout::left_to_right(egui::Align::Center)));
+
+    // Fullscreen auto-hide after 3.5s of mouse inactivity
+    let controls_rect: Rect = ui.ctx().data(|d| d.get_temp(egui::Id::unique("np-controls-rect"))).unwrap_or(Rect::NOTHING);
+    let controls_hovered = ui.rect_contains_pointer(controls_rect) || ui.rect_contains_pointer(header);
+    let busy = app.seek_drag.is_some() || egui::Popup::is_any_open(ui.ctx());
+    let idle = now - app.mouse_last_moved >= 3.5;
+    let active = !app.fullscreen || !idle || busy || controls_hovered;
+    let controls_alpha = if app.fullscreen {
+        theme::anim_bool(ui.ctx(), "np-controls-visible", active, 0.25)
+    } else {
+        1.0
+    };
+    if controls_alpha > 0.0 && controls_alpha < 1.0 {
+        super::animate(ui.ctx());
+    }
+
     let mut close = false;
-    hui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-        ui.add_space(super::titlebar::right_gap(ui.ctx(), ui.max_rect(), 0.0));
-        // The player's own close (minimise back to the pages), top right: the macOS
-        // window buttons have the top left.
-        close = icon_button(ui, icon::CHEVRON_DOWN, 22.0, &t!("minimise_now_playing"), false).clicked();
-        // Its actions (like, download, share…) are for what's heard: a song version
-        // standing in for the music video. It lives beside the star under the cover;
-        // only when the cover column is hidden (a narrow window showing lyrics) does
-        // it stay up here.
-        let beside = !narrow && cs.layout == Layout::LyricsOnly && look.background.mode == crate::preset::BgMode::CoverFullbleed;
-        let cover_hidden = (narrow || cs.layout == Layout::LyricsOnly) && !beside && app.np_tab != NpTab::Art && !no_lyrics;
-        if cover_hidden {
-            let (r, _) = ui.allocate_exact_size(vec2(34.0, 34.0), Sense::hover());
-            options_menu(app, ui, r, &heard, app.np_tab == NpTab::Lyrics && !no_lyrics);
-        }
-    });
+    if controls_alpha > 0.001 {
+        let mut hui = ui.new_child(egui::UiBuilder::new().max_rect(header).layout(egui::Layout::left_to_right(egui::Align::Center)));
+        hui.multiply_opacity(controls_alpha);
+        let interactive = controls_alpha > 0.01;
+        hui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            ui.add_space(super::titlebar::right_gap(ui.ctx(), ui.max_rect(), 0.0));
+            // The player's own close (minimise back to the pages), top right: the macOS
+            // window buttons have the top left.
+            if interactive {
+                close = icon_button(ui, icon::CHEVRON_DOWN, 22.0, &t!("minimise_now_playing"), false).clicked();
+            } else {
+                let (r, _) = ui.allocate_exact_size(vec2(34.0, 34.0), Sense::hover());
+                icon_at(ui, r.center(), icon::CHEVRON_DOWN, 22.0, theme::text_dim());
+            }
+
+            // Direct Queue toggle button in fullscreen header
+            let queue_open = app.np_tab == NpTab::UpNext;
+            if interactive {
+                if icon_button(ui, icon::LIST_MUSIC, 20.0, &t!("view_queue"), queue_open).clicked() {
+                    app.np_tab = if queue_open {
+                        let prev = ui.ctx().data(|d| d.get_temp(egui::Id::unique("np-last-tab-prior"))).unwrap_or(if no_lyrics { NpTab::Art } else { NpTab::Lyrics });
+                        if prev == NpTab::UpNext {
+                            if no_lyrics { NpTab::Art } else { NpTab::Lyrics }
+                        } else {
+                            prev
+                        }
+                    } else {
+                        ui.ctx().data_mut(|d| d.insert_temp(egui::Id::unique("np-last-tab-prior"), app.np_tab));
+                        NpTab::UpNext
+                    };
+                }
+            } else {
+                let (r, _) = ui.allocate_exact_size(vec2(34.0, 34.0), Sense::hover());
+                icon_at(ui, r.center(), icon::LIST_MUSIC, 20.0, if queue_open { app.accent_color() } else { theme::text_dim() });
+            }
+
+            // Its actions (like, download, share…) are for what's heard: a song version
+            // standing in for the music video. It lives beside the star under the cover;
+            // only when the cover column is hidden (a narrow window showing lyrics) does
+            // it stay up here.
+            let beside = !narrow && cs.layout == Layout::LyricsOnly && look.background.mode == crate::preset::BgMode::CoverFullbleed;
+            let cover_hidden = (narrow || cs.layout == Layout::LyricsOnly) && !beside && app.np_tab != NpTab::Art && !no_lyrics;
+            if cover_hidden {
+                let (r, _) = ui.allocate_exact_size(vec2(34.0, 34.0), Sense::hover());
+                if interactive {
+                    options_menu(app, ui, r, &heard, app.np_tab == NpTab::Lyrics && !no_lyrics);
+                }
+            }
+        });
+    }
     if close {
         app.np_open = false;
         if app.fullscreen {
@@ -189,43 +209,23 @@ fn body(app: &mut App, ui: &mut Ui, now: f64) {
         if art_vis > 0.001 {
             let mut cui = ui.new_child(egui::UiBuilder::new().max_rect(content));
             cui.multiply_opacity(art_vis);
-            cover_column(app, &mut cui, col_art.translate(vec2(-slide * (1.0 - art_vis), 0.0)), &track, no_lyrics, now, px);
+            cover_column(app, &mut cui, col_art.translate(vec2(-slide * (1.0 - art_vis), 0.0)), &track, no_lyrics, now, px, controls_alpha);
         } else {
             // Hidden behind the lyrics: have it loaded for when they're turned off.
             widgets::preload_cover(ui.ctx(), &track.thumbs, px);
         }
         if beside_cover && art_vis < 0.999 {
-            // The song on a frosted card over the cover, centred under it. While it plays
-            // the card is just the title and artist, and it opens to the seek line and the
-            // transport under the pointer.
+            // Minimal controls floating directly over the background without any glass card
             let w = (content.width() * 0.38).clamp(300.0, 440.0);
             let cw = w + 40.0;
-            // The cover is a square of the window's height from its left edge; `area` is
-            // the window less the overlay's 32 × 20 margins.
             let cover_mid = area.left() - 32.0 + (area.height() + 40.0) / 2.0;
             let lyrics_left = content.left() + content.width() * 0.46;
             let left = (cover_mid - cw / 2.0).min(lyrics_left - 12.0 - cw).max(content.left() + 8.0);
-            let ctx = ui.ctx().clone();
-            let card_id = egui::Id::unique("np-card");
-            let was: Rect = ctx.data(|d| d.get_temp(card_id)).unwrap_or(Rect::NOTHING);
-            let over = ui.rect_contains_pointer(was);
-            // A seek being dragged or the ⋯ menu keeps it as it is.
-            let busy = app.seek_drag.is_some() || egui::Popup::is_any_open(&ctx);
-            let open = theme::anim_bool(&ctx, "np-card-open", over || busy || !(app.playing() || app.buffering), 0.25);
-            if open > 0.0 && open < 1.0 {
-                super::animate(&ctx);
-            }
-            let h = 70.0 + 126.0 * open;
+            let h = 196.0;
             let card = Rect::from_min_size(pos2(left, content.bottom() - h), vec2(cw, h));
-            ctx.data_mut(|d| d.insert_temp(card_id, card));
             let mut cui = ui.new_child(egui::UiBuilder::new().max_rect(card));
-            // Folded, the controls are past its bottom edge: neither drawn nor clickable.
-            cui.set_clip_rect(card.intersect(ui.clip_rect()));
-            cui.multiply_opacity(1.0 - art_vis);
-            cui.painter().rect_filled(card, 18.0, theme::shade(0.42));
-            cui.painter().rect_filled(card, 18.0, theme::glass(0.07));
-            cui.painter().rect_stroke(card, 18.0, egui::Stroke::new(1.0, theme::glass(0.12)), egui::StrokeKind::Inside);
-            sleeve(app, &mut cui, card.left() + 20.0, w, card.top() + 16.0, &track, no_lyrics, now, open);
+            cui.multiply_opacity((1.0 - art_vis) * controls_alpha);
+            sleeve(app, &mut cui, card.left() + 20.0, w, card.top() + 16.0, &track, no_lyrics, now, controls_alpha);
         }
         if beside_cover { Rect::from_min_max(pos2(content.left() + content.width() * 0.46, content.top()), content.max) } else { content }
     } else {
@@ -240,7 +240,7 @@ fn body(app: &mut App, ui: &mut Ui, now: f64) {
         let col = Rect::from_min_max(col_art.min.lerp(col_panel.min, glide), col_art.max.lerp(col_panel.max, glide));
         // One image size for the whole glide, the bigger of its two ends.
         let px = (art_side(cs, col_art).max(art_side(cs, col_panel)) * ppp) as u32;
-        cover_column(app, ui, col, &track, no_lyrics, now, px);
+        cover_column(app, ui, col, &track, no_lyrics, now, px, controls_alpha);
         if cs.side == Side::Right {
             Rect::from_min_max(content.min, pos2(col_panel.left() - 28.0, content.bottom()))
         } else {
@@ -289,7 +289,7 @@ fn art_side(cs: &crate::preset::CoverStyle, col: Rect) -> f32 {
 /// transport — the order the reference keeps them in. `px`: the size to fetch the image
 /// at (fixed while the column glides).
 #[allow(clippy::too_many_arguments)]
-fn cover_column(app: &mut App, ui: &mut Ui, col: Rect, track: &crate::model::Track, no_lyrics: bool, now: f64, px: u32) {
+fn cover_column(app: &mut App, ui: &mut Ui, col: Rect, track: &crate::model::Track, no_lyrics: bool, now: f64, px: u32, controls_alpha: f32) {
     use crate::preset::Shape;
     let look = app.look();
     let cs = &look.cover;
@@ -336,7 +336,7 @@ fn cover_column(app: &mut App, ui: &mut Ui, col: Rect, track: &crate::model::Tra
             ui.painter().rect_filled(art, cr, theme::shade(1.0 - cs.brightness));
         }
     }
-    sleeve(app, ui, art.left(), side, art.bottom() + 22.0, track, no_lyrics, now, 1.0);
+    sleeve(app, ui, art.left(), side, art.bottom() + 22.0, track, no_lyrics, now, controls_alpha);
 }
 
 /// The sleeve's information under the art (title, artists, star, ⋯), the seek line
@@ -348,6 +348,19 @@ fn cover_column(app: &mut App, ui: &mut Ui, col: Rect, track: &crate::model::Tra
 fn sleeve(app: &mut App, ui: &mut Ui, x0: f32, w: f32, info_y: f32, track: &crate::model::Track, no_lyrics: bool, now: f64, controls: f32) {
     let hold = app.mix_hold().map(|h| (h.total, h.mix, app.mix_hold_pos(h)));
     let heard = if hold.is_some() { track.clone() } else { app.playing_track().cloned().unwrap_or_else(|| track.clone()) };
+
+    // Record the controls bounding box for inactivity hover detection
+    let controls_rect = Rect::from_min_size(pos2(x0, info_y), vec2(w, 196.0));
+    ui.ctx().data_mut(|d| d.insert_temp(egui::Id::unique("np-controls-rect"), controls_rect));
+
+    if controls <= 0.001 {
+        return;
+    }
+    let mut cui = ui.new_child(egui::UiBuilder::new().id_salt("np-controls").max_rect(ui.max_rect()));
+    cui.multiply_opacity(controls);
+    let ui = &mut cui;
+    let interactive = controls > 0.01;
+
     // The star and the ⋯ menu share the information line's right end.
     let text_w = w - 76.0;
     text_at(ui, pos2(x0, info_y), &track.title, theme::semibold(17.0), Color32::WHITE, text_w);
@@ -371,7 +384,7 @@ fn sleeve(app: &mut App, ui: &mut Ui, x0: f32, w: f32, info_y: f32, track: &crat
             let c1 = c0 + album.name.chars().count();
             let a0 = g.pos_from_cursor(egui::text::CCursor::new(c0)).min.x;
             let a1 = g.pos_from_cursor(egui::text::CCursor::new(c1)).min.x;
-            if a1 - a0 >= 2.0 {
+            if a1 - a0 >= 2.0 && interactive {
                 let r = Rect::from_min_max(pos2(line_rect.left() + a0, line_rect.top()), pos2(line_rect.left() + a1, line_rect.bottom()));
                 let resp = ui.interact(r, ui.scope_id().with(("album-link", &album.name)), Sense::click());
                 let resp = named(resp, &album.name).on_hover_cursor(egui::CursorIcon::PointingHand);
@@ -386,17 +399,15 @@ fn sleeve(app: &mut App, ui: &mut Ui, x0: f32, w: f32, info_y: f32, track: &crat
             }
         }
     }
-    // From here down it's the controls, which fade with the card's fold.
-    let ui = &mut ui.new_child(egui::UiBuilder::new().id_salt("np-controls").max_rect(ui.max_rect()));
-    ui.multiply_opacity(controls);
     // The star: a 30 px disc that washes under the pointer and fills in the accent
     // once liked. The ⋯ menu sits at the line's end, as on music.youtube.com.
     let liked = app.liked.contains(&heard.id);
     let star = Rect::from_center_size(pos2((x0 + w) - 55.0, info_y + 14.0), Vec2::splat(30.0));
-    let sr = ui.interact(star, ui.scope_id().with(("np-like", &heard.id)), Sense::click());
+    let sr = ui.interact(star, ui.scope_id().with(("np-like", &heard.id)), if interactive { Sense::click() } else { Sense::hover() });
     let like_label = if liked { t!("remove_from_favourites") } else { t!("add_to_favourites") };
-    let sr = named(sr, &like_label).on_hover_cursor(egui::CursorIcon::PointingHand);
-    let sh = theme::anim_bool(ui.ctx(), sr.id.with("h"), sr.hovered(), 0.1);
+    let sr = named(sr, &like_label);
+    let sr = if interactive { sr.on_hover_cursor(egui::CursorIcon::PointingHand) } else { sr };
+    let sh = theme::anim_bool(ui.ctx(), sr.id.with("h"), interactive && sr.hovered(), 0.1);
     let pop = theme::anim_bool(ui.ctx(), ("liked", &heard.id), liked, 0.3);
     // The same translucent disc as the ⋯ beside it, a little brighter once liked.
     let disc = (0.09 + 0.07 * sh + 0.05 * pop).min(0.30);
@@ -411,12 +422,14 @@ fn sleeve(app: &mut App, ui: &mut Ui, x0: f32, w: f32, info_y: f32, track: &crat
     if pop > 0.0 {
         super::glyphs::draw(ui, star.center(), size, super::glyphs::STAR_FILLED, theme::with_alpha(app.accent_color(), pop));
     }
-    if sr.clicked() {
+    if interactive && sr.clicked() {
         app.actions.push(Action::Like(heard.clone(), !liked));
     }
     // The song's options, beside the star.
     let options = Rect::from_center_size(pos2((x0 + w) - 15.0, info_y + 14.0), Vec2::splat(34.0));
-    options_menu(app, ui, options, &heard, app.np_tab == NpTab::Lyrics && !no_lyrics);
+    if interactive {
+        options_menu(app, ui, options, &heard, app.np_tab == NpTab::Lyrics && !no_lyrics);
+    }
 
     // Seek: a 4 px line that grows under the pointer, its times below.
     let status = app.audio.status.clone();
@@ -447,10 +460,10 @@ fn sleeve(app: &mut App, ui: &mut Ui, x0: f32, w: f32, info_y: f32, track: &crat
     let hit = Rect::from_min_size(pos2(x0, info_y + 55.0), vec2(w, 16.0));
     // Held for the handoff's first half: its last stretch is where the pointer is,
     // and seeking the queue's song from here would cut the mix.
-    let sresp = ui.interact(hit, ui.scope_id().with("np-seek"), if held { Sense::hover() } else { Sense::click_and_drag() });
-    let sresp = if total > 0.0 && !held { sresp.on_hover_cursor(egui::CursorIcon::PointingHand) } else { sresp };
-    sresp.widget_info(|| egui::WidgetInfo::slider(total > 0.0 && !held, pos as f64, "Seek"));
-    let focus = theme::anim_bool(ui.ctx(), "np-seek-h", total > 0.0 && !held && (sresp.hovered() || sresp.dragged()), 0.18);
+    let sresp = ui.interact(hit, ui.scope_id().with("np-seek"), if held || !interactive { Sense::hover() } else { Sense::click_and_drag() });
+    let sresp = if total > 0.0 && !held && interactive { sresp.on_hover_cursor(egui::CursorIcon::PointingHand) } else { sresp };
+    sresp.widget_info(|| egui::WidgetInfo::slider(total > 0.0 && !held && interactive, pos as f64, "Seek"));
+    let focus = theme::anim_bool(ui.ctx(), "np-seek-h", total > 0.0 && !held && interactive && (sresp.hovered() || sresp.dragged()), 0.18);
     let thick = 4.0 + 4.0 * focus;
     let bar = Rect::from_min_max(pos2(x0, hit.center().y - thick / 2.0), pos2(x0 + w, hit.center().y + thick / 2.0));
     ui.painter().rect_filled(bar, thick / 2.0, Color32::from_white_alpha(38));
@@ -487,7 +500,7 @@ fn sleeve(app: &mut App, ui: &mut Ui, x0: f32, w: f32, info_y: f32, track: &crat
         let g = widgets::galley(ui, "Mixing", theme::semibold(10.5), accent, 80.0);
         ui.painter().galley(pos2(x0 + (w - g.size().x) / 2.0, hit.bottom() + 3.0), g, accent);
     }
-    if total > 0.0
+    if total > 0.0 && interactive
         && let Some(p) = sresp.interact_pointer_pos()
     {
         if sresp.dragged() {
@@ -518,6 +531,7 @@ fn sleeve(app: &mut App, ui: &mut Ui, x0: f32, w: f32, info_y: f32, track: &crat
     let enabled = app.current().is_some();
     let dim = if enabled { 1.0 } else { 0.4 };
     let btn = |ui: &mut Ui, i: usize, key: &str, name: &str, live: bool| -> (egui::Response, f32, f32) {
+        let live = live && interactive;
         let r = Rect::from_center_size(pos2(xs[i], ty), Vec2::splat(sizes[i]));
         let resp = ui.interact(r, ui.scope_id().with(("np-t", key)), if live { Sense::click() } else { Sense::hover() });
         let resp = named(resp, name);
@@ -531,12 +545,12 @@ fn sleeve(app: &mut App, ui: &mut Ui, x0: f32, w: f32, info_y: f32, track: &crat
     };
     let (r, h, p) = btn(ui, 0, "shuffle", &t!("shuffle_up_next"), true);
     super::glyphs::draw(ui, r.rect.center(), icons[0] * (1.0 - 0.1 * p), super::glyphs::SHUFFLE, ink(h, 0.55, 1.0));
-    if r.clicked() {
+    if interactive && r.clicked() {
         app.shuffle_upcoming();
     }
     let (r, h, p) = btn(ui, 1, "prev", &t!("previous"), enabled);
     super::glyphs::draw(ui, r.rect.center(), icons[1] * (1.0 - 0.1 * p), super::glyphs::PREVIOUS, ink(h, 1.0, dim));
-    if r.clicked() && enabled {
+    if interactive && r.clicked() && enabled {
         app.prev();
     }
     let play_label = if app.playing() || app.buffering { t!("pause") } else { t!("play") };
@@ -560,12 +574,12 @@ fn sleeve(app: &mut App, ui: &mut Ui, x0: f32, w: f32, info_y: f32, track: &crat
             super::glyphs::draw(ui, c, size, super::glyphs::PAUSE, theme::with_alpha(mark, morph));
         }
     }
-    if r.clicked() && enabled {
+    if interactive && r.clicked() && enabled {
         app.toggle();
     }
     let (r, h, p) = btn(ui, 3, "next", &t!("next"), enabled);
     super::glyphs::draw(ui, r.rect.center(), icons[3] * (1.0 - 0.1 * p), super::glyphs::NEXT, ink(h, 1.0, dim));
-    if r.clicked() && enabled {
+    if interactive && r.clicked() && enabled {
         app.next();
     }
     let (glyph, on) = match app.queue.repeat {
@@ -575,7 +589,7 @@ fn sleeve(app: &mut App, ui: &mut Ui, x0: f32, w: f32, info_y: f32, track: &crat
     };
     let (r, h, p) = btn(ui, 4, "repeat", &t!("repeat"), true);
     super::glyphs::draw(ui, r.rect.center(), icons[4] * (1.0 - 0.1 * p), glyph, if on { app.accent_color() } else { ink(h, 0.55, 1.0) });
-    if r.clicked() {
+    if interactive && r.clicked() {
         app.queue.repeat = match app.queue.repeat {
             Repeat::Off => Repeat::All,
             Repeat::All => Repeat::One,

@@ -57,6 +57,7 @@ pub fn rounded_vgradient(painter: &egui::Painter, rect: Rect, radius: f32, top: 
 }
 
 /// Horizontal gradient (left colour → right colour) over `rect`.
+#[allow(dead_code)]
 pub fn hgradient(painter: &egui::Painter, rect: Rect, left: Color32, right: Color32) {
     gradient(painter, rect, [left, right, left, right]);
 }

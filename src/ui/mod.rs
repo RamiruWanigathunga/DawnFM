@@ -1145,7 +1145,7 @@ impl eframe::App for App {
         self.lyric_view.release_hidden(ctx.cumulative_pass_nr());
         let now = ctx.input(|i| i.time);
 
-        // Mouse visibility in full-screen player (album lyrics): hides after 5 seconds of inactivity.
+        // Mouse visibility in full-screen player: hides after 3.5 seconds of inactivity.
         let pos = ctx.input(|i| i.pointer.latest_pos());
         let mouse_moved = ctx.input(|i| {
             i.pointer.any_pressed() || i.pointer.any_down() || !i.events.is_empty()
@@ -1160,17 +1160,17 @@ impl eframe::App for App {
             }
         }
 
-        let in_fullscreen_lyrics = self.fullscreen && self.np_open && (self.np_tab == NpTab::Lyrics || self.np_tab == NpTab::Art);
-        if in_fullscreen_lyrics {
-            if now - self.mouse_last_moved >= 5.0 {
+        let in_fullscreen_np = self.fullscreen && self.np_open;
+        if in_fullscreen_np {
+            if now - self.mouse_last_moved >= 3.5 {
                 if !self.mouse_hidden {
                     self.mouse_hidden = true;
                     ctx.send_viewport_cmd(egui::ViewportCommand::CursorVisible(false));
                 }
                 ctx.set_cursor_icon(egui::CursorIcon::None);
             } else {
-                let remaining = 5.0 - (now - self.mouse_last_moved);
-                ctx.request_repaint_after(std::time::Duration::from_secs_f64(remaining.max(0.1)));
+                let remaining = 3.5 - (now - self.mouse_last_moved);
+                ctx.request_repaint_after(std::time::Duration::from_secs_f64(remaining.max(0.05)));
             }
         } else if self.mouse_hidden {
             self.mouse_hidden = false;

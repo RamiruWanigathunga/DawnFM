@@ -67,47 +67,40 @@ mod tests {
     #[test]
     fn test_translations_across_all_supported_locales() {
         // English
-        rust_i18n::set_locale("en");
-        assert_eq!(t!("home"), "Home");
-        assert_eq!(t!("search"), "Search");
-        assert_eq!(t!("play"), "Play");
-        assert_eq!(t!("pause"), "Pause");
-        assert_eq!(t!("settings"), "Settings");
+        // English
+        assert_eq!(t!("home", locale = "en"), "Home");
+        assert_eq!(t!("search", locale = "en"), "Search");
+        assert_eq!(t!("play", locale = "en"), "Play");
+        assert_eq!(t!("pause", locale = "en"), "Pause");
+        assert_eq!(t!("settings", locale = "en"), "Settings");
 
         // French
-        rust_i18n::set_locale("fr");
-        assert_eq!(t!("home"), "Accueil");
-        assert_eq!(t!("search"), "Rechercher");
-        assert_eq!(t!("play"), "Lecture");
-        assert_eq!(t!("pause"), "Pause");
-        assert_eq!(t!("settings"), "Paramètres");
+        assert_eq!(t!("home", locale = "fr"), "Accueil");
+        assert_eq!(t!("search", locale = "fr"), "Rechercher");
+        assert_eq!(t!("play", locale = "fr"), "Lecture");
+        assert_eq!(t!("pause", locale = "fr"), "Pause");
+        assert_eq!(t!("settings", locale = "fr"), "Paramètres");
 
         // Spanish
-        rust_i18n::set_locale("es");
-        assert_eq!(t!("home"), "Inicio");
-        assert_eq!(t!("search"), "Buscar");
-        assert_eq!(t!("play"), "Reproducir");
-        assert_eq!(t!("pause"), "Pausa");
-        assert_eq!(t!("settings"), "Configuración");
+        assert_eq!(t!("home", locale = "es"), "Inicio");
+        assert_eq!(t!("search", locale = "es"), "Buscar");
+        assert_eq!(t!("play", locale = "es"), "Reproducir");
+        assert_eq!(t!("pause", locale = "es"), "Pausa");
+        assert_eq!(t!("settings", locale = "es"), "Configuración");
 
         // German
-        rust_i18n::set_locale("de");
-        assert_eq!(t!("home"), "Startseite");
-        assert_eq!(t!("search"), "Suchen");
-        assert_eq!(t!("play"), "Wiedergabe");
-        assert_eq!(t!("pause"), "Pause");
-        assert_eq!(t!("settings"), "Einstellungen");
+        assert_eq!(t!("home", locale = "de"), "Startseite");
+        assert_eq!(t!("search", locale = "de"), "Suchen");
+        assert_eq!(t!("play", locale = "de"), "Wiedergabe");
+        assert_eq!(t!("pause", locale = "de"), "Pause");
+        assert_eq!(t!("settings", locale = "de"), "Einstellungen");
 
         // Japanese
-        rust_i18n::set_locale("ja");
-        assert_eq!(t!("home"), "ホーム");
-        assert_eq!(t!("search"), "検索");
-        assert_eq!(t!("play"), "再生");
-        assert_eq!(t!("pause"), "一時停止");
-        assert_eq!(t!("settings"), "設定");
-
-        // Restore English
-        rust_i18n::set_locale("en");
+        assert_eq!(t!("home", locale = "ja"), "ホーム");
+        assert_eq!(t!("search", locale = "ja"), "検索");
+        assert_eq!(t!("play", locale = "ja"), "再生");
+        assert_eq!(t!("pause", locale = "ja"), "一時停止");
+        assert_eq!(t!("settings", locale = "ja"), "設定");
     }
 
     #[test]
