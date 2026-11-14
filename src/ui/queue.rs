@@ -169,6 +169,27 @@ impl Queue {
         }
     }
 
+    /// Move a track from index `from` to index `to`.
+    /// Returns `true` if a track was moved, `false` if `from` or `to` are out of bounds or `from == to`.
+    /// Accurately updates `self.index` if the current playing track is affected.
+    pub fn move_track(&mut self, from: usize, to: usize) -> bool {
+        if from >= self.tracks.len() || to >= self.tracks.len() || from == to {
+            return false;
+        }
+        let track = self.tracks.remove(from);
+        self.tracks.insert(to, track);
+        if let Some(cur) = self.index {
+            if cur == from {
+                self.index = Some(to);
+            } else if from < cur && to >= cur {
+                self.index = Some(cur - 1);
+            } else if from > cur && to <= cur {
+                self.index = Some(cur + 1);
+            }
+        }
+        true
+    }
+
     /// Radio songs for `seed` join the end, without the seed or songs already queued.
     /// Returns whether the song playing was the last one.
     pub fn add_radio(&mut self, seed: &str, tracks: Vec<Track>) -> bool {
@@ -410,5 +431,114 @@ mod tests {
         let (saved, i) = q.saved().unwrap();
         assert_eq!((saved.len(), i), (10, 3));
         assert!(Queue::new(Repeat::Off).saved().is_none());
+    }
+
+    #[test]
+    fn test_move_track_bounds_and_validity() {
+        let mut q = queue(&["a", "b", "c"], 1, Repeat::Off);
+        // Invalid from
+        assert!(!q.move_track(3, 0));
+        assert!(!q.move_track(5, 1));
+        // Invalid to
+        assert!(!q.move_track(0, 3));
+        assert!(!q.move_track(1, 9));
+        // Same index
+        assert!(!q.move_track(1, 1));
+        assert!(!q.move_track(0, 0));
+        assert!(!q.move_track(2, 2));
+        // State unchanged
+        assert_eq!(ids(&q), ["a", "b", "c"]);
+        assert_eq!(q.index, Some(1));
+
+        // Empty queue
+        let mut empty = Queue::new(Repeat::Off);
+        assert!(!empty.move_track(0, 0));
+        assert!(!empty.move_track(0, 1));
+    }
+
+    #[test]
+    fn test_move_track_without_current() {
+        let mut q = Queue::new(Repeat::Off);
+        q.tracks = vec![track("a"), track("b"), track("c")];
+        assert_eq!(q.index, None);
+
+        assert!(q.move_track(0, 2));
+        assert_eq!(ids(&q), ["b", "c", "a"]);
+        assert_eq!(q.index, None);
+
+        assert!(q.move_track(2, 1));
+        assert_eq!(ids(&q), ["b", "a", "c"]);
+        assert_eq!(q.index, None);
+    }
+
+    #[test]
+    fn test_move_current_track_itself() {
+        // Move current playing song forward
+        let mut q = queue(&["a", "b", "c", "d"], 1, Repeat::Off);
+        assert_eq!(q.current().unwrap().id, "b");
+        assert!(q.move_track(1, 3));
+        assert_eq!(ids(&q), ["a", "c", "d", "b"]);
+        assert_eq!(q.index, Some(3));
+        assert_eq!(q.current().unwrap().id, "b");
+
+        // Move current playing song backward
+        assert!(q.move_track(3, 0));
+        assert_eq!(ids(&q), ["b", "a", "c", "d"]);
+        assert_eq!(q.index, Some(0));
+        assert_eq!(q.current().unwrap().id, "b");
+    }
+
+    #[test]
+    fn test_move_track_before_current() {
+        let mut q = queue(&["a", "b", "c", "d", "e"], 2, Repeat::Off);
+        assert_eq!(q.current().unwrap().id, "c"); // index 2
+
+        // Move within before-current range: from 0 to 1 (both < cur)
+        assert!(q.move_track(0, 1));
+        assert_eq!(ids(&q), ["b", "a", "c", "d", "e"]);
+        assert_eq!(q.index, Some(2));
+        assert_eq!(q.current().unwrap().id, "c");
+
+        // Move from before current to after current: from 1 to 4
+        // from < cur (1 < 2) and to >= cur (4 >= 2) -> index becomes 2 - 1 = 1
+        assert!(q.move_track(1, 4));
+        assert_eq!(ids(&q), ["b", "c", "d", "e", "a"]);
+        assert_eq!(q.index, Some(1));
+        assert_eq!(q.current().unwrap().id, "c");
+
+        // Move from before current to exactly at current index:
+        // Current is index 1 ("c"). Move track 0 ("b") to index 1.
+        // from < cur (0 < 1) and to >= cur (1 >= 1) -> index becomes 1 - 1 = 0
+        assert!(q.move_track(0, 1));
+        assert_eq!(ids(&q), ["c", "b", "d", "e", "a"]);
+        assert_eq!(q.index, Some(0));
+        assert_eq!(q.current().unwrap().id, "c");
+    }
+
+    #[test]
+    fn test_move_track_after_current() {
+        let mut q = queue(&["a", "b", "c", "d", "e"], 1, Repeat::Off);
+        assert_eq!(q.current().unwrap().id, "b"); // index 1
+
+        // Move within after-current range: from 3 to 4 (both > cur)
+        assert!(q.move_track(3, 4));
+        assert_eq!(ids(&q), ["a", "b", "c", "e", "d"]);
+        assert_eq!(q.index, Some(1));
+        assert_eq!(q.current().unwrap().id, "b");
+
+        // Move from after current to before current: from 4 to 0
+        // from > cur (4 > 1) and to <= cur (0 <= 1) -> index becomes 1 + 1 = 2
+        assert!(q.move_track(4, 0));
+        assert_eq!(ids(&q), ["d", "a", "b", "c", "e"]);
+        assert_eq!(q.index, Some(2));
+        assert_eq!(q.current().unwrap().id, "b");
+
+        // Move from after current to exactly at current index:
+        // Current is index 2 ("b"). Move track 4 ("e") to index 2.
+        // from > cur (4 > 2) and to <= cur (2 <= 2) -> index becomes 2 + 1 = 3
+        assert!(q.move_track(4, 2));
+        assert_eq!(ids(&q), ["d", "a", "e", "b", "c"]);
+        assert_eq!(q.index, Some(3));
+        assert_eq!(q.current().unwrap().id, "b");
     }
 }

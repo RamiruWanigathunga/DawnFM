@@ -100,6 +100,7 @@ pub enum Action {
     Go(Page),
     QueueJump(usize),
     QueueRemove(usize),
+    QueueMove(usize, usize),
     /// Open up next (the player's) or the queue drawer (the bar's).
     ViewQueue,
     Seek(f32),

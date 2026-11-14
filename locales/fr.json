@@ -59,5 +59,10 @@
   "cancel": "Annuler",
   "delete": "Supprimer",
   "done": "Terminé",
-  "radio": "Radio"
+  "radio": "Radio",
+  "move_up": "Monter",
+  "move_down": "Descendre",
+  "remove_from_queue": "Retirer de la file",
+  "view_queue": "Afficher la file",
+  "toggle_queue": "Basculer la file d'attente"
 }

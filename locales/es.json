@@ -59,5 +59,10 @@
   "cancel": "Cancelar",
   "delete": "Eliminar",
   "done": "Listo",
-  "radio": "Radio"
+  "radio": "Radio",
+  "move_up": "Mover arriba",
+  "move_down": "Mover abajo",
+  "remove_from_queue": "Eliminar de la cola",
+  "view_queue": "Ver cola",
+  "toggle_queue": "Alternar cola"
 }

@@ -59,5 +59,10 @@
   "cancel": "Cancel",
   "delete": "Delete",
   "done": "Done",
-  "radio": "Radio"
+  "radio": "Radio",
+  "move_up": "Move up",
+  "move_down": "Move down",
+  "remove_from_queue": "Remove from queue",
+  "view_queue": "View queue",
+  "toggle_queue": "Toggle queue"
 }

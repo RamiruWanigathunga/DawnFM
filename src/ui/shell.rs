@@ -1373,9 +1373,30 @@ pub fn queue_list(app: &mut App, ui: &mut Ui, salt: &str) {
                 acts.push(if current { Action::TogglePlay } else { Action::QueueJump(i) });
             }
             if !current && ui.rect_contains_pointer(Rect::from_min_max(resp.rect.min, pos2(resp.rect.right() + 42.0, resp.rect.bottom()))) {
+                // Reorder controls: move up / move down
+                let can_move_up = if has_current { i > start + 1 } else { i > 0 };
+                let can_move_down = i + 1 < queue.len();
+                if can_move_up {
+                    let u = Rect::from_center_size(resp.rect.right_center() - vec2(78.0, 0.0), Vec2::splat(24.0));
+                    let ur = named(ui.interact(u, resp.id.with("mv-up"), Sense::click()), &t!("move_up")).on_hover_cursor(egui::CursorIcon::PointingHand);
+                    ui.painter().circle_filled(u.center(), 12.0, theme::panel(0.6));
+                    icon_at(ui, u.center(), icon::CHEVRON_UP, 14.0, theme::text());
+                    if ur.clicked() {
+                        acts.push(Action::QueueMove(i, i - 1));
+                    }
+                }
+                if can_move_down {
+                    let d = Rect::from_center_size(resp.rect.right_center() - vec2(52.0, 0.0), Vec2::splat(24.0));
+                    let dr = named(ui.interact(d, resp.id.with("mv-dn"), Sense::click()), &t!("move_down")).on_hover_cursor(egui::CursorIcon::PointingHand);
+                    ui.painter().circle_filled(d.center(), 12.0, theme::panel(0.6));
+                    icon_at(ui, d.center(), icon::CHEVRON_DOWN, 14.0, theme::text());
+                    if dr.clicked() {
+                        acts.push(Action::QueueMove(i, i + 1));
+                    }
+                }
                 // Remove button over the duration column.
                 let x = Rect::from_center_size(resp.rect.right_center() - vec2(26.0, 0.0), Vec2::splat(28.0));
-                let xr = named(ui.interact(x, resp.id.with("rm"), Sense::click()), "Remove from queue").on_hover_cursor(egui::CursorIcon::PointingHand);
+                let xr = named(ui.interact(x, resp.id.with("rm"), Sense::click()), &t!("remove_from_queue")).on_hover_cursor(egui::CursorIcon::PointingHand);
                 ui.painter().circle_filled(x.center(), 14.0, theme::panel(0.6));
                 icon_at(ui, x.center(), icon::X, 14.0, theme::text());
                 if xr.clicked() {

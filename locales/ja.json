@@ -59,5 +59,10 @@
   "cancel": "キャンセル",
   "delete": "削除",
   "done": "完了",
-  "radio": "ラジオ"
+  "radio": "ラジオ",
+  "move_up": "上に移動",
+  "move_down": "下に移動",
+  "remove_from_queue": "キューから削除",
+  "view_queue": "キューを表示",
+  "toggle_queue": "キューを切り替え"
 }

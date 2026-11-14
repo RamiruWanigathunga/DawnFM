@@ -59,5 +59,10 @@
   "cancel": "Abbrechen",
   "delete": "Löschen",
   "done": "Fertig",
-  "radio": "Radio"
+  "radio": "Radio",
+  "move_up": "Nach oben",
+  "move_down": "Nach unten",
+  "remove_from_queue": "Aus Warteschlange entfernen",
+  "view_queue": "Warteschlange anzeigen",
+  "toggle_queue": "Warteschlange umschalten"
 }
