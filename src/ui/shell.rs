@@ -470,12 +470,13 @@ pub fn search_field(app: &mut App, ui: &mut Ui, width: f32) {
     let (rect, field) = ui.allocate_exact_size(vec2(width, 32.0), Sense::click());
     let field = field.on_hover_cursor(egui::CursorIcon::Text);
     let focus = theme::anim_bool(ui.ctx(), "search-focus", app.search_focused, 0.2);
-    // Light mode: keep the fill constant (no darkening on focus), show a solid black
-    // border instead.  Dark mode keeps the original glass behaviour.
+    // Light mode: keep the fill constant (no darkening on focus), show a dark grey
+    // border instead. Dark mode keeps the original glass behaviour.
     if theme::light() {
         ui.painter().rect_filled(rect, 8.0, theme::glass(0.09));
         if focus > 0.0 {
-            ui.painter().rect_stroke(rect, 8.0, egui::Stroke::new(1.2, Color32::from_black_alpha((200.0 * focus) as u8)), egui::StrokeKind::Inside);
+            let stroke_color = theme::with_alpha(Color32::from_rgb(100, 98, 108), focus);
+            ui.painter().rect_stroke(rect, 8.0, egui::Stroke::new(1.2, stroke_color), egui::StrokeKind::Inside);
         }
     } else {
         ui.painter().rect_filled(rect, 8.0, theme::glass(0.09 + 0.05 * focus));
