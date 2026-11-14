@@ -10,13 +10,12 @@ use crate::lyrics::{Lyrics, Sync, SyncKind};
 use crate::shader::Params;
 use crate::theme::{self, icon};
 
-pub fn overlay(app: &mut App, ctx: &egui::Context, now: f64) {
+pub fn overlay(app: &mut App, ctx: &egui::Context, now: f64, screen: Rect) {
     use crate::preset::BgMode;
     let t = theme::anim_bool(ctx, "np-open", app.np_open && app.current().is_some(), 0.42);
     if t <= 0.001 {
         return;
     }
-    let screen = ctx.content_rect();
     // The player brings its own transport, so it takes the whole window: the capsule
     // under it belongs to the pages it covers.
     let full = screen;
