@@ -594,7 +594,7 @@ pub fn suggestions(app: &mut App, ctx: &egui::Context) {
         .show(ctx, |ui| {
             ui.set_opacity(t);
             egui::Frame::new()
-                .fill(if theme::light() { theme::menu_fill() } else { Color32::from_rgba_premultiplied(50, 48, 52, 230) })
+                .fill(theme::menu_fill())
                 .corner_radius(if theme::light() { 14 } else { 10 })
                 .inner_margin(6)
                 .stroke(if theme::light() { egui::Stroke::NONE } else { egui::Stroke::new(0.5, Color32::from_white_alpha(40)) })
@@ -697,7 +697,7 @@ pub fn search_results(app: &mut App, ctx: &egui::Context) {
     let area = egui::Area::new(egui::Id::unique("search-results")).order(egui::Order::Foreground).fixed_pos(pos).show(ctx, |ui| {
         ui.set_opacity(t);
         egui::Frame::new()
-            .fill(if theme::light() { theme::menu_fill() } else { Color32::from_rgba_premultiplied(50, 48, 52, 230) })
+            .fill(theme::menu_fill())
             .corner_radius(if theme::light() { 14 } else { 10 })
             .inner_margin(8)
             .stroke(if theme::light() { egui::Stroke::NONE } else { egui::Stroke::new(0.5, Color32::from_white_alpha(40)) })
@@ -743,6 +743,14 @@ pub fn search_results(app: &mut App, ctx: &egui::Context) {
                         ui.painter().galley(pos2(art.right() + 12.0, r.top() + 26.0), line(sub, theme::regular(12.5), theme::text_dim()), theme::text_dim());
                         resp.clicked()
                     };
+                    if !r.artists.is_empty() {
+                        heading(ui, "ARTISTS");
+                        for (i, c) in r.artists.iter().take(3).enumerate() {
+                            if row(ui, ("ARTISTS", i), &c.title, &super::widgets::card_subtitle(&c.subtitle), &c.thumbs, c.round) {
+                                act = Some(Action::Open(c.target.clone()));
+                            }
+                        }
+                    }
                     if !r.tracks.is_empty() {
                         heading(ui, "SONGS");
                         for (i, tr) in r.tracks.iter().take(5).enumerate() {
@@ -751,7 +759,7 @@ pub fn search_results(app: &mut App, ctx: &egui::Context) {
                             }
                         }
                     }
-                    for (label, cards) in [("ARTISTS", &r.artists), ("ALBUMS", &r.albums), ("PLAYLISTS", &r.playlists)] {
+                    for (label, cards) in [("ALBUMS", &r.albums), ("PLAYLISTS", &r.playlists)] {
                         if cards.is_empty() {
                             continue;
                         }
@@ -771,6 +779,9 @@ pub fn search_results(app: &mut App, ctx: &egui::Context) {
         // Remembered as a recent search while the dropdown still says what it was for.
         app.remember_search_click(&a);
         app.actions.push(a);
+        app.search_text.clear();
+        app.search_drop = None;
+        app.search_synced.clear();
         close = true;
     }
     if close || outside {

@@ -863,6 +863,9 @@ impl App {
             return;
         }
         self.np_open = false;
+        self.search_text.clear();
+        self.search_drop = None;
+        self.search_synced.clear();
         if page == self.page {
             // Clicking the page you're on refreshes it.
             self.refresh();
