@@ -54,6 +54,7 @@ fn main() -> eframe::Result {
         .with_app_id("dawnfm")
         .with_inner_size(DEFAULT_SIZE)
         .with_min_inner_size(MIN_SIZE)
+        .with_transparent(true)
         // No grey title bar: the content runs to the top edge, under the window buttons.
         .with_decorations(!ui::custom_titlebar())
         .with_fullsize_content_view(true)
@@ -107,6 +108,8 @@ fn main() -> eframe::Result {
             dock::install(wake);
             // The Mac menu bar (Dawn FM, Controls, View, Window, Help).
             menubar::install(wake);
+            // Native macOS window vibrancy (NSVisualEffectView behind content view).
+            theme::apply_native_vibrancy();
             // Keep `ytm-rs:` links pointing at this copy; dev builds leave it alone
             // (even with YTM_UPDATE_FORCE).
             if update::installed() && !cfg!(debug_assertions) {

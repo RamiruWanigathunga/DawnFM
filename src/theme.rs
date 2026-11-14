@@ -242,6 +242,92 @@ pub fn is_macos_above_15() -> bool {
     }
 }
 
+/// Material constants and properties for macOS AppKit NSVisualEffectView.
+#[cfg(target_os = "macos")]
+pub mod macos_vibrancy {
+    pub const NS_VISUAL_EFFECT_MATERIAL_UNDER_WINDOW_BACKGROUND: isize = 21;
+    pub const NS_VISUAL_EFFECT_BLENDING_MODE_BEHIND_WINDOW: isize = 0;
+    pub const NS_VISUAL_EFFECT_STATE_FOLLOWS_WINDOW_ACTIVE_STATE: isize = 0;
+    pub const NS_VIEW_WIDTH_SIZABLE: usize = 2;
+    pub const NS_VIEW_HEIGHT_SIZABLE: usize = 16;
+    pub const NS_VIEW_AUTORESIZING_MASK: usize = NS_VIEW_WIDTH_SIZABLE | NS_VIEW_HEIGHT_SIZABLE;
+    pub const NS_WINDOW_BELOW: isize = -1;
+}
+
+/// On macOS, attaches an AppKit `NSVisualEffectView` using semantic material
+/// `NSVisualEffectMaterialUnderWindowBackground` and blending mode `BehindWindow` via `objc2`.
+/// The effect view is positioned behind the content view and resizes with the window.
+#[cfg(target_os = "macos")]
+pub fn apply_native_vibrancy() {
+    use objc2::msg_send;
+    use objc2::rc::Retained;
+    use objc2::runtime::AnyObject;
+    use objc2_foundation::NSRect;
+    use macos_vibrancy::*;
+
+    unsafe {
+        let app: Option<Retained<AnyObject>> = msg_send![objc2::class!(NSApplication), sharedApplication];
+        let Some(app) = app else {
+            log::warn!("vibrancy: NSApplication sharedApplication returned nil");
+            return;
+        };
+
+        let windows: Option<Retained<AnyObject>> = msg_send![&*app, windows];
+        let Some(windows) = windows else {
+            log::warn!("vibrancy: NSApplication windows returned nil");
+            return;
+        };
+
+        let count: usize = msg_send![&*windows, count];
+        if count == 0 {
+            log::warn!("vibrancy: no NSWindow instances found");
+            return;
+        }
+
+        let window: Option<Retained<AnyObject>> = msg_send![&*windows, objectAtIndex: 0usize];
+        let Some(window) = window else {
+            log::warn!("vibrancy: primary NSWindow is nil");
+            return;
+        };
+
+        let content_view: Option<Retained<AnyObject>> = msg_send![&*window, contentView];
+        let Some(content_view) = content_view else {
+            log::warn!("vibrancy: window contentView is nil");
+            return;
+        };
+
+        let bounds: NSRect = msg_send![&*content_view, bounds];
+        let effect_alloc: *mut AnyObject = msg_send![objc2::class!(NSVisualEffectView), alloc];
+        if effect_alloc.is_null() {
+            log::warn!("vibrancy: failed to allocate NSVisualEffectView");
+            return;
+        }
+        let effect_view: *mut AnyObject = msg_send![effect_alloc, initWithFrame: bounds];
+        if effect_view.is_null() {
+            log::warn!("vibrancy: failed to initialize NSVisualEffectView");
+            return;
+        }
+
+        let () = msg_send![effect_view, setMaterial: NS_VISUAL_EFFECT_MATERIAL_UNDER_WINDOW_BACKGROUND];
+        let () = msg_send![effect_view, setBlendingMode: NS_VISUAL_EFFECT_BLENDING_MODE_BEHIND_WINDOW];
+        let () = msg_send![effect_view, setState: NS_VISUAL_EFFECT_STATE_FOLLOWS_WINDOW_ACTIVE_STATE];
+        let () = msg_send![effect_view, setAutoresizingMask: NS_VIEW_AUTORESIZING_MASK];
+
+        let superview: Option<Retained<AnyObject>> = msg_send![&*content_view, superview];
+        if let Some(superview) = superview {
+            let () = msg_send![&*superview, addSubview: effect_view, positioned: NS_WINDOW_BELOW, relativeTo: &*content_view];
+            log::info!("vibrancy: attached NSVisualEffectView behind contentView in superview");
+        } else {
+            let nil: *const AnyObject = std::ptr::null();
+            let () = msg_send![&*content_view, addSubview: effect_view, positioned: NS_WINDOW_BELOW, relativeTo: nil];
+            log::info!("vibrancy: attached NSVisualEffectView as backmost subview of contentView");
+        }
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn apply_native_vibrancy() {}
+
 /// The Windows accent colour, in the lighter shade Windows itself uses on dark
 /// surfaces (`AccentPalette`'s second entry), or the base accent if there's no palette.
 /// Read again every couple of seconds, so a new colour picked in Windows' settings
@@ -890,4 +976,32 @@ fn visuals() -> egui::Visuals {
     v.widgets.noninteractive.bg_stroke = egui::Stroke::new(1.0, glass(0.08));
     v
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_macos_vibrancy_constants() {
+        #[cfg(target_os = "macos")]
+        {
+            use macos_vibrancy::*;
+            assert_eq!(NS_VISUAL_EFFECT_MATERIAL_UNDER_WINDOW_BACKGROUND, 21);
+            assert_eq!(NS_VISUAL_EFFECT_BLENDING_MODE_BEHIND_WINDOW, 0);
+            assert_eq!(NS_VISUAL_EFFECT_STATE_FOLLOWS_WINDOW_ACTIVE_STATE, 0);
+            assert_eq!(NS_VIEW_WIDTH_SIZABLE, 2);
+            assert_eq!(NS_VIEW_HEIGHT_SIZABLE, 16);
+            assert_eq!(NS_VIEW_AUTORESIZING_MASK, 18);
+            assert_eq!(NS_WINDOW_BELOW, -1);
+        }
+    }
+
+    #[test]
+    fn test_apply_native_vibrancy_does_not_panic() {
+        // In test environments where NSApplication may have zero windows or headless execution,
+        // apply_native_vibrancy must exit gracefully without panicking.
+        apply_native_vibrancy();
+    }
+}
+
 
