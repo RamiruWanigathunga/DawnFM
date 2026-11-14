@@ -21,9 +21,9 @@ const DISK_MAX_FILE: usize = 4 * 1024 * 1024;
 /// The disk cache is trimmed to this, oldest first, at launch.
 const DISK_BUDGET: u64 = 256 * 1024 * 1024;
 /// Maximum number of raw image byte entries kept in memory cache.
-const HTTP_CACHE_MAX_ENTRIES: usize = 40;
+pub const HTTP_CACHE_MAX_ENTRIES: usize = 40;
 /// Maximum bytes of raw image data kept in memory cache.
-const HTTP_CACHE_MAX_BYTES: usize = 16 * 1024 * 1024;
+pub const HTTP_CACHE_MAX_BYTES: usize = 16 * 1024 * 1024;
 
 enum Entry {
     Pending,
@@ -256,7 +256,7 @@ impl BytesLoader for HttpImages {
 }
 
 /// GPU memory the thumbnails may keep before the least recently drawn are dropped.
-const TEXTURE_BUDGET: usize = 36 * 1024 * 1024;
+pub const TEXTURE_BUDGET: usize = 36 * 1024 * 1024;
 
 struct Texture {
     handle: TextureHandle,
