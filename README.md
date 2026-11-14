@@ -62,7 +62,7 @@ Requires the [Rust toolchain](https://rustup.rs/):
 git clone https://github.com/wenujacodes/DawnFM.git
 cd DawnFM
 cargo build --release
-sh macos/bundle.sh target/release/dawnfm 2.2.0 out
+sh macos/bundle.sh target/release/dawnfm 2.3.0 out
 ```
 
 The signed bundle will be located at `out/Dawn FM.app`.
