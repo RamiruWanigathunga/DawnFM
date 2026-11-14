@@ -65,7 +65,7 @@ pub fn bg() -> Color32 {
 
 /// Menus and popups.
 pub fn menu_fill() -> Color32 {
-    if light() { Color32::WHITE } else { Color32::from_rgb(38, 34, 42) }
+    if light() { Color32::WHITE } else { Color32::from_rgb(32, 32, 34) }
 }
 
 /// Dialogs and cards that float over the page.
@@ -838,13 +838,12 @@ fn visuals() -> egui::Visuals {
     let p = crate::preset::active();
     let mut v = if light() { egui::Visuals::light() } else { egui::Visuals::dark() };
     v.panel_fill = bg();
-    // The built-in look's dark menus are the system's: a semi-translucent dark grey
-    // with a fine highlight border, matching native macOS menu appearance.
+    // The built-in look's dark menus use a solid, consistent neutral dark grey.
     let mac_dark = p.id == crate::preset::DEFAULT_ID && !light();
-    v.window_fill = if mac_dark { Color32::from_rgba_premultiplied(50, 48, 52, 230) } else { surface_fill() };
+    v.window_fill = if mac_dark { Color32::from_rgb(32, 32, 34) } else { surface_fill() };
     v.extreme_bg_color = glass(0.08);
     v.override_text_color = Some(text());
-    v.selection.bg_fill = with_alpha(p.accent(RED), if light() { 0.3 } else { 0.5 });
+    v.selection.bg_fill = if light() { Color32::from_black_alpha(20) } else { Color32::from_white_alpha(32) };
     v.hyperlink_color = text();
     v.interact_cursor = Some(egui::CursorIcon::PointingHand);
     let pr = egui::CornerRadius::same(p.app.panel_radius.clamp(0.0, 32.0) as u8);

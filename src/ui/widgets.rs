@@ -600,11 +600,15 @@ fn menu_row(ui: &mut Ui, label: &str, draw: impl FnOnce(&Ui, Pos2, Color32)) -> 
     let response = named(response, label);
     let over = response.hovered();
     if over {
-        let accent = ui.ctx().data(|d| d.get_temp::<Color32>(egui::Id::unique("accent"))).unwrap_or(theme::RED);
-        ui.painter().rect_filled(rect, 5.0, accent);
+        let hover_bg = if theme::light() { Color32::from_black_alpha(18) } else { Color32::from_white_alpha(32) };
+        ui.painter().rect_filled(rect, 5.0, hover_bg);
     }
-    let color = if over { Color32::WHITE } else { theme::text() };
-    draw(ui, pos2(rect.left() + 15.0, rect.center().y), if over { Color32::WHITE } else { theme::text_dim() });
+    let color = if over {
+        if theme::light() { Color32::BLACK } else { Color32::WHITE }
+    } else {
+        theme::text()
+    };
+    draw(ui, pos2(rect.left() + 15.0, rect.center().y), if over { color } else { theme::text_dim() });
     ui.painter().text(pos2(rect.left() + 32.0, rect.center().y), Align2::LEFT_CENTER, label, theme::regular(13.0), color);
     if response.clicked() { ui.close(); }
     response.clicked()
