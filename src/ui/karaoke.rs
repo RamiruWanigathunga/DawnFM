@@ -1930,7 +1930,7 @@ struct Slot {
 
 const SLOT_STEP: usize = 64;
 /// Unused slots kept for the next glow or line to write into.
-const SPARE_SLOTS: usize = 8;
+const SPARE_SLOTS: usize = 2;
 
 impl Slot {
     fn uv(&self) -> Rect {
@@ -2048,11 +2048,21 @@ impl Glow {
                 painter.set(j.layer, Shape::mesh(mesh));
             }
         }
-        let gone: Vec<Slot> = (self.textures.extract_if(|_, (_, used)| now - *used >= 1.0).map(|(_, (s, _))| s))
-            .chain(self.lines.extract_if(|_, (.., used)| now - *used >= 4.0).map(|(_, (s, ..))| s))
+        let gone: Vec<Slot> = (self.textures.extract_if(|_, (_, used)| now - *used >= 0.5).map(|(_, (s, _))| s))
+            .chain(self.lines.extract_if(|_, (.., used)| now - *used >= 1.0).map(|(_, (s, ..))| s))
             .collect();
         for s in gone {
             self.recycle(s);
+        }
+        if self.lines.len() > 8 {
+            let mut line_times: Vec<(f64, (u64, usize))> = self.lines.iter().map(|(k, (.., used))| (*used, *k)).collect();
+            line_times.sort_unstable_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+            let to_remove = self.lines.len() - 8;
+            for (_, k) in line_times.into_iter().take(to_remove) {
+                if let Some((s, ..)) = self.lines.remove(&k) {
+                    self.recycle(s);
+                }
+            }
         }
     }
 
@@ -2448,6 +2458,38 @@ mod tests {
         // Far too big for a small image: not reused.
         let f = g.upload(&ctx, Some(d), img(10, 10), "t");
         assert_eq!(f.size, [64, 64]);
+    }
+
+    #[test]
+    fn off_screen_blur_textures_are_evicted_and_spare_slots_are_bounded() {
+        let ctx = egui::Context::default();
+        let painter = egui::Painter::new(ctx.clone(), egui::LayerId::background(), Rect::NOTHING);
+        let img = |w: usize, h: usize| ColorImage::filled([w, h], Color32::WHITE);
+        let mut g = Glow::default();
+
+        // 1. Verify spare slots are bounded by SPARE_SLOTS (2)
+        let mut slots = Vec::new();
+        for _ in 0..5 {
+            slots.push(g.upload(&ctx, None, img(64, 64), "test"));
+        }
+        for s in slots {
+            g.recycle(s);
+        }
+        assert_eq!(g.spare.len(), SPARE_SLOTS);
+
+        // 2. Insert 12 lines with varying timestamps
+        for i in 0..12 {
+            let s = g.upload(&ctx, None, img(64, 64), "test");
+            g.lines.insert((1, i), (s, (0, 0, 0), Rect::NOTHING, i as f64));
+        }
+        assert_eq!(g.lines.len(), 12);
+
+        // Run finish (which executes eviction of excess lines > 8 and aged lines)
+        g.finish(&ctx, &painter, Vec::new(), [1024, 1024], 1.0);
+
+        // Lines must be trimmed down to at most 8
+        assert!(g.lines.len() <= 8);
+        assert_eq!(g.spare.len(), SPARE_SLOTS);
     }
 
     #[test]
