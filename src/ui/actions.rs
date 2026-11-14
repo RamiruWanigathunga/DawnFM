@@ -197,7 +197,7 @@ impl App {
                 if let Some(h) = &mut self.home {
                     h.shelves.clear();
                     for c in &mut h.chips {
-                        c.selected = false;
+                        c.selected = c.params == params && params.is_some();
                     }
                 }
                 self.backend.request(Req::Home(params));

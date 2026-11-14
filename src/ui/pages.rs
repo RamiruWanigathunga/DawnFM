@@ -409,8 +409,16 @@ fn home_greeting() -> &'static str {
 }
 
 fn home(app: &mut App, ui: &mut Ui, now: f64) {
-    page_title(ui, home_greeting());
-    if let Some(h) = &app.home
+    let active_mood = app.home.as_ref().and_then(|h| h.chips.iter().find(|c| c.selected).map(|c| c.title.clone()));
+    let greeting;
+    let title = if let Some(m) = &active_mood {
+        m.as_str()
+    } else {
+        greeting = home_greeting();
+        greeting
+    };
+    page_title(ui, title);
+    if let Some(h) = &mut app.home
         && !h.chips.is_empty()
     {
         ui.add_space(8.0);
@@ -419,12 +427,16 @@ fn home(app: &mut App, ui: &mut Ui, now: f64) {
             ui.spacing_mut().item_spacing.x = 8.0;
             for c in &h.chips {
                 if chip(ui, &c.title, c.selected).clicked() {
-                    let param = if c.selected { None } else { c.params.clone() };
-                    clicked_chip = Some(param);
+                    let new_selected = !c.selected;
+                    let param = if new_selected { c.params.clone() } else { None };
+                    clicked_chip = Some((c.title.clone(), param, new_selected));
                 }
             }
         });
-        if let Some(param) = clicked_chip {
+        if let Some((title, param, new_selected)) = clicked_chip {
+            for c in &mut h.chips {
+                c.selected = if new_selected { c.title == title } else { false };
+            }
             app.actions.push(Action::HomeChip(param));
         }
         ui.add_space(8.0);
@@ -440,8 +452,21 @@ fn home(app: &mut App, ui: &mut Ui, now: f64) {
         ui.add_space(40.0);
         ui.label(RichText::new("Nothing here yet").color(theme::text_dim()));
     }
+    let is_mood = active_mood.is_some();
     let mut more_picks = None;
     for (i, s) in h.shelves.iter().enumerate() {
+        if is_mood {
+            let lower = s.title.to_lowercase();
+            if lower.contains("listen again")
+                || lower.contains("quick picks")
+                || lower.contains("forgotten favorites")
+                || lower.contains("mixed for you")
+                || lower.contains("podcast")
+                || lower.contains("episode")
+            {
+                continue;
+            }
+        }
         let id = format!("home-{i}-{}", s.title);
         match &s.kind {
             ShelfKind::Cards(cards) => {
@@ -464,7 +489,7 @@ fn home(app: &mut App, ui: &mut Ui, now: f64) {
             ShelfKind::Songs { tracks, rows: n } => {
                 let shown: Vec<Track> = tracks.iter().map(|t| Track { plays: None, ..t.clone() }).collect();
                 let reached_end = song_grid(ui, &rows, &app.liked, &mut app.actions, &id, &s.title, s.strapline.as_deref(), &shown, *n);
-                if s.title == "Quick picks" && reached_end && !h.picks_loading && !h.picks_expanded {
+                if !is_mood && s.title == "Quick picks" && reached_end && !h.picks_loading && !h.picks_expanded {
                     more_picks = tracks.last().map(|t| t.id.clone());
                 }
             }
@@ -2021,9 +2046,14 @@ fn option_row(ui: &mut Ui, label: &str, selected: bool) -> egui::Response {
     let resp = widgets::named(resp, label);
     let over = resp.hovered();
     if over {
-        ui.painter().rect_filled(rect, 5.0, app_accent(ui));
+        let hover_bg = if theme::light() { Color32::from_black_alpha(18) } else { Color32::from_white_alpha(32) };
+        ui.painter().rect_filled(rect, 5.0, hover_bg);
     }
-    let fg = if over { Color32::WHITE } else { theme::text() };
+    let fg = if over {
+        if theme::light() { Color32::BLACK } else { Color32::WHITE }
+    } else {
+        theme::text()
+    };
     if selected {
         widgets::icon_at(ui, pos2(rect.left() + 15.0, rect.center().y), theme::icon::CHECK, 13.0, fg);
     }

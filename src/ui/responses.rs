@@ -521,8 +521,8 @@ impl App {
     }
 
     /// Re-rank shelves on Home to elevate personalized mixes and maintain a balanced flow.
-    fn reorder_home_shelves(mut shelves: Vec<crate::model::Shelf>) -> Vec<crate::model::Shelf> {
-        if shelves.len() <= 2 {
+    fn reorder_home_shelves(mut shelves: Vec<crate::model::Shelf>, is_mood: bool) -> Vec<crate::model::Shelf> {
+        if is_mood || shelves.len() <= 2 {
             return shelves;
         }
         if let Some(pos) = shelves.iter().position(|s| s.title.eq_ignore_ascii_case("Mixed for you")) {
@@ -563,10 +563,19 @@ impl App {
         // The feed marks the active mood itself; keep the bar when it doesn't send chips.
         if chips.is_empty() {
             chips = self.home.as_ref().map(|h| h.chips.clone()).unwrap_or_default();
+        } else if !chips.iter().any(|c| c.selected) {
+            if let Some(prev) = &self.home {
+                for c in &mut chips {
+                    if let Some(p) = prev.chips.iter().find(|pc| pc.title == c.title) {
+                        c.selected = p.selected;
+                    }
+                }
+            }
         }
+        let is_mood = chips.iter().any(|c| c.selected);
         self.home = Some(HomeState {
             chips,
-            shelves: Self::reorder_home_shelves(page.shelves),
+            shelves: Self::reorder_home_shelves(page.shelves, is_mood),
             continuation: page.continuation,
             loading_more: None,
             picks_loading: false,
