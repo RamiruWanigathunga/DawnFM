@@ -20,11 +20,52 @@ const RETRY_AFTER: Duration = Duration::from_secs(30);
 const DISK_MAX_FILE: usize = 4 * 1024 * 1024;
 /// The disk cache is trimmed to this, oldest first, at launch.
 const DISK_BUDGET: u64 = 256 * 1024 * 1024;
+/// Maximum number of raw image byte entries kept in memory cache.
+const HTTP_CACHE_MAX_ENTRIES: usize = 40;
+/// Maximum bytes of raw image data kept in memory cache.
+const HTTP_CACHE_MAX_BYTES: usize = 16 * 1024 * 1024;
 
 enum Entry {
     Pending,
     Ready(Arc<[u8]>, Option<String>),
     Failed(String, Instant),
+}
+
+struct CacheEntry {
+    entry: Entry,
+    last_used: Instant,
+}
+
+impl CacheEntry {
+    fn byte_size(&self) -> usize {
+        match &self.entry {
+            Entry::Ready(b, _) => b.len(),
+            _ => 0,
+        }
+    }
+}
+
+fn trim_cache(cache: &mut HashMap<String, CacheEntry>) {
+    let mut total_bytes: usize = cache.values().map(|e| e.byte_size()).sum();
+    if cache.len() <= HTTP_CACHE_MAX_ENTRIES && total_bytes <= HTTP_CACHE_MAX_BYTES {
+        return;
+    }
+    // Collect candidates for eviction, oldest first (excluding in-flight requests).
+    let mut candidates: Vec<(Instant, String)> = cache
+        .iter()
+        .filter(|(_, e)| !matches!(e.entry, Entry::Pending))
+        .map(|(k, e)| (e.last_used, k.clone()))
+        .collect();
+    candidates.sort_unstable_by_key(|&(t, _)| t);
+
+    for (_, uri) in candidates {
+        if cache.len() <= HTTP_CACHE_MAX_ENTRIES && total_bytes <= HTTP_CACHE_MAX_BYTES {
+            break;
+        }
+        if let Some(removed) = cache.remove(&uri) {
+            total_bytes = total_bytes.saturating_sub(removed.byte_size());
+        }
+    }
 }
 
 fn is_http(uri: &str) -> bool {
@@ -33,7 +74,7 @@ fn is_http(uri: &str) -> bool {
 
 pub struct HttpImages {
     backend: Backend,
-    cache: Arc<Mutex<HashMap<String, Entry>>>,
+    cache: Arc<Mutex<HashMap<String, CacheEntry>>>,
     dir: std::path::PathBuf,
 }
 
@@ -111,22 +152,32 @@ impl BytesLoader for HttpImages {
             return Err(LoadError::NotSupported);
         }
         let mut cache = self.cache.lock_unpoisoned();
-        match cache.get(uri) {
-            Some(Entry::Ready(bytes, mime)) => {
-                return Ok(BytesPoll::Ready {
-                    size: None,
-                    bytes: Bytes::Shared(bytes.clone()),
-                    mime: mime.clone(),
-                });
+        if let Some(item) = cache.get_mut(uri) {
+            item.last_used = Instant::now();
+            match &item.entry {
+                Entry::Ready(bytes, mime) => {
+                    return Ok(BytesPoll::Ready {
+                        size: None,
+                        bytes: Bytes::Shared(bytes.clone()),
+                        mime: mime.clone(),
+                    });
+                }
+                Entry::Pending => return Ok(BytesPoll::Pending { size: None }),
+                Entry::Failed(e, at) if at.elapsed() < RETRY_AFTER => return Err(LoadError::Loading(e.clone())),
+                Entry::Failed(..) => {}
             }
-            Some(Entry::Pending) => return Ok(BytesPoll::Pending { size: None }),
-            Some(Entry::Failed(e, at)) if at.elapsed() < RETRY_AFTER => return Err(LoadError::Loading(e.clone())),
-            Some(Entry::Failed(..)) | None => {}
         }
         let file = disk_path(&self.dir, uri);
         if let Ok(bytes) = std::fs::read(&file) {
             let shared: Arc<[u8]> = Arc::from(bytes);
-            cache.insert(uri.to_owned(), Entry::Ready(shared.clone(), None));
+            cache.insert(
+                uri.to_owned(),
+                CacheEntry {
+                    entry: Entry::Ready(shared.clone(), None),
+                    last_used: Instant::now(),
+                },
+            );
+            trim_cache(&mut cache);
             let file_clone = file.clone();
             self.backend.spawn(async move {
                 let _ = std::fs::File::options().write(true).open(&file_clone).and_then(|f| f.set_modified(std::time::SystemTime::now()));
@@ -138,7 +189,14 @@ impl BytesLoader for HttpImages {
             });
         }
 
-        cache.insert(uri.to_owned(), Entry::Pending);
+        cache.insert(
+            uri.to_owned(),
+            CacheEntry {
+                entry: Entry::Pending,
+                last_used: Instant::now(),
+            },
+        );
+        trim_cache(&mut cache);
         drop(cache);
 
         let (http, cache, uri, backend) =
@@ -164,9 +222,13 @@ impl BytesLoader for HttpImages {
                 Err(e) => Entry::Failed(e.to_string(), Instant::now()),
             };
             // Only store if not forgotten while in flight.
-            if let Some(slot) = cache.lock_unpoisoned().get_mut(&uri) {
-                *slot = entry;
+            let mut cache = cache.lock_unpoisoned();
+            if let Some(slot) = cache.get_mut(&uri) {
+                slot.entry = entry;
+                slot.last_used = Instant::now();
+                trim_cache(&mut cache);
             }
+            drop(cache);
             backend.wake();
         });
         Ok(BytesPoll::Pending { size: None })
@@ -184,20 +246,17 @@ impl BytesLoader for HttpImages {
         self.cache
             .lock_unpoisoned()
             .values()
-            .map(|e| match e {
-                Entry::Ready(b, _) => b.len(),
-                _ => 0,
-            })
+            .map(|e| e.byte_size())
             .sum()
     }
 
     fn has_pending(&self) -> bool {
-        self.cache.lock_unpoisoned().values().any(|e| matches!(e, Entry::Pending))
+        self.cache.lock_unpoisoned().values().any(|e| matches!(e.entry, Entry::Pending))
     }
 }
 
 /// GPU memory the thumbnails may keep before the least recently drawn are dropped.
-const TEXTURE_BUDGET: usize = 96 * 1024 * 1024;
+const TEXTURE_BUDGET: usize = 36 * 1024 * 1024;
 
 struct Texture {
     handle: TextureHandle,
