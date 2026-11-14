@@ -40,6 +40,7 @@ fn main() -> eframe::Result {
     }
     migrate_data();
     init_logging();
+    i18n::detect_and_set_locale();
     // Jam links on macOS come as an Apple Event, not argv: catch it before the loop starts.
     deeplink::install();
     update::clean_portable();

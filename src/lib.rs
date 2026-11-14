@@ -1,3 +1,6 @@
+// Initialize rust-i18n localization framework with embedded dictionaries in locales/
+rust_i18n::i18n!("locales", fallback = "en");
+
 pub mod appicon;
 pub mod apple;
 pub mod art;
@@ -12,6 +15,7 @@ pub mod dock;
 pub mod downloads;
 pub mod fullscreen;
 pub mod hires;
+pub mod i18n;
 pub mod images;
 pub mod innertube;
 pub mod jam;
