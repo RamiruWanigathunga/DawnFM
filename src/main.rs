@@ -49,6 +49,9 @@ mod ytmapi;
 
 use std::sync::{Arc, OnceLock};
 
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 use crossbeam_channel::unbounded;
 
 /// Window size on first launch, and the smallest it may be (points).
