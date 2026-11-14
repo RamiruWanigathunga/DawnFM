@@ -220,6 +220,28 @@ fn read_system_light() -> Option<bool> {
     None
 }
 
+/// Returns true if running on macOS higher than 15 (Darwin kernel >= 25, e.g. macOS 16 / 26+).
+pub fn is_macos_above_15() -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        static IS_ABOVE_15: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        *IS_ABOVE_15.get_or_init(|| {
+            let mut uts: libc::utsname = unsafe { std::mem::zeroed() };
+            if unsafe { libc::uname(&mut uts) } == 0 {
+                let rel = unsafe { std::ffi::CStr::from_ptr(uts.release.as_ptr()) }.to_str().unwrap_or_default();
+                let major: u32 = rel.split('.').next().and_then(|s| s.parse().ok()).unwrap_or(0);
+                major >= 25
+            } else {
+                false
+            }
+        })
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        false
+    }
+}
+
 /// The Windows accent colour, in the lighter shade Windows itself uses on dark
 /// surfaces (`AccentPalette`'s second entry), or the base accent if there's no palette.
 /// Read again every couple of seconds, so a new colour picked in Windows' settings

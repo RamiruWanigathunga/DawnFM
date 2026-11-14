@@ -831,22 +831,78 @@ pub fn player_bar(app: &mut App, ui: &mut Ui, now: f64, frosted: bool) {
         cap.shrink2(vec2(12.0, 0.0))
     } else {
         if frosted {
-            // The page scrolls on under this strip: fade it out rather than end it at the
-            // player's edge. Clicks in the fade stay with the player, not the rows beneath.
-            vgradient(ui.painter(), full, theme::panel(0.0), theme::panel(0.66));
-            ui.interact(full, ui.scope_id().with("player-strip"), Sense::hover());
+            // Subtle fade at the bottom edge so page content scrolling under doesn't abruptly cut off.
+            let fade_h = 32.0;
+            let fade_rect = Rect::from_min_max(pos2(full.left(), full.bottom() - fade_h), full.max);
+            vgradient(ui.painter(), fade_rect, theme::panel(0.0), theme::panel(0.35));
         }
-        const H: f32 = 56.0;
-        let w = (full.width() - 24.0).min(668.0);
-        let cap = Rect::from_min_size(pos2(full.center().x - w / 2.0, full.bottom() - 16.0 - H), vec2(w, H));
-        widgets::soft_shadow(ui, cap, H / 2.0, 20.0, 0.45);
-        // Frosted: the page's colours show through a milky pane, with a lit top half and
-        // a bright rim standing in for the blur egui can't do.
-        ui.painter().rect_filled(cap, H / 2.0, theme::panel(0.88));
-        let top = Rect::from_min_max(cap.min, pos2(cap.max.x, cap.min.y + H * 0.55));
-        ui.painter().rect_filled(top, egui::CornerRadius { nw: 28, ne: 28, sw: 0, se: 0 }, theme::glass(0.07));
-        ui.painter().rect_stroke(cap, H / 2.0, egui::Stroke::new(1.0, theme::glass(0.2)), egui::StrokeKind::Inside);
-        ui.painter().hline(cap.x_range().shrink(26.0), cap.top() + 1.0, egui::Stroke::new(1.0, theme::glass(0.24)));
+        const H: f32 = 64.0;
+        let radius = 16.0;
+        let max_w = 720.0;
+        let w = (full.width() - 32.0).clamp(480.0, max_w).min(full.width() - 16.0);
+        let cap = Rect::from_min_size(pos2(full.center().x - w / 2.0, full.bottom() - 14.0 - H), vec2(w, H));
+        ui.interact(cap, ui.scope_id().with("player-strip"), Sense::hover());
+
+        let accent = app.accent_color();
+        let is_liquid = theme::is_macos_above_15();
+
+        if is_liquid {
+            // macOS > 15: Liquid Glass effect
+            // Prismatic colored under-glow and deep specular shadow
+            widgets::soft_shadow(ui, cap, radius, 32.0, if theme::light() { 0.22 } else { 0.48 });
+            let under_glow = theme::with_alpha(accent, 0.12);
+            ui.painter().rect_filled(cap.expand(1.5), radius + 1.5, under_glow);
+
+            // Translucent liquid body with high refractive clarity
+            let liquid_fill = if theme::light() {
+                Color32::from_rgba_premultiplied(250, 249, 253, 218)
+            } else {
+                Color32::from_rgba_premultiplied(22, 20, 26, 208)
+            };
+            ui.painter().rect_filled(cap, radius, liquid_fill);
+
+            // Liquid vertical refraction gradient
+            let top_liquid = theme::glass(if theme::light() { 0.15 } else { 0.10 });
+            let bot_liquid = theme::glass(if theme::light() { 0.04 } else { 0.02 });
+            rounded_vgradient(ui.painter(), cap, radius, top_liquid, bot_liquid);
+
+            // Specular meniscus top reflection
+            let sheen_h = H * 0.42;
+            let sheen_rect = Rect::from_min_size(cap.min, vec2(cap.width(), sheen_h));
+            let sheen_top = theme::glass(if theme::light() { 0.24 } else { 0.16 });
+            rounded_vgradient(ui.painter(), sheen_rect, radius, sheen_top, Color32::TRANSPARENT);
+
+            // Double refractive edge strokes: outer highlight rim and inner hairline
+            ui.painter().rect_stroke(cap, radius, egui::Stroke::new(1.0, theme::glass(0.24)), egui::StrokeKind::Inside);
+            ui.painter().rect_stroke(cap.shrink(1.0), (radius - 1.0).max(0.0), egui::Stroke::new(0.5, theme::glass(0.10)), egui::StrokeKind::Inside);
+            ui.painter().hline(cap.x_range().shrink(radius + 2.0), cap.top() + 1.0, egui::Stroke::new(1.0, theme::glass(0.32)));
+            ui.painter().hline(cap.x_range().shrink(radius + 6.0), cap.bottom() - 1.5, egui::Stroke::new(0.5, theme::glass(0.12)));
+        } else {
+            // macOS <= 15: Frosted blur effect
+            // Multi-tier soft ambient and drop shadows
+            widgets::soft_shadow(ui, cap, radius, 26.0, if theme::light() { 0.18 } else { 0.42 });
+            widgets::soft_shadow(ui, cap, radius, 8.0, if theme::light() { 0.08 } else { 0.18 });
+
+            // Frosted glass body: milky translucent matte finish with subtle cover tint
+            let frosted_fill = if theme::light() {
+                Color32::from_rgba_premultiplied(246, 245, 249, 230)
+            } else {
+                let dark_base = Color32::from_rgba_premultiplied(26, 24, 30, 224);
+                theme::lerp_color(dark_base, app.look().solid(), 0.22)
+            };
+            ui.painter().rect_filled(cap, radius, frosted_fill);
+
+            // Diffused specular top sheen
+            let sheen_h = H * 0.45;
+            let sheen_rect = Rect::from_min_size(cap.min, vec2(cap.width(), sheen_h));
+            let sheen_top = theme::glass(0.08);
+            rounded_vgradient(ui.painter(), sheen_rect, radius, sheen_top, Color32::TRANSPARENT);
+
+            // Frosted glass perimeter stroke with top-edge light catch
+            ui.painter().rect_stroke(cap, radius, egui::Stroke::new(1.0, theme::glass(0.15)), egui::StrokeKind::Inside);
+            ui.painter().hline(cap.x_range().shrink(radius + 4.0), cap.top() + 1.0, egui::Stroke::new(1.0, theme::glass(0.24)));
+        }
+
         cap
     };
 
@@ -870,17 +926,19 @@ pub fn player_bar(app: &mut App, ui: &mut Ui, now: f64, frosted: bool) {
     let right_w = if vol_out { 224.0 } else { 132.0 };
     let right_l = cap.right() - pad - right_w;
     // Docked: the song on the left, the controls in the middle, the rest on the right.
-    // Floating: controls, then the song, then the rest.
+    // Floating: the song on the left, centered controls in the middle, actions on the right.
     let (run_l, cover, text_l, text_r) = if docked(app) {
         let cover = Rect::from_center_size(pos2(cap.left() + pad + 28.0, cy), Vec2::splat(56.0));
         let text_l = cover.right() + 14.0;
         let run_l = (cap.center().x - (run_w - 8.0) / 2.0).max(text_l + 120.0).min(right_l - run_w - 8.0);
         (run_l, cover, text_l, run_l - 18.0)
     } else {
-        let run_l = cap.left() + pad;
-        let lcd_l = run_l + run_w + 8.0;
-        let cover = Rect::from_center_size(pos2(lcd_l + 17.0, cy), Vec2::splat(34.0));
-        (run_l, cover, cover.right() + 8.0, right_l - 6.0)
+        let cover_size = 44.0;
+        let cover = Rect::from_center_size(pos2(cap.left() + 12.0 + cover_size / 2.0, cy), Vec2::splat(cover_size));
+        let text_l = cover.right() + 10.0;
+        let run_l = (cap.center().x - (run_w - 8.0) / 2.0).max(text_l + 80.0).min(right_l - run_w - 8.0);
+        let text_r = run_l - 14.0;
+        (run_l, cover, text_l, text_r)
     };
     let text_w = (text_r - text_l).max(20.0);
     let ink = |h: f32| {
@@ -992,21 +1050,21 @@ pub fn player_bar(app: &mut App, ui: &mut Ui, now: f64, frosted: bool) {
     };
     let pos = app.seek_drag.unwrap_or(smooth).min(total.max(0.0));
     // Docked: a centred seek row above the controls, its times always beside it.
-    // Floating: a thin line under the sleeve and titles.
+    // Floating: a sleek hairline along the top edge of the floating card.
     let mid_x = run_l + (run_w - 8.0) / 2.0;
     let (sx0, sx1, sy) = if dock {
         let half = (right_l - 70.0 - mid_x).min(mid_x - text_l - 150.0).clamp(60.0, 150.0);
         (mid_x - half, mid_x + half, cy - 14.0)
     } else {
-        (text_l, text_r, cap.bottom() - 7.0)
+        (cap.left() + 16.0, cap.right() - 16.0, cap.top() + 2.0)
     };
-    let seek_hit = Rect::from_min_max(pos2(sx0, sy - if dock { 8.0 } else { 6.0 }), pos2(sx1, sy + if dock { 8.0 } else { 5.0 }));
+    let seek_hit = Rect::from_min_max(pos2(sx0, sy - if dock { 8.0 } else { 4.0 }), pos2(sx1, sy + if dock { 8.0 } else { 6.0 }));
     let sresp = ui.interact(seek_hit, ui.scope_id().with("bar-seek"), if held { Sense::hover() } else { Sense::click_and_drag() });
     let sresp = if total > 0.0 && !held { sresp.on_hover_cursor(egui::CursorIcon::PointingHand) } else { sresp };
     sresp.widget_info(|| egui::WidgetInfo::slider(total > 0.0 && !held, pos as f64, "Seek"));
     let focus = theme::anim_bool(&ctx, "bar-seek-h", total > 0.0 && !held && (sresp.hovered() || sresp.dragged()), 0.15);
-    // Docked: Music's short, heavy line. Floating: a hairline under the titles.
-    let thick = if dock { 5.0 + 2.0 * focus } else { 2.0 + 2.0 * focus };
+    // Docked: Music's short, heavy line. Floating: a sleek hairline along top edge.
+    let thick = if dock { 5.0 + 2.0 * focus } else { 2.5 + 2.5 * focus };
     let line_r = Rect::from_min_max(pos2(sx0, sy - thick / 2.0), pos2(sx1, sy + thick / 2.0));
     ui.painter().rect_filled(line_r, thick / 2.0, theme::glass(0.18));
     // Automix's handoff window, tinted on the part still to play.
@@ -1021,6 +1079,11 @@ pub fn player_bar(app: &mut App, ui: &mut Ui, now: f64, frosted: bool) {
     if frac > 0.0 {
         let head_col = if theme::light() { Color32::BLACK } else { theme::with_alpha(theme::text(), 0.8 + 0.2 * focus) };
         ui.painter().rect_filled(Rect::from_min_size(line_r.min, vec2(line_r.width() * frac, thick)), thick / 2.0, head_col);
+        if !dock && focus > 0.0 {
+            let grab_pos = pos2(sx0 + (sx1 - sx0) * frac, sy);
+            ui.painter().circle_filled(grab_pos, 4.5, if theme::light() { Color32::BLACK } else { Color32::WHITE });
+            ui.painter().circle_stroke(grab_pos, 4.5, egui::Stroke::new(1.0, theme::glass(0.4)));
+        }
     }
     let at = |p: Pos2| (((p.x - sx0) / (sx1 - sx0)).clamp(0.0, 1.0) * total).max(0.0);
 
@@ -1055,8 +1118,8 @@ pub fn player_bar(app: &mut App, ui: &mut Ui, now: f64, frosted: bool) {
         None => ("Dawn FM".to_owned(), ()),
     };
     // Floating: the titles give way to the times while the seek line has the pointer.
-    let (fade, afade) = if dock { (1.0, 1.0) } else { (1.0 - 0.7 * focus, 1.0 - focus) };
-    let tr = text_at(ui, pos2(text_l, cy - 15.0), &title, theme::semibold(13.0), theme::with_alpha(theme::text(), fade), text_w);
+    let (fade, afade) = if dock { (1.0, 1.0) } else { (1.0, 1.0) };
+    let tr = text_at(ui, pos2(text_l, cy - if dock { 15.0 } else { 9.0 }), &title, theme::semibold(13.0), theme::with_alpha(theme::text(), fade), text_w);
     if let Some(t) = &track {
         let tre = ui.interact(tr, ui.scope_id().with("bar-title"), Sense::click());
         if named(tre, &t.title).on_hover_text(&t.title).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
@@ -1067,13 +1130,13 @@ pub fn player_bar(app: &mut App, ui: &mut Ui, now: f64, frosted: bool) {
     if afade > 0.01 && let Some(t) = &track {
         for (i, a) in t.artists.iter().enumerate() {
             let s = if i + 1 < t.artists.len() { format!("{}, ", a.name) } else { a.name.clone() };
-            let r = text_at(ui, pos2(ax, cy + 2.0), &s, theme::regular(11.5), theme::with_alpha(theme::text_dim(), afade), (text_l + text_w - ax).max(10.0));
+            let r = text_at(ui, pos2(ax, cy + if dock { 2.0 } else { 6.0 }), &s, theme::regular(11.5), theme::with_alpha(theme::text_dim(), afade), (text_l + text_w - ax).max(10.0));
             if let Some(id) = &a.id {
                 let resp = ui.interact(r, ui.scope_id().with(("bar-artist", i)), Sense::click());
                 let resp = named(resp, &a.name).on_hover_cursor(egui::CursorIcon::PointingHand);
                 if resp.hovered() {
                     let hover_color = if theme::light() { Color32::BLACK } else { Color32::WHITE };
-                    text_at(ui, pos2(ax, cy + 2.0), &s, theme::regular(11.5), theme::with_alpha(hover_color, afade), (text_l + text_w - ax).max(10.0));
+                    text_at(ui, pos2(ax, cy + if dock { 2.0 } else { 6.0 }), &s, theme::regular(11.5), theme::with_alpha(hover_color, afade), (text_l + text_w - ax).max(10.0));
                 }
                 if resp.clicked() {
                     app.actions.push(Action::Open(Target::Artist(id.clone())));
@@ -1093,13 +1156,13 @@ pub fn player_bar(app: &mut App, ui: &mut Ui, now: f64, frosted: bool) {
         let g = widgets::galley(ui, &format!("-{left}"), theme::semibold(11.5), time_col, 80.0);
         ui.painter().galley(pos2(sx1 + 10.0, sy - g.size().y / 2.0), g, time_col);
     } else if focus > 0.0 && total > 0.0 {
-        let col = if theme::light() { Color32::from_black_alpha((focus * 255.0) as u8) } else { theme::with_alpha(theme::text(), focus) };
-        let text_col = if theme::light() { Color32::BLACK } else { theme::text() };
-        let g = widgets::galley(ui, &fmt_time(pos as u32), theme::semibold(11.5), text_col, 80.0);
-        ui.painter().galley(pos2(text_l, cy + 2.0), g, col);
-        let left = fmt_time((total - pos).max(0.0) as u32);
-        let g = widgets::galley(ui, &format!("-{left}"), theme::semibold(11.5), text_col, 80.0);
-        ui.painter().galley(pos2(text_r - g.size().x, cy + 2.0), g, col);
+        let time_str = format!("{} / {}", fmt_time(pos as u32), fmt_time(total as u32));
+        let tip = widgets::galley(ui, &time_str, theme::semibold(11.0), Color32::WHITE, 120.0);
+        let tip_center = pos2((sx0 + (sx1 - sx0) * frac).clamp(sx0 + 35.0, sx1 - 35.0), cap.top() - 14.0);
+        let tip_rect = Rect::from_center_size(tip_center, tip.size() + vec2(12.0, 6.0));
+        ui.painter().rect_filled(tip_rect, 6.0, Color32::from_black_alpha(210));
+        ui.painter().rect_stroke(tip_rect, 6.0, egui::Stroke::new(0.5, Color32::from_white_alpha(50)), egui::StrokeKind::Inside);
+        ui.painter().galley(tip_rect.center() - tip.size() / 2.0, tip, Color32::WHITE);
     }
 
     // Right: favourite, lyrics, up next, volume. Without room for the slider beside

@@ -241,8 +241,8 @@ impl Default for CoverStyle {
 #[derive(Clone, Copy, PartialEq, Default, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PlayerBar {
-    #[default]
     Docked,
+    #[default]
     Floating,
 }
 
@@ -256,7 +256,7 @@ pub struct Chrome {
 
 impl Default for Chrome {
     fn default() -> Self {
-        Self { glass: 1.0, radius: 18.0, player_bar: PlayerBar::Docked }
+        Self { glass: 1.0, radius: 18.0, player_bar: PlayerBar::Floating }
     }
 }
 
@@ -381,7 +381,7 @@ impl Preset {
             background: Background { mode: BgMode::CoverFullbleed, solid: "#0b090b".into(), page_dim: 0.45, np_dim: 1.0, scrim: 0.1, ..Default::default() },
             lyrics: LyricStyle { weight: Weight::Bold, size: 1.15, inactive_alpha: 0.3, ..Default::default() },
             cover: CoverStyle { layout: Layout::LyricsOnly, radius: 10.0, ..Default::default() },
-            chrome: Chrome { glass: 0.9, radius: 10.0, player_bar: PlayerBar::Docked },
+            chrome: Chrome { glass: 0.9, radius: 10.0, player_bar: PlayerBar::Floating },
             app: AppStyle {
                 page_bg: PageBg::Accent,
                 sidebar: SidebarStyle::Glass,
