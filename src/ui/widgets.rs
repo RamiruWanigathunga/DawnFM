@@ -101,8 +101,9 @@ pub fn linked_text(
     width: f32,
     acts: &mut Vec<Action>,
 ) -> Rect {
-    let g = galley(ui, text, font, color, width);
+    let g = galley(ui, text, font.clone(), color, width);
     let rect = Rect::from_min_size(pos, g.size());
+    ui.painter().galley(pos, g.clone(), color);
     // Names are found in the text as shown: right-to-left text is reordered, its names
     // with it, and they no longer come in reading order.
     let shown = g.job.text.clone();
@@ -127,13 +128,14 @@ pub fn linked_text(
         let resp = ui.interact(r, ui.scope_id().with(("artist-link", text, i, pos.x as i32, pos.y as i32)), Sense::click());
         let resp = named(resp, &l.name).on_hover_cursor(egui::CursorIcon::PointingHand);
         if resp.hovered() {
-            ui.painter().hline(r.x_range(), r.bottom() - 1.0, egui::Stroke::new(1.0, color));
+            let hover_color = if theme::light() { Color32::BLACK } else { Color32::WHITE };
+            let hg = ui.painter().layout_no_wrap(name.to_string(), font.clone(), hover_color);
+            ui.painter().galley(pos2(pos.x + x0, pos.y), hg, hover_color);
         }
         if resp.clicked() {
             acts.push(Action::Open(Target::Artist(id.clone())));
         }
     }
-    ui.painter().galley(pos, g, color);
     rect
 }
 
@@ -194,7 +196,7 @@ pub fn icon_button(ui: &mut Ui, glyph: char, size: f32, name: &str, active: bool
     let d = size + 16.0;
     let (rect, resp) = ui.allocate_exact_size(Vec2::splat(d), Sense::click());
     let resp = named(resp, name).on_hover_text(name).on_hover_cursor(egui::CursorIcon::PointingHand);
-    let h = theme::anim_bool(ui.ctx(), resp.id.with("h"), resp.hovered(), 0.15);
+    let h = if resp.hovered() { 1.0 } else { 0.0 };
     if h > 0.0 {
         ui.painter().circle_filled(rect.center(), d / 2.0, theme::glass(0.10 * h));
     }
@@ -211,7 +213,7 @@ pub fn pill(ui: &mut Ui, label: &str, glyph: Option<char>, primary: bool) -> Res
     let icon_w = if glyph.is_some() { 24.0 } else { 0.0 };
     let (rect, resp) = ui.allocate_exact_size(vec2(text.size().x + icon_w + 36.0, 38.0), Sense::click());
     let resp = named(resp, label).on_hover_cursor(egui::CursorIcon::PointingHand);
-    let h = theme::anim_bool(ui.ctx(), resp.id.with("h"), resp.hovered(), 0.15);
+    let h = if resp.hovered() { 1.0 } else { 0.0 };
     // Themes with accent chips fill primary buttons with the accent, in rounded squares.
     let accented = primary && crate::preset::active().app.chip == crate::preset::ChipStyle::Accent;
     let (fill, fg) = if accented {
@@ -239,7 +241,7 @@ pub fn chip(ui: &mut Ui, label: &str, selected: bool) -> Response {
     let text = ui.painter().layout_no_wrap(label.to_owned(), theme::semibold(13.5), Color32::PLACEHOLDER);
     let (rect, resp) = ui.allocate_exact_size(vec2(text.size().x + 28.0, 34.0), Sense::click());
     let resp = named(resp, label).on_hover_cursor(egui::CursorIcon::PointingHand);
-    let h = theme::anim_bool(ui.ctx(), resp.id.with("h"), resp.hovered(), 0.15);
+    let h = if resp.hovered() { 1.0 } else { 0.0 };
     let s = theme::anim_bool(ui.ctx(), resp.id.with("s"), selected, 0.2);
     use crate::preset::ChipStyle;
     let style = crate::preset::active().app.chip;
@@ -515,27 +517,24 @@ pub fn card(ui: &mut Ui, c: &Card, width: f32, liked: bool, acts: &mut Vec<Actio
     let resp = named(resp, &c.title).on_hover_cursor(egui::CursorIcon::PointingHand);
     // contains_pointer, not hovered: the play button on top takes the hover, and the
     // card must stay "hovered" while the pointer is on it or the button would vanish.
-    let h = theme::anim_bool(ui.ctx(), resp.id.with("h"), resp.contains_pointer(), 0.22);
+    let h = theme::anim_bool(ui.ctx(), resp.id.with("h"), resp.contains_pointer(), 0.10);
     let img = Rect::from_min_size(rect.min, Vec2::splat(width));
     let radius = if c.round { width / 2.0 } else { theme::card_radius().min(width / 2.0) };
     paint_cover(ui, img, &c.thumbs, radius, 1.0 + 0.06 * h * theme::hover_k());
-    if h > 0.0 && !c.round {
-        ui.painter().rect_filled(img, radius, theme::shade(0.28 * h));
-    }
     // Play button rises into the corner on hover; on the playing item it stays up
     // and shows pause.
     let active = active_state(ui, &c.target);
     let h = if active.is_some() { 1.0 } else { h };
     let mut play_hit = false;
     if h > 0.01 {
-        let center = img.right_bottom() + vec2(-30.0, -30.0 + 8.0 * (1.0 - h));
-        let prect = Rect::from_center_size(center, Vec2::splat(44.0));
+        let center = img.right_bottom() + vec2(-26.0, -26.0 + 6.0 * (1.0 - h));
+        let prect = Rect::from_center_size(center, Vec2::splat(36.0));
         let p = ui.interact(prect, resp.id.with("play"), Sense::click());
         let playing = active == Some(true);
         let p = named(p, &format!("{} {}", if playing { "Pause" } else { "Play" }, c.title)).on_hover_cursor(egui::CursorIcon::PointingHand);
-        let ph = theme::anim_bool(ui.ctx(), p.id.with("h"), p.hovered(), 0.12);
-        ui.painter().circle_filled(center, 22.0 + 2.0 * ph, theme::shade(0.62 * h));
-        play_pause_glyph(ui, center, 10.0, theme::with_alpha(Color32::WHITE, h), playing);
+        let ph = if p.hovered() { 1.0 } else { 0.0 };
+        ui.painter().circle_filled(center, 18.0 + 1.5 * ph, theme::shade(0.62 * h));
+        play_pause_glyph(ui, center, 8.5, theme::with_alpha(Color32::WHITE, h), playing);
         play_hit = p.clicked();
     }
     let tcolor = theme::text();
@@ -824,7 +823,7 @@ pub fn track_row(ui: &mut Ui, t: &Track, o: &RowOpts, acts: &mut Vec<Action>) ->
     let hit_left = if o.pick && o.number.is_none() { rect.left() + 54.0 } else { rect.left() };
     let hit_rect = Rect::from_min_max(pos2(hit_left, rect.top()), rect.max);
     let resp = named(ui.interact(hit_rect, base.id.with("play"), Sense::click()), &t.title).on_hover_cursor(egui::CursorIcon::PointingHand);
-    let h = theme::anim_bool(ui.ctx(), base.id.with("h"), base.contains_pointer(), 0.15);
+    let h = if base.contains_pointer() { 1.0 } else { 0.0 };
     if o.number.is_some_and(|n| n % 2 == 1) {
         ui.painter().rect_filled(rect, 8.0, theme::glass(0.025));
     }
@@ -838,7 +837,7 @@ pub fn track_row(ui: &mut Ui, t: &Track, o: &RowOpts, acts: &mut Vec<Action>) ->
         ui.painter().rect_filled(rect, 8.0, theme::with_alpha(o.accent, 0.14));
     }
     if o.pick {
-        let p = theme::anim_bool(ui.ctx(), base.id.with("p"), resp.hovered(), 0.12);
+        let p = if resp.hovered() { 1.0 } else { 0.0 };
         if p > 0.0 {
             ui.painter().rect_stroke(rect, 8.0, egui::Stroke::new(1.5, theme::with_alpha(o.accent, p)), egui::StrokeKind::Inside);
         }
@@ -936,7 +935,9 @@ pub fn track_row(ui: &mut Ui, t: &Track, o: &RowOpts, acts: &mut Vec<Action>) ->
             let r = named(ui.interact(ar, resp.id.with("album"), Sense::click()), &album.name);
             let r = r.on_hover_cursor(egui::CursorIcon::PointingHand);
             if r.hovered() {
-                ui.painter().hline(ar.x_range(), ar.bottom() - 1.0, egui::Stroke::new(1.0, theme::text_dim()));
+                let hover_color = if theme::light() { Color32::BLACK } else { Color32::WHITE };
+                let hg = galley(ui, &album.name, theme::regular(13.5), hover_color, w);
+                ui.painter().galley(ar.min, hg, hover_color);
             }
             if r.clicked() {
                 acts.push(Action::Open(Target::Album(id.clone())));
