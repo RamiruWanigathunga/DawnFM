@@ -1172,26 +1172,30 @@ fn artist_top_songs_section(ui: &mut Ui, a: &crate::backend::ArtistPage, acts: &
         }
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             ui.spacing_mut().item_spacing = vec2(8.0, 0.0);
-            let next_enabled = cur_page + 1 < total_pages;
-            let (next_r, next_resp) = ui.allocate_exact_size(Vec2::splat(28.0), Sense::click());
-            let next_resp = named(next_resp, "Next songs").on_hover_cursor(if next_enabled { egui::CursorIcon::PointingHand } else { egui::CursorIcon::Default });
-            let nh = if next_resp.hovered() && next_enabled { 1.0 } else { 0.0 };
-            ui.painter().circle_filled(next_r.center(), 14.0, theme::glass(if next_enabled { 0.12 + 0.08 * nh } else { 0.04 }));
-            ui.painter().text(next_r.center(), Align2::CENTER_CENTER, "›", theme::bold(16.0), if next_enabled { theme::text() } else { theme::text_faint() });
-            if next_resp.clicked() && next_enabled {
-                cur_page += 1;
-                ui.ctx().data_mut(|d| d.insert_temp(page_id, cur_page));
+            if cur_page + 1 < total_pages {
+                let (next_r, next_resp) = ui.allocate_exact_size(Vec2::splat(28.0), Sense::click());
+                let next_resp = named(next_resp, "Next songs").on_hover_cursor(egui::CursorIcon::PointingHand);
+                let nh = if next_resp.hovered() { 1.0 } else { 0.0 };
+                ui.painter().rect_filled(next_r, 6.0, theme::glass(0.12 + 0.08 * nh));
+                ui.painter().rect_stroke(next_r, 6.0, egui::Stroke::new(1.0, theme::glass(0.08)), egui::StrokeKind::Inside);
+                ui.painter().text(next_r.center(), Align2::CENTER_CENTER, "›", theme::bold(16.0), theme::text());
+                if next_resp.clicked() {
+                    cur_page += 1;
+                    ui.ctx().data_mut(|d| d.insert_temp(page_id, cur_page));
+                }
             }
 
-            let prev_enabled = cur_page > 0;
-            let (prev_r, prev_resp) = ui.allocate_exact_size(Vec2::splat(28.0), Sense::click());
-            let prev_resp = named(prev_resp, "Previous songs").on_hover_cursor(if prev_enabled { egui::CursorIcon::PointingHand } else { egui::CursorIcon::Default });
-            let ph = if prev_resp.hovered() && prev_enabled { 1.0 } else { 0.0 };
-            ui.painter().circle_filled(prev_r.center(), 14.0, theme::glass(if prev_enabled { 0.12 + 0.08 * ph } else { 0.04 }));
-            ui.painter().text(prev_r.center(), Align2::CENTER_CENTER, "‹", theme::bold(16.0), if prev_enabled { theme::text() } else { theme::text_faint() });
-            if prev_resp.clicked() && prev_enabled {
-                cur_page = cur_page.saturating_sub(1);
-                ui.ctx().data_mut(|d| d.insert_temp(page_id, cur_page));
+            if cur_page > 0 {
+                let (prev_r, prev_resp) = ui.allocate_exact_size(Vec2::splat(28.0), Sense::click());
+                let prev_resp = named(prev_resp, "Previous songs").on_hover_cursor(egui::CursorIcon::PointingHand);
+                let ph = if prev_resp.hovered() { 1.0 } else { 0.0 };
+                ui.painter().rect_filled(prev_r, 6.0, theme::glass(0.12 + 0.08 * ph));
+                ui.painter().rect_stroke(prev_r, 6.0, egui::Stroke::new(1.0, theme::glass(0.08)), egui::StrokeKind::Inside);
+                ui.painter().text(prev_r.center(), Align2::CENTER_CENTER, "‹", theme::bold(16.0), theme::text());
+                if prev_resp.clicked() {
+                    cur_page = cur_page.saturating_sub(1);
+                    ui.ctx().data_mut(|d| d.insert_temp(page_id, cur_page));
+                }
             }
         });
     });
