@@ -1114,12 +1114,9 @@ fn artist_latest_release_card(ui: &mut Ui, a: &crate::backend::ArtistPage, acts:
     let latest = a.albums.first();
     let (card_rect, resp) = ui.allocate_exact_size(vec2(width, 132.0), Sense::click());
     let resp = named(resp, "Latest release").on_hover_cursor(egui::CursorIcon::PointingHand);
-    let h = if resp.hovered() { 1.0 } else { 0.0 };
-    ui.painter().rect_filled(card_rect, 12.0, theme::glass(0.06 + 0.06 * h));
-    ui.painter().rect_stroke(card_rect, 12.0, egui::Stroke::new(1.0, theme::glass(0.08 + 0.06 * h)), egui::StrokeKind::Inside);
 
     let art_size = 106.0;
-    let art_rect = Rect::from_min_size(pos2(card_rect.left() + 13.0, card_rect.center().y - art_size / 2.0), Vec2::splat(art_size));
+    let art_rect = Rect::from_min_size(pos2(card_rect.left() + 2.0, card_rect.center().y - art_size / 2.0), Vec2::splat(art_size));
     let thumbs = latest.map(|l| l.thumbs.as_slice()).unwrap_or_default();
     paint_cover(ui, art_rect, thumbs, 8.0, 1.0);
 
