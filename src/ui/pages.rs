@@ -1154,9 +1154,11 @@ fn artist_top_songs_section(ui: &mut Ui, a: &crate::backend::ArtistPage, acts: &
     if top.is_empty() {
         return;
     }
+    let num_cols = if width >= 650.0 { 3 } else if width >= 420.0 { 2 } else { 1 };
+    let items_per_page = (num_cols * 5).max(5); // At least 15 songs in 3-column mode, scaling down to fit smaller widths
     let page_id = ui.scope_id().with("top_songs_carousel");
     let mut cur_page = ui.ctx().data(|d| d.get_temp::<usize>(page_id)).unwrap_or(0);
-    let total_pages = top.len().div_ceil(6).max(1);
+    let total_pages = top.len().div_ceil(items_per_page).max(1);
     if cur_page >= total_pages {
         cur_page = 0;
     }
@@ -1199,11 +1201,10 @@ fn artist_top_songs_section(ui: &mut Ui, a: &crate::backend::ArtistPage, acts: &
 
     ui.add_space(10.0);
 
-    // 3-column compact song tiles grid (showing 6 top tracks in a 2-row × 3-column configuration)
-    let start = cur_page * 6;
-    let page_tracks = &top[start..(start + 6).min(top.len())];
+    // Compact song tiles grid (showing up to 15 top tracks in 5-row configuration)
+    let start = cur_page * items_per_page;
+    let page_tracks = &top[start..(start + items_per_page).min(top.len())];
 
-    let num_cols = if width >= 650.0 { 3 } else if width >= 420.0 { 2 } else { 1 };
     let col_gap = 12.0;
     let col_w = ((width - (num_cols - 1) as f32 * col_gap) / num_cols as f32).max(120.0);
     let tile_h = 46.0;
