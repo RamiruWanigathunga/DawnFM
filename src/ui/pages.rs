@@ -163,6 +163,63 @@ fn app_accent(ui: &Ui) -> Color32 {
     ui.ctx().data(|d| d.get_temp::<Color32>(egui::Id::unique("accent"))).unwrap_or(theme::RED)
 }
 
+/// "ALBUM · 2024" / "PLAYLIST · 42 SONGS · 2 HR 10 MIN": the line under the artist.
+pub fn header_meta(c: &crate::backend::Collection) -> String {
+    let mut parts = vec![if c.is_album { "ALBUM".to_owned() } else { "PLAYLIST".to_owned() }];
+    if c.is_album {
+        if let Some(y) = c.subtitle.split(" • ").map(str::trim).find(|p| p.len() == 4 && p.chars().all(|ch| ch.is_ascii_digit())) {
+            parts.push(y.to_owned());
+        }
+    } else {
+        let n = c.count.map_or(c.tracks.len() as u64, |n| n);
+        parts.push(format!("{n} SONGS"));
+    }
+    let total: u32 = c.tracks.iter().filter_map(|t| t.duration).sum();
+    if total >= 3600 {
+        parts.push(format!("{} HR {} MIN", total / 3600, total % 3600 / 60));
+    } else if total > 0 {
+        parts.push(format!("{} MIN", total / 60));
+    }
+    parts.join(" · ")
+}
+
+pub fn circle_action(ui: &mut Ui, glyph: CircleGlyph, name: &str, active: bool) -> egui::Response {
+    // Same 38 px height as the Play pill beside it, so the row shares one centre line.
+    let (rect, resp) = ui.allocate_exact_size(Vec2::splat(38.0), Sense::click());
+    let resp = named(resp, name).on_hover_text(name).on_hover_cursor(egui::CursorIcon::PointingHand);
+    let open = egui::Popup::is_id_open(ui.ctx(), egui::Popup::default_response_id(&resp));
+    let h = theme::anim_bool(ui.ctx(), resp.id.with("h"), resp.hovered() || open, 0.15);
+    let press = if resp.is_pointer_button_down_on() { 18.3 } else { 19.0 };
+    ui.painter().circle_filled(rect.center(), press, theme::glass(0.10 + 0.09 * h));
+    let base = if crate::preset::active().app.chip == crate::preset::ChipStyle::Accent { app_accent(ui) } else { theme::text_dim() };
+    let color = theme::lerp_color(base, theme::text(), h.max(active as u8 as f32));
+    match glyph {
+        CircleGlyph::Char(g) => widgets::icon_at(ui, rect.center(), g, 16.0, color),
+        CircleGlyph::More => {
+            for i in -1..=1 {
+                ui.painter().circle_filled(rect.center() + vec2(i as f32 * 5.2, 0.0), 1.8, color);
+            }
+        }
+    }
+    resp
+}
+
+/// A page's main Play button. Shows Pause while this page's album / playlist / artist
+/// is playing, and toggles instead of restarting when it's already loaded.
+pub fn play_pill(ui: &mut Ui, acts: &mut Vec<Action>, target: &Target, tracks: &[Track]) -> egui::Response {
+    let active = widgets::active_state(ui, target);
+    let (label, glyph) = if active == Some(true) { (t!("pause"), icon::PAUSE) } else { (t!("play"), icon::PLAY) };
+    let resp = pill(ui, &label, Some(glyph), true);
+    if resp.clicked() {
+        if active.is_some() {
+            acts.push(Action::TogglePlay);
+        } else if !tracks.is_empty() {
+            acts.push(Action::Play(tracks.to_vec(), 0));
+        }
+    }
+    resp
+}
+
 const PEACH: Color32 = Color32::from_rgb(0xE0, 0x7A, 0x5F);
 const PEACH_HOVER: Color32 = Color32::from_rgb(0xEB, 0x8B, 0x72);
 const PEACH_TEXT: Color32 = Color32::from_rgb(0x1a, 0x14, 0x12);
@@ -189,14 +246,6 @@ pub fn peach_pill(ui: &mut Ui, label: &str, glyph: Option<char>) -> egui::Respon
     resp
 }
 
-pub fn play_pill(ui: &mut Ui, acts: &mut Vec<Action>, target: &Target, tracks: &[Track]) -> egui::Response {
-    let resp = peach_pill(ui, &crate::t!("play"), Some(crate::theme::icon::PLAY));
-    if resp.clicked() && !tracks.is_empty() {
-        acts.push(Action::PlayCollection(target.clone(), false));
-    }
-    resp
-}
-
 pub fn peach_circle(ui: &mut Ui, name: &str, glyph: CircleGlyph) -> egui::Response {
     let (rect, resp) = ui.allocate_exact_size(Vec2::splat(36.0), Sense::click());
     let resp = named(resp, name).on_hover_text(name).on_hover_cursor(egui::CursorIcon::PointingHand);
@@ -211,10 +260,6 @@ pub fn peach_circle(ui: &mut Ui, name: &str, glyph: CircleGlyph) -> egui::Respon
         }
     }
     resp
-}
-
-pub fn circle_action(ui: &mut Ui, glyph: CircleGlyph, name: &str, _active: bool) -> egui::Response {
-    peach_circle(ui, name, glyph)
 }
 
 pub fn metadata_badge(ui: &mut Ui, glyph: Option<char>, label: &str) {
@@ -826,8 +871,6 @@ pub fn collection(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
     let side = (ui.available_width() * 0.3).clamp(200.0, 300.0);
     let px = (side * ui.ctx().pixels_per_point()).round().max(256.0) as u32;
     let sprite = app.apple_sprite(ui.ctx(), &release, &artist, px);
-    let dominant = app.dominant_color();
-    let accent = app.accent_color();
     let Some(o) = app.lists.get(id) else { return };
     let (c, more) = (&o.c, app.receiving(id));
     let acts = &mut app.actions;
@@ -839,19 +882,10 @@ pub fn collection(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
     let mut start_select = false;
     let mut stop_select = false;
     let photo = artist_id.as_ref().and_then(|a| app.artist_photos.get(a)).filter(|t| !t.is_empty());
-    let glow_h = (side + 120.0).clamp(320.0, 420.0);
-    let glow_rect = Rect::from_min_size(ui.cursor().min, vec2(ui.available_width(), glow_h));
-    let glow_color = if (dominant.r() as u32 + dominant.g() as u32 + dominant.b() as u32) < 50 {
-        accent
-    } else {
-        dominant
-    };
-    paint_ambient_glow(ui.painter(), glow_rect, glow_color);
-
     ui.add_space(18.0);
     ui.horizontal_top(|ui| {
         let (img, _) = ui.allocate_exact_size(Vec2::splat(side), Sense::hover());
-        let radius = 14.0;
+        let radius = theme::card_radius() + 2.0;
         widgets::soft_shadow(ui, img, radius, 40.0, 0.5);
         paint_cover(ui, img, &c.thumbs, radius, 1.0);
         if let Some(s) = &sprite {
@@ -875,20 +909,20 @@ pub fn collection(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
             // The account's own lists have no byline row (it'd only name the listener), so
             // the rest sits lower by its height to stay bottom-aligned.
             ui.add_space((side - 200.0).max(6.0) + if auto { 42.0 } else { 0.0 });
-            let title = widgets::galley_wrapped(ui, &c.title, theme::bold(38.0), theme::text(), ui.available_width() - 140.0, 2);
+            let title = widgets::galley_wrapped(ui, &c.title, theme::bold(34.0), theme::text(), ui.available_width(), 2);
             ui.label(title);
             if !auto {
                 ui.add_space(8.0);
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing = vec2(10.0, 0.0);
                     if let Some(a) = c.artists.first() {
-                        let (r, _) = ui.allocate_exact_size(Vec2::splat(28.0), Sense::hover());
-                        ui.painter().circle_filled(r.center(), 14.0, theme::glass(0.10));
+                        let (r, _) = ui.allocate_exact_size(Vec2::splat(34.0), Sense::hover());
+                        ui.painter().circle_filled(r.center(), 17.0, theme::glass(0.10));
                         match photo {
-                            Some(t) => paint_cover(ui, r, t, 14.0, 1.0),
-                            None => widgets::icon_at(ui, r.center(), icon::CIRCLE_USER, 16.0, theme::text_dim()),
+                            Some(t) => paint_cover(ui, r, t, 17.0, 1.0),
+                            None => widgets::icon_at(ui, r.center(), icon::CIRCLE_USER, 18.0, theme::text_dim()),
                         }
-                        let name = widgets::galley(ui, &a.name, theme::semibold(18.0), theme::text(), 360.0);
+                        let name = widgets::galley(ui, &a.name, theme::semibold(20.0), theme::text(), 360.0);
                         let (nr, resp) = ui.allocate_exact_size(name.size(), Sense::click());
                         let resp = named(resp, &a.name).on_hover_cursor(egui::CursorIcon::PointingHand);
                         let fg = if resp.hovered() { theme::lerp_color(theme::text(), app_accent(ui), 0.5) } else { theme::text() };
@@ -898,57 +932,43 @@ pub fn collection(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
                         {
                             acts.push(Action::Open(Target::Artist(aid.clone())));
                         }
-                        ui.label(RichText::new("✓").font(theme::semibold(14.0)).color(theme::text_dim()));
                     } else {
                         ui.label(RichText::new(c.byline()).font(theme::semibold(18.0)).color(theme::text_dim()));
+                    }
+                    // Saved to the library: a tick; otherwise a plus to save it.
+                    if let Some(save_id) = save_id.clone() {
+                        let (r, resp) = ui.allocate_exact_size(Vec2::splat(34.0), Sense::click());
+                        let name = if saved { "Remove from library" } else { "Save to library" };
+                        let resp = named(resp, name).on_hover_text(name).on_hover_cursor(egui::CursorIcon::PointingHand);
+                        let h = if resp.hovered() { 1.0 } else { 0.0 };
+                        ui.painter().rect_filled(r, 8.0, theme::glass(0.10 + 0.08 * h));
+                        widgets::icon_at(ui, r.center(), if saved { icon::CHECK } else { icon::LIST_PLUS }, 17.0, theme::text());
+                        if resp.clicked() {
+                            acts.push(Action::SaveCollection(save_id, !saved));
+                        }
                     }
                 });
             }
             ui.add_space(8.0);
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing = vec2(8.0, 0.0);
-                if is_album {
-                    metadata_badge(ui, Some('☊'), collection_genre(c));
-                    let year = c.subtitle.split(" • ").map(str::trim).find(|p| p.len() == 4 && p.chars().all(|ch| ch.is_ascii_digit())).unwrap_or("2024");
-                    metadata_badge(ui, Some('◷'), year);
-                    let count = c.count.map_or(c.tracks.len(), |n| n as usize);
-                    metadata_badge(ui, Some('♫'), &format!("{count} TRACKS"));
-                } else {
-                    let count = c.count.map_or(c.tracks.len(), |n| n as usize);
-                    metadata_badge(ui, Some('♫'), &format!("{count} TRACKS"));
-                    let total: u32 = c.tracks.iter().filter_map(|t| t.duration).sum();
-                    if total > 0 {
-                        metadata_badge(ui, Some('◷'), &format!("{} MIN", total / 60));
-                    }
-                }
-            });
+            ui.label(RichText::new(header_meta(c)).font(theme::semibold(13.0)).color(theme::text_dim()));
             ui.add_space(16.0);
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing = vec2(10.0, 0.0);
-                let active = widgets::active_state(ui, &target);
-                let play_label = if active == Some(true) { t!("pause") } else { t!("play") };
-                let play_glyph = if active == Some(true) { icon::PAUSE } else { icon::PLAY };
-                if peach_pill(ui, &play_label, Some(play_glyph)).clicked() {
-                    if active.is_some() {
-                        acts.push(Action::TogglePlay);
-                    } else if !tracks.is_empty() {
-                        acts.push(Action::Play(tracks.to_vec(), 0));
-                    }
-                }
-                if peach_pill(ui, &t!("shuffle"), Some(icon::SHUFFLE)).clicked() && !tracks.is_empty() {
+                play_pill(ui, acts, &target, tracks);
+                if pill(ui, &t!("shuffle"), Some(icon::SHUFFLE), true).clicked() && !tracks.is_empty() {
                     let mut t = tracks.clone();
                     super::shuffle(&mut t);
                     acts.push(Action::Play(t, 0));
                 }
-                // Right controls: + Add pill button and ... circle button
+                // Round actions at the right end of the row.
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.spacing_mut().item_spacing = vec2(10.0, 0.0);
-                    let more = peach_circle(ui, "More options", CircleGlyph::More);
+                    ui.spacing_mut().item_spacing = vec2(12.0, 0.0);
+                    let more = circle_action(ui, CircleGlyph::More, "More", false);
                     egui::Popup::menu(&more).show(|ui| {
                         ui.set_width(226.0);
                         ui.add_space(3.0);
                         if let Some(first) = tracks.first()
-                            && widgets::menu_action(ui, Some(icon::RADIO), "Start radio")
+                            && widgets::menu_action(ui, Some(icon::RADIO), &t!("start_radio"))
                         {
                             acts.push(Action::Radio(first.clone()));
                         }
@@ -984,27 +1004,14 @@ pub fn collection(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
                         }
                         ui.add_space(3.0);
                     });
-                    if let Some(save_id) = save_id.clone() {
-                        let add_label = if saved { "✓ Added" } else { "+ Add" };
-                        if peach_pill(ui, add_label, None).clicked() {
-                            acts.push(Action::SaveCollection(save_id, !saved));
-                        }
+                    if circle_action(ui, CircleGlyph::Char(icon::SEARCH), "Search in this list", filter_on).clicked() {
+                        toggle_search = true;
                     }
-                });
-            });
-            ui.add_space(18.0);
-            ui.horizontal(|ui| {
-                let search_resp = widgets::icon_button(ui, icon::SEARCH, 18.0, "Search in this list", filter_on);
-                if search_resp.clicked() {
-                    toggle_search = true;
-                }
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    let (sort_rect, sort_resp) = ui.allocate_exact_size(Vec2::splat(28.0), Sense::click());
-                    let sort_resp = widgets::named(sort_resp, "Sort options").on_hover_cursor(egui::CursorIcon::PointingHand);
-                    if sort_resp.hovered() {
-                        ui.painter().circle_filled(sort_rect.center(), 14.0, theme::glass(0.10));
+                    if let Some(first) = tracks.first()
+                        && circle_action(ui, CircleGlyph::Char(icon::RADIO), "Start radio", false).clicked()
+                    {
+                        acts.push(Action::Radio(first.clone()));
                     }
-                    ui.painter().text(sort_rect.center(), Align2::CENTER_CENTER, "⇅", theme::bold(16.0), theme::text_dim());
                 });
             });
             if toggle_search {

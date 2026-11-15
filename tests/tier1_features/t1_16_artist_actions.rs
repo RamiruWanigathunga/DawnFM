@@ -20,7 +20,7 @@ fn test_artist_circular_buttons_present() {
 fn test_artist_circular_action_glyph() {
     run_headless_ui(|ui| {
         let resp = circle_action(ui, CircleGlyph::Char('★'), "Favorite artist", false);
-        assert_eq!(resp.rect.width(), 36.0);
+        assert_eq!(resp.rect.width(), 38.0);
     });
 }
 

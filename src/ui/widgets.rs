@@ -934,11 +934,7 @@ pub fn track_row(ui: &mut Ui, t: &Track, o: &RowOpts, acts: &mut Vec<Action>) ->
         x += 30.0;
     }
     if let Some(n) = o.number {
-        let is_popular = t.plays.is_some_and(|p| p > 0) || n <= 5;
-        if is_popular {
-            ui.painter().circle_filled(pos2(rect.left() + 14.0, cy), 2.5, Color32::from_white_alpha(220));
-        }
-        let slot = Rect::from_center_size(pos2(rect.left() + 36.0, cy), vec2(24.0, 24.0));
+        let slot = Rect::from_center_size(pos2(x + 12.0, cy), vec2(24.0, 24.0));
         if o.current {
             equalizer(ui, slot.shrink(4.0), o.time, o.playing, o.accent);
         } else if h > 0.5 {
@@ -946,7 +942,7 @@ pub fn track_row(ui: &mut Ui, t: &Track, o: &RowOpts, acts: &mut Vec<Action>) ->
         } else {
             ui.painter().text(slot.center(), Align2::CENTER_CENTER, n.to_string(), theme::regular(14.0), theme::text_dim());
         }
-        x = rect.left() + 60.0;
+        x += 36.0;
     } else {
         let img = Rect::from_min_size(pos2(x, cy - 20.0), Vec2::splat(40.0));
         let tr = theme::thumb_radius();
@@ -970,46 +966,20 @@ pub fn track_row(ui: &mut Ui, t: &Track, o: &RowOpts, acts: &mut Vec<Action>) ->
     let dur_w = 52.0;
     let avail = right - dur_w - x;
     let wide = avail > 520.0;
-    // Album rows (numbered): 7-column tracklist table matching Apple Music
+    // Album rows (numbered), wide: one line in columns, as in Music: title, artist,
+    // album, length.
     let album_row = o.number.is_some();
-    if album_row {
-        let is_popular = t.plays.is_some_and(|p| p > 0) || o.number.is_some_and(|n| n <= 5);
-        let title_color = if o.current { o.accent } else { theme::text() };
-        let show_extended_cols = rect.width() >= 550.0;
-        let right_margin = if show_extended_cols { 170.0 } else { 85.0 };
-        let title_max_w = (rect.right() - right_margin - x).max(40.0);
-        let title_galley = galley(ui, &t.title, theme::semibold(14.5), title_color, title_max_w - 24.0);
-        let tg_size = title_galley.size();
-        ui.painter().galley(pos2(x, cy - tg_size.y / 2.0), title_galley, title_color);
-        if o.liked || is_popular {
-            ui.painter().text(pos2(x + tg_size.x + 8.0, cy), Align2::LEFT_CENTER, "✓", theme::semibold(12.5), theme::text_dim());
+    if album_row && wide {
+        let title_col = theme::text();
+        let (artist_x, album_x) = (x + avail * 0.38, x + avail * 0.66);
+        text_at(ui, pos2(x, cy - 9.0), &t.title, theme::semibold(14.5), title_col, artist_x - x - 16.0);
+        linked_text(ui, pos2(artist_x, cy - 8.0), &t.artist_line(), &t.artists, theme::regular(13.5), theme::text_dim(), album_x - artist_x - 16.0, acts);
+        if let Some(album) = &t.album {
+            text_at(ui, pos2(album_x, cy - 8.0), &album.name, theme::regular(13.5), theme::text_dim(), right - dur_w - album_x - 10.0);
         }
-
-        if show_extended_cols {
-            // Col 4: Audio quality / Hi-Res icon
-            paint_quality_icon(ui, pos2(rect.right() - 146.0, cy), 13.0, false, theme::text_dim());
-
-            // Col 5: Musical metadata: BPM & Key
-            let (bpm, key) = track_bpm_key(t);
-            ui.painter().text(pos2(rect.right() - 98.0, cy - 7.0), Align2::RIGHT_CENTER, bpm.to_string(), theme::semibold(12.0), theme::text());
-            ui.painter().text(pos2(rect.right() - 98.0, cy + 6.0), Align2::RIGHT_CENTER, key, theme::regular(11.0), theme::text_dim());
-        }
-
-        // Col 6: Duration
         if let Some(d) = t.duration {
-            ui.painter().text(pos2(rect.right() - 42.0, cy), Align2::RIGHT_CENTER, super::fmt_time(d), theme::regular(13.0), theme::text_dim());
+            ui.painter().text(pos2(right, cy), Align2::RIGHT_CENTER, super::fmt_time(d), theme::regular(13.0), theme::text_dim());
         }
-
-        // Col 7: Actions: ... button
-        let more_rect = Rect::from_center_size(pos2(rect.right() - 16.0, cy), vec2(22.0, 22.0));
-        let more_resp = named(ui.interact(more_rect, base.id.with("more_col"), Sense::click()), "Song options").on_hover_cursor(egui::CursorIcon::PointingHand);
-        let more_h = more_resp.hovered();
-        if more_h {
-            ui.painter().circle_filled(more_rect.center(), 11.0, theme::glass(0.12));
-        }
-        paint_more_dots(ui.painter(), more_rect.center(), 4.2, 1.5, if more_h { theme::text() } else { theme::text_dim() });
-        egui::Popup::menu(&more_resp).show(|ui| song_menu(ui, t, o.liked, o.remove, acts));
-
         egui::Popup::context_menu(&resp).show(|ui| song_menu(ui, t, o.liked, o.remove, acts));
         return resp;
     }

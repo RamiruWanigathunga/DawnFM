@@ -77,33 +77,10 @@ fn test_tracklist_narrow_viewport_omits_extended_columns() {
     let shapes = extract_shapes(&full_output.shapes);
     let texts = extract_texts(&shapes);
 
-    // On narrow viewports (< 550px), Col 4 (Audio quality icon) and Col 5 (BPM & Key) MUST be omitted
-    let has_image = shapes.iter().any(|s| match s {
-        egui::Shape::Mesh(m) => m.texture_id != egui::TextureId::default(),
-        _ => false,
-    });
-    assert!(
-        !has_image,
-        "Audio quality icon must be omitted on narrow viewport (< 550px)"
-    );
-
-    let (bpm, key) = track_bpm_key(&track);
-    assert!(
-        !texts.iter().any(|t| t == &bpm.to_string()),
-        "BPM must not be rendered when viewport is narrower than 550px: {:?}",
-        texts
-    );
-    assert!(
-        !texts.iter().any(|t| t == key),
-        "Musical key must not be rendered when viewport is narrower than 550px: {:?}",
-        texts
-    );
-
-    // Essential columns (Track #, Title, Duration, Checkmark) must still be present
+    // Essential columns (Track #, Title, Duration) must still be present
     assert!(texts.iter().any(|t| t == "1"), "Track number must remain visible");
     assert!(texts.iter().any(|t| t.contains("Blinding Lights")), "Title must remain visible");
     assert!(texts.iter().any(|t| t == "3:20"), "Duration must remain visible");
-    assert!(texts.iter().any(|t| t.contains('✓')), "Checkmark must remain visible");
 }
 
 #[test]
