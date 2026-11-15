@@ -1105,7 +1105,7 @@ fn wordmark(ui: &Ui, base: egui::Pos2, logo: &crate::apple::LogoSrc, max_w: f32)
     if ready {
         let rect = Rect::from_min_size(pos2(base.x, base.y - 40.0 - size.y), size);
         let uv = Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0));
-        widgets::paint_remote(ui, &url, rect, 0.0, uv, Color32::WHITE);
+        widgets::paint_remote(ui, &url, rect, 0.0, uv, theme::text());
     }
     ready
 }
@@ -1342,9 +1342,13 @@ pub fn artist(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
     ui.painter().circle_stroke(star_center, 19.0, egui::Stroke::new(1.0, theme::glass(0.12)));
     ui.painter().text(star_center, Align2::CENTER_CENTER, "★", theme::semibold(16.0), theme::text());
 
-    // Artist name: large bold clean typography
-    let name_pos = pos2(base_x, btn_y - 36.0);
-    ui.painter().text(name_pos, Align2::LEFT_BOTTOM, &name, theme::bold(52.0), theme::text());
+    // Artist name: show special Apple wordmark logo if available, otherwise large bold typography
+    let logo_base = hero.left_bottom() + vec2(28.0, -30.0);
+    let drawn = apple.as_ref().and_then(|x| x.logo.as_ref()).is_some_and(|logo| wordmark(ui, logo_base, logo, w * 0.62));
+    if !drawn {
+        let name_pos = pos2(base_x, btn_y - 36.0);
+        ui.painter().text(name_pos, Align2::LEFT_BOTTOM, &name, theme::bold(52.0), theme::text());
+    }
 
     // Split Two-Column Layout Section below hero banner
     ui.add_space(26.0);
@@ -1381,7 +1385,6 @@ pub fn artist(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
     if let Some(d) = a.description.as_deref().filter(|d| !d.trim().is_empty()) {
         shelf_header(ui, "", "About", None, None, false);
         let full = ui.available_width().min(820.0);
-        let drawn = apple.as_ref().and_then(|x| x.logo.as_ref()).is_some_and(|logo| wordmark(ui, hero.left_bottom() + vec2(28.0, -30.0), logo, w * 0.62));
         let beside = drawn.then_some(signature.as_ref()).flatten();
         if let Some(tex) = beside {
             ui.horizontal_top(|ui| {
@@ -1397,7 +1400,7 @@ pub fn artist(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
                     size = vec2(140.0 * aspect, 140.0);
                 }
                 let (rect, _) = ui.allocate_exact_size(vec2(size.x, size.y + 22.0), Sense::hover());
-                ui.painter().text(rect.left_top(), Align2::LEFT_TOP, format!("Signed by {name}"), theme::regular(12.0), Color32::from_white_alpha(199));
+                ui.painter().text(rect.left_top(), Align2::LEFT_TOP, format!("Signed by {name}"), theme::regular(12.0), theme::text_dim());
                 let img = Rect::from_min_size(pos2(rect.left(), rect.top() + 22.0), size);
                 let tex = egui::load::SizedTexture::from_handle(tex);
                 egui::Image::from_texture(tex).uv(Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0))).paint_at(ui, img);
