@@ -1134,10 +1134,10 @@ fn artist_latest_release_card(ui: &mut Ui, a: &crate::backend::ArtistPage, acts:
         .unwrap_or_else(|| "MAY 14, 2026".to_owned());
     ui.painter().text(pos2(text_x, cy - 36.0), Align2::LEFT_TOP, date_str.to_uppercase(), theme::semibold(10.5), theme::text_dim());
 
-    // Title: bold white
+    // Title: bold text
     let title = latest.map(|l| l.title.as_str()).unwrap_or("Blossom Tree - Single");
-    let tg = widgets::galley_wrapped(ui, title, theme::bold(14.0), Color32::WHITE, text_w, 2);
-    ui.painter().galley(pos2(text_x, cy - 14.0), tg, Color32::WHITE);
+    let tg = widgets::galley_wrapped(ui, title, theme::bold(14.0), theme::text(), text_w, 2);
+    ui.painter().galley(pos2(text_x, cy - 14.0), tg, theme::text());
 
     // Song count: muted text e.g. "1 Song"
     let sub = latest.map(|l| if l.subtitle.contains("Single") { "1 Song" } else { "Album" }).unwrap_or("1 Song");
@@ -1163,7 +1163,7 @@ fn artist_top_songs_section(ui: &mut Ui, a: &crate::backend::ArtistPage, acts: &
 
     // Header row: "Top Songs" + clickable chevron ">", and on the right "<" ">" carousel pagination buttons
     ui.horizontal(|ui| {
-        let title_label = ui.label(RichText::new("Top Songs").font(theme::bold(22.0)).color(Color32::WHITE));
+        let title_label = ui.label(RichText::new("Top Songs").font(theme::bold(22.0)).color(theme::text()));
         if let Some(pl) = &a.top_playlist {
             let chevron_resp = named(ui.add(egui::Label::new(RichText::new("›").font(theme::bold(22.0)).color(theme::text_dim())).sense(Sense::click())), "Show all top songs")
                 .on_hover_cursor(egui::CursorIcon::PointingHand);
@@ -1236,7 +1236,7 @@ fn artist_top_songs_section(ui: &mut Ui, a: &crate::backend::ArtistPage, acts: &
                     let more_rect = Rect::from_center_size(pos2(tile_rect.right() - 14.0, tile_rect.center().y), vec2(20.0, 20.0));
                     let more_resp = named(ui.interact(more_rect, ui.scope_id().with(("top_more", global_idx)), Sense::click()), "Song options")
                         .on_hover_cursor(egui::CursorIcon::PointingHand);
-                    let dots_color = Color32::from_rgb(0xE0, 0x7A, 0x5F); // pink/salmon dots as in screenshot
+                    let dots_color = if more_resp.hovered() { theme::text() } else { theme::text_dim() };
                     widgets::paint_more_dots(ui.painter(), more_rect.center(), 3.5, 1.5, dots_color);
                     egui::Popup::menu(&more_resp).show(|ui| {
                         widgets::song_menu(ui, t, liked.contains(&t.id), None, acts);
@@ -1245,8 +1245,8 @@ fn artist_top_songs_section(ui: &mut Ui, a: &crate::backend::ArtistPage, acts: &
                     // Title & Subtitle in middle
                     let text_x = art_rect.right() + 10.0;
                     let text_w = (more_rect.left() - text_x - 6.0).max(30.0);
-                    let title_g = widgets::galley(ui, &t.title, theme::semibold(13.0), Color32::WHITE, text_w);
-                    ui.painter().galley(pos2(text_x, tile_rect.center().y - 14.0), title_g, Color32::WHITE);
+                    let title_g = widgets::galley(ui, &t.title, theme::semibold(13.0), theme::text(), text_w);
+                    ui.painter().galley(pos2(text_x, tile_rect.center().y - 14.0), title_g, theme::text());
 
                     let sub = t.album.as_ref().map(|a| a.name.clone()).unwrap_or_else(|| t.artist_line());
                     let sub_g = widgets::galley(ui, &sub, theme::regular(11.5), theme::text_dim(), text_w);
@@ -1303,8 +1303,8 @@ pub fn artist(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
     } else {
         ui.painter().rect_filled(hero, 14.0, theme::with_alpha(accent, 0.25));
     }
-    // Smooth multi-stop downward vertical gradient dissolve into #161311
-    paint_hero_gradient_dissolve(ui.painter(), hero, Color32::from_rgb(0x16, 0x13, 0x11));
+    // Smooth multi-stop downward vertical gradient dissolve into page background
+    paint_hero_gradient_dissolve(ui.painter(), hero, theme::bg());
 
     let base_x = hero.left() + 28.0;
     let btn_y = hero.bottom() - 36.0;
@@ -1315,7 +1315,7 @@ pub fn artist(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
     let more_h = more_resp.hovered();
     ui.painter().circle_filled(more_rect.center(), 19.0, theme::glass(0.15 + 0.08 * (more_h as u8 as f32)));
     ui.painter().circle_stroke(more_rect.center(), 19.0, egui::Stroke::new(1.0, theme::glass(0.12)));
-    widgets::paint_more_dots(ui.painter(), more_rect.center(), 4.8, 1.8, Color32::WHITE);
+    widgets::paint_more_dots(ui.painter(), more_rect.center(), 4.8, 1.8, theme::text());
     egui::Popup::menu(&more_resp).show(|ui| {
         ui.set_width(200.0);
         if let Some(first) = top.first()
@@ -1328,12 +1328,13 @@ pub fn artist(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
         }
     });
 
-    // Circle 2: Large circular Play button (▶) with warm accent
-    let play_center = pos2(base_x + 19.0 + 38.0 + 14.0 + 24.0, btn_y);
+    // Circle 2: Large circular Play button (▶) with red accent
+    let gap = 14.0;
+    let play_center = pos2(base_x + 38.0 + gap + 24.0, btn_y);
     let play_rect = Rect::from_center_size(play_center, vec2(48.0, 48.0));
     let play_resp = named(ui.interact(play_rect, ui.scope_id().with("hero_play"), Sense::click()), "Play artist").on_hover_cursor(egui::CursorIcon::PointingHand);
     let play_h = play_resp.hovered();
-    let play_bg = if play_h { Color32::from_rgb(0xD9, 0x7E, 0x62) } else { Color32::from_rgb(0xC8, 0x6D, 0x51) };
+    let play_bg = if play_h { Color32::from_rgb(0xFA, 0x48, 0x5E) } else { theme::RED };
     ui.painter().circle_filled(play_center, 24.0, play_bg);
     widgets::play_triangle(ui, play_center, 8.5, Color32::WHITE);
     if play_resp.clicked() && !top.is_empty() {
@@ -1341,26 +1342,17 @@ pub fn artist(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
     }
 
     // Circle 3: Star button (★)
-    let star_center = pos2(play_center.x + 24.0 + 14.0 + 19.0, btn_y);
+    let star_center = pos2(play_center.x + 24.0 + gap + 19.0, btn_y);
     let star_rect = Rect::from_center_size(star_center, vec2(38.0, 38.0));
     let star_resp = named(ui.interact(star_rect, ui.scope_id().with("hero_star"), Sense::click()), "Favorite artist").on_hover_cursor(egui::CursorIcon::PointingHand);
     let star_h = star_resp.hovered();
     ui.painter().circle_filled(star_center, 19.0, theme::glass(0.15 + 0.08 * (star_h as u8 as f32)));
     ui.painter().circle_stroke(star_center, 19.0, egui::Stroke::new(1.0, theme::glass(0.12)));
-    ui.painter().text(star_center, Align2::CENTER_CENTER, "★", theme::semibold(16.0), Color32::WHITE);
+    ui.painter().text(star_center, Align2::CENTER_CENTER, "★", theme::semibold(16.0), theme::text());
 
     // Artist name: large bold clean typography
     let name_pos = pos2(base_x, btn_y - 36.0);
-    ui.painter().text(name_pos, Align2::LEFT_BOTTOM, &name, theme::bold(52.0), Color32::WHITE);
-
-    // Upcoming Concerts pill badge: [ 🎫 Upcoming Concerts ]
-    let badge_rect = Rect::from_min_size(pos2(base_x, name_pos.y - 70.0), vec2(174.0, 28.0));
-    let badge_resp = named(ui.interact(badge_rect, ui.scope_id().with("hero_concerts"), Sense::click()), "Upcoming Concerts").on_hover_cursor(egui::CursorIcon::PointingHand);
-    let badge_h = badge_resp.hovered();
-    ui.painter().rect_filled(badge_rect, 14.0, theme::glass(0.15 + 0.08 * (badge_h as u8 as f32)));
-    ui.painter().rect_stroke(badge_rect, 14.0, egui::Stroke::new(1.0, theme::glass(0.20)), egui::StrokeKind::Inside);
-    ui.painter().text(pos2(badge_rect.left() + 10.0, badge_rect.center().y), Align2::LEFT_CENTER, "🎫", theme::regular(13.0), Color32::WHITE);
-    ui.painter().text(pos2(badge_rect.left() + 28.0, badge_rect.center().y), Align2::LEFT_CENTER, "Upcoming Concerts", theme::semibold(12.5), Color32::WHITE);
+    ui.painter().text(name_pos, Align2::LEFT_BOTTOM, &name, theme::bold(52.0), theme::text());
 
     // Split Two-Column Layout Section below hero banner
     ui.add_space(26.0);
