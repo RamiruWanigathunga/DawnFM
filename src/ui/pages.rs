@@ -1232,19 +1232,9 @@ fn artist_top_songs_section(ui: &mut Ui, a: &crate::backend::ArtistPage, acts: &
                         widgets::play_triangle(ui, art_rect.center(), 6.0, Color32::WHITE);
                     }
 
-                    // Options dots ... on the right edge
-                    let more_rect = Rect::from_center_size(pos2(tile_rect.right() - 14.0, tile_rect.center().y), vec2(20.0, 20.0));
-                    let more_resp = named(ui.interact(more_rect, ui.scope_id().with(("top_more", global_idx)), Sense::click()), "Song options")
-                        .on_hover_cursor(egui::CursorIcon::PointingHand);
-                    let dots_color = if more_resp.hovered() { theme::text() } else { theme::text_dim() };
-                    widgets::paint_more_dots(ui.painter(), more_rect.center(), 3.5, 1.5, dots_color);
-                    egui::Popup::menu(&more_resp).show(|ui| {
-                        widgets::song_menu(ui, t, liked.contains(&t.id), None, acts);
-                    });
-
-                    // Title & Subtitle in middle
+                    // Title & Subtitle
                     let text_x = art_rect.right() + 10.0;
-                    let text_w = (more_rect.left() - text_x - 6.0).max(30.0);
+                    let text_w = (tile_rect.right() - text_x - 10.0).max(30.0);
                     let title_g = widgets::galley(ui, &t.title, theme::semibold(13.0), theme::text(), text_w);
                     ui.painter().galley(pos2(text_x, tile_rect.center().y - 14.0), title_g, theme::text());
 
