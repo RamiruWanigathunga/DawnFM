@@ -1048,42 +1048,7 @@ fn has_quality_glyph(info: &crate::hires::Info) -> bool {
     info.atmos || info.lossless()
 }
 
-/// Apple's own marks, from its "Symbols used in Music" page.
-fn quality_icon(atmos: bool) -> &'static [u8] {
-    if atmos {
-        include_bytes!("../../assets/quality/atmos.png")
-    } else {
-        include_bytes!("../../assets/quality/lossless.png")
-    }
-}
-
-fn quality_icon_aspect(atmos: bool) -> f32 {
-    if atmos { 78.0 / 60.0 } else { 86.0 / 60.0 }
-}
-
-/// The icon as white pixels with its own alpha, so it takes the badge's tint.
-fn quality_icon_texture(ui: &Ui, atmos: bool) -> egui::TextureHandle {
-    let ctx = ui.ctx();
-    let id = egui::Id::unique(("quality-icon", atmos));
-    if let Some(tex) = ctx.data(|d| d.get_temp::<egui::TextureHandle>(id)) {
-        return tex;
-    }
-    let rgba = image::load_from_memory(quality_icon(atmos)).expect("quality icon").to_rgba8();
-    let mut img = egui::ColorImage::from_rgba_unmultiplied([rgba.width() as usize, rgba.height() as usize], rgba.as_raw());
-    for p in &mut img.pixels {
-        *p = Color32::from_white_alpha(p.a());
-    }
-    let tex = ctx.load_texture(if atmos { "apple-atmos" } else { "apple-lossless" }, img, egui::TextureOptions::LINEAR);
-    ctx.data_mut(|d| d.insert_temp(id, tex.clone()));
-    tex
-}
-
-fn paint_quality_icon(ui: &Ui, center: egui::Pos2, height: f32, atmos: bool, tint: Color32) {
-    let w = height * quality_icon_aspect(atmos);
-    let rect = Rect::from_center_size(center, vec2(w, height));
-    let uv = Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
-    ui.painter().image(quality_icon_texture(ui, atmos).id(), rect, uv, tint);
-}
+use crate::ui::widgets::{paint_quality_icon, quality_icon_aspect};
 
 /// How wide the quality mark is, so a line can leave room for it.
 pub(super) fn audio_badge_width(ui: &Ui, app: &App, small: bool) -> f32 {
