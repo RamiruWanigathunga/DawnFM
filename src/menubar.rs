@@ -53,6 +53,7 @@ fn item(id: &str, text: &str, mods: Modifiers, key: Option<Code>) -> MenuItem {
 /// Build the menu bar and route its clicks. Call once, on the main thread, once the
 /// app has finished launching. Also takes over the menu click handler for the
 /// tray's Show and Quit (there is one handler per process).
+#[cfg(target_os = "macos")]
 pub fn install(wake: impl Fn() + Send + Sync + Clone + 'static) {
     let cmd = Modifiers::META;
     let version = env!("CARGO_PKG_VERSION");
@@ -143,6 +144,9 @@ pub fn install(wake: impl Fn() + Send + Sync + Clone + 'static) {
     }));
     log::info!("menubar: installed");
 }
+
+#[cfg(not(target_os = "macos"))]
+pub fn install(_wake: impl Fn() + Send + Sync + Clone + 'static) {}
 
 fn open(url: &str) {
     let _ = std::process::Command::new("open").arg(url).spawn();

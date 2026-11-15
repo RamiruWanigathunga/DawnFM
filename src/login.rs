@@ -133,8 +133,15 @@ impl<'a> BuildIn<'a> for WebViewBuilder<'a> {
     }
 }
 
+/// The cookies the browser would send to `url`.
+#[cfg(not(target_os = "macos"))]
+fn cookies_for(webview: &wry::WebView, url: &str) -> wry::Result<Vec<wry::cookie::Cookie<'static>>> {
+    webview.cookies_for_url(url)
+}
+
 /// On macOS wry's `cookies_for_url` keeps only cookies set for exactly the page's host, so
 /// Google's, set for `.youtube.com`, never came back and signing in never finished.
+#[cfg(target_os = "macos")]
 fn cookies_for(webview: &wry::WebView, url: &str) -> wry::Result<Vec<wry::cookie::Cookie<'static>>> {
     let host = url::Url::parse(url).ok().and_then(|u| u.host_str().map(str::to_owned)).unwrap_or_default();
     Ok(webview.cookies()?.into_iter().filter(|c| c.domain().is_some_and(|d| domain_matches(&host, d))).collect())
@@ -166,6 +173,7 @@ pub fn forget(profile_dir: &std::path::Path) {
 /// profile gets a data store of its own (macOS 14+; older ones share the default),
 /// named by an id kept in the folder. `forget` deletes the folder, so the next sign-in
 /// starts from a fresh store.
+#[cfg(target_os = "macos")]
 fn store_id(profile_dir: &std::path::Path) -> [u8; 16] {
     use sha1::Digest;
     let file = profile_dir.join("store-id");
@@ -191,9 +199,11 @@ fn run(site: Site, profile_dir: PathBuf) -> anyhow::Result<Outcome> {
         .build(&event_loop)?;
 
     let proxy = event_loop.create_proxy();
+    #[cfg(target_os = "macos")]
     let store = store_id(&profile_dir);
     let mut context = WebContext::new(Some(profile_dir));
     let builder = WebViewBuilder::new_with_web_context(&mut context);
+    #[cfg(target_os = "macos")]
     let builder = {
         use wry::WebViewBuilderExtDarwin;
         // WKWebView's own user agent has no "Version/… Safari/…", so YouTube Music takes it

@@ -165,7 +165,7 @@ impl App {
         (self.play_songs && t.music_video && !self.jam.active()).then(|| t.clone())
     }
 
-    pub(super) fn playing(&self) -> bool {
+    pub fn playing(&self) -> bool {
         self.audio.status.playing.load(Ordering::Relaxed)
     }
 

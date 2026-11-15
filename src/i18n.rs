@@ -1,6 +1,42 @@
 //! Internationalization (i18n) infrastructure and locale detection for Dawn FM.
 
-pub use rust_i18n::{available_locales, locale, set_locale, t};
+pub use rust_i18n::{available_locales, locale, set_locale};
+
+/// Translates a key using the active runtime locale.
+pub fn translate(key: &str) -> String {
+    let loc = locale();
+    let val = crate::_rust_i18n_translate(&*loc, key);
+    let prefix = format!("{}.", &*loc);
+    if let Some(stripped) = val.strip_prefix(&prefix) {
+        stripped.to_string()
+    } else {
+        val.to_string()
+    }
+}
+
+/// Translates a key using an explicit locale.
+pub fn translate_locale(key: &str, loc: &str) -> String {
+    let val = crate::_rust_i18n_translate(loc, key);
+    let prefix = format!("{}.", loc);
+    if let Some(stripped) = val.strip_prefix(&prefix) {
+        stripped.to_string()
+    } else {
+        val.to_string()
+    }
+}
+
+/// Macro for direct key lookup across crate boundaries.
+#[macro_export]
+macro_rules! t {
+    ($key:expr) => {
+        $crate::i18n::translate($key)
+    };
+    ($key:expr, locale = $loc:expr) => {
+        $crate::i18n::translate_locale($key, $loc)
+    };
+}
+
+pub use t;
 
 /// Supported localization language codes.
 pub const SUPPORTED_LOCALES: &[&str] = &["en", "fr", "es", "de", "ja"];

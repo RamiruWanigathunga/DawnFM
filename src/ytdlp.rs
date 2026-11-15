@@ -120,8 +120,15 @@ fn run(bin: &Path, data_dir: &Path, video_id: &str, cookie: &str) -> anyhow::Res
         .arg(&jar)
         .args(crate::proxy::ytdlp_args())
         .arg(format!("https://music.youtube.com/watch?v={video_id}"));
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
     // Its own process group, so the whole tree (the onefile binary unpacks into a child,
     // plus Node) can be ended together.
+    #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;
         cmd.process_group(0);
@@ -139,7 +146,16 @@ fn run(bin: &Path, data_dir: &Path, video_id: &str, cookie: &str) -> anyhow::Res
             }
         }
         log::warn!("yt-dlp took too long; stopping it");
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            let mut kill = Command::new("taskkill");
+            kill.args(["/PID", &pid.to_string(), "/T", "/F"]).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null());
+            kill.creation_flags(0x0800_0000);
+            let _ = kill.status();
+        }
         // The process group it leads (see `process_group` above).
+        #[cfg(unix)]
         unsafe {
             libc::killpg(pid as libc::pid_t, libc::SIGKILL);
         }

@@ -74,6 +74,7 @@ pub fn install(wake: impl Fn() + Send + 'static) {
     mac::install();
 }
 
+#[cfg(target_os = "macos")]
 mod mac {
     use std::sync::atomic::{AtomicPtr, Ordering};
 
@@ -293,7 +294,13 @@ mod mac {
     }
 }
 
-#[cfg(test)]
+#[cfg(not(target_os = "macos"))]
+mod mac {
+    pub(super) fn set_playback_activity(_playing: bool) {}
+    pub(super) fn install() {}
+}
+
+#[cfg(all(test, target_os = "macos"))]
 mod tests {
     use super::*;
     use objc2::msg_send;

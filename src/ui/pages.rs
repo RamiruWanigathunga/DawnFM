@@ -152,8 +152,8 @@ fn placeholder(app: &mut App, ui: &mut Ui, now: f64, rows: usize, card: f32) {
 }
 
 /// What a collection header's round buttons draw.
-#[allow(dead_code)]
-enum CircleGlyph {
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum CircleGlyph {
     Char(char),
     More,
 }
@@ -167,7 +167,7 @@ const PEACH: Color32 = Color32::from_rgb(0xE0, 0x7A, 0x5F);
 const PEACH_HOVER: Color32 = Color32::from_rgb(0xEB, 0x8B, 0x72);
 const PEACH_TEXT: Color32 = Color32::from_rgb(0x1a, 0x14, 0x12);
 
-fn peach_pill(ui: &mut Ui, label: &str, glyph: Option<char>) -> egui::Response {
+pub fn peach_pill(ui: &mut Ui, label: &str, glyph: Option<char>) -> egui::Response {
     let font = theme::semibold(14.0);
     let galley = ui.painter().layout_no_wrap(label.to_owned(), font, PEACH_TEXT);
     let icon_w = if glyph.is_some() { 20.0 } else { 0.0 };
@@ -189,7 +189,15 @@ fn peach_pill(ui: &mut Ui, label: &str, glyph: Option<char>) -> egui::Response {
     resp
 }
 
-fn peach_circle(ui: &mut Ui, name: &str, glyph: CircleGlyph) -> egui::Response {
+pub fn play_pill(ui: &mut Ui, acts: &mut Vec<Action>, target: &Target, tracks: &[Track]) -> egui::Response {
+    let resp = peach_pill(ui, &crate::t!("play"), Some(crate::theme::icon::PLAY));
+    if resp.clicked() && !tracks.is_empty() {
+        acts.push(Action::PlayCollection(target.clone(), false));
+    }
+    resp
+}
+
+pub fn peach_circle(ui: &mut Ui, name: &str, glyph: CircleGlyph) -> egui::Response {
     let (rect, resp) = ui.allocate_exact_size(Vec2::splat(36.0), Sense::click());
     let resp = named(resp, name).on_hover_text(name).on_hover_cursor(egui::CursorIcon::PointingHand);
     let h = if resp.hovered() { 1.0 } else { 0.0 };
@@ -205,7 +213,11 @@ fn peach_circle(ui: &mut Ui, name: &str, glyph: CircleGlyph) -> egui::Response {
     resp
 }
 
-fn metadata_badge(ui: &mut Ui, glyph: Option<char>, label: &str) {
+pub fn circle_action(ui: &mut Ui, glyph: CircleGlyph, name: &str, _active: bool) -> egui::Response {
+    peach_circle(ui, name, glyph)
+}
+
+pub fn metadata_badge(ui: &mut Ui, glyph: Option<char>, label: &str) {
     let font = theme::semibold(11.5);
     let galley = ui.painter().layout_no_wrap(label.to_owned(), font, theme::text_dim());
     let icon_w = if glyph.is_some() { 16.0 } else { 0.0 };
@@ -223,7 +235,7 @@ fn metadata_badge(ui: &mut Ui, glyph: Option<char>, label: &str) {
     ui.painter().galley(pos2(x, cy - galley.size().y / 2.0), galley, theme::text_dim());
 }
 
-fn collection_genre(c: &crate::backend::Collection) -> &'static str {
+pub fn collection_genre(c: &crate::backend::Collection) -> &'static str {
     let text = format!("{} {} {}", c.title, c.subtitle, c.description.as_deref().unwrap_or_default()).to_lowercase();
     if text.contains("electro") || text.contains("synth") || text.contains("dance") || text.contains("house") || text.contains("techno") || text.contains("chromeo") {
         "ELECTRONIC"
@@ -246,7 +258,7 @@ fn collection_genre(c: &crate::backend::Collection) -> &'static str {
     }
 }
 
-fn paint_ambient_glow(painter: &egui::Painter, rect: Rect, color: Color32) {
+pub fn paint_ambient_glow(painter: &egui::Painter, rect: Rect, color: Color32) {
     let center = pos2(rect.left() + rect.width() * 0.35, rect.top() + rect.height() * 0.32);
     let radius = rect.width().max(rect.height()) * 0.65;
     let dark_bg = Color32::from_rgb(0x12, 0x12, 0x12);
@@ -267,7 +279,7 @@ fn paint_ambient_glow(painter: &egui::Painter, rect: Rect, color: Color32) {
     super::shell::vgradient(painter, rect, Color32::TRANSPARENT, theme::with_alpha(dark_bg, 0.94));
 }
 
-fn paint_hero_gradient_dissolve(painter: &egui::Painter, rect: Rect, bg: Color32) {
+pub fn paint_hero_gradient_dissolve(painter: &egui::Painter, rect: Rect, bg: Color32) {
     const STOPS: [(f32, u8); 6] = [
         (0.00, 0),
         (0.35, 0),
@@ -287,6 +299,25 @@ fn paint_hero_gradient_dissolve(painter: &egui::Painter, rect: Rect, bg: Color32
         let c1 = Color32::from_rgba_unmultiplied(bg.r(), bg.g(), bg.b(), a1);
         super::shell::vgradient(painter, seg, c0, c1);
     }
+}
+
+pub fn hero_height(viewport_width: f32) -> f32 {
+    (viewport_width * 0.34).clamp(240.0, 380.0)
+}
+
+pub fn filter_collection_tracks<'a>(tracks: &'a [Track], needle: &str) -> Vec<&'a Track> {
+    let q = needle.trim().to_lowercase();
+    if q.is_empty() {
+        return tracks.iter().collect();
+    }
+    tracks
+        .iter()
+        .filter(|t| {
+            t.title.to_lowercase().contains(&q)
+                || t.artist_line().to_lowercase().contains(&q)
+                || t.album.as_ref().is_some_and(|a| a.name.to_lowercase().contains(&q))
+        })
+        .collect()
 }
 
 fn card_row(ui: &mut Ui, id: &str, title: &str, cards: &[Card], acts: &mut Vec<Action>) {
@@ -772,7 +803,7 @@ fn top_result(ui: &mut Ui, c: &Card, pick: bool, acts: &mut Vec<Action>) {    ui
 
 // ------------------------------------------------------------------ album / playlist
 
-fn collection(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
+pub fn collection(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
     if app.opened(id).is_none() {
         placeholder(app, ui, now, 1, 232.0);
         return;
@@ -1231,7 +1262,7 @@ fn artist_top_songs_section(ui: &mut Ui, a: &crate::backend::ArtistPage, acts: &
     }
 }
 
-fn artist(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
+pub fn artist(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
     if app.artist.as_ref().is_none_or(|a| a.id != id) {
         placeholder(app, ui, now, 2, CARD);
         return;
@@ -1254,7 +1285,7 @@ fn artist(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
 
     // Full-width cinematic hero banner (~380px) fading into the page.
     let w = ui.available_width();
-    let hero_h = 380.0_f32.min(w * 0.45).max(300.0);
+    let hero_h = hero_height(w);
     let (hero, _) = ui.allocate_exact_size(vec2(w, hero_h), Sense::hover());
     if let Some(t) = a.banner.iter().max_by_key(|t| t.width) {
         let img_ratio = if t.height > 0 { t.width as f32 / t.height as f32 } else { 16.0 / 9.0 };

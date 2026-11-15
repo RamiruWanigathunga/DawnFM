@@ -1,6 +1,7 @@
 //! Shared headless test harness and simulation infrastructure for Dawn FM E2E tests.
 
 #![allow(dead_code)]
+#![allow(unused_imports)]
 
 pub mod fixtures;
 pub mod mock_backend;
@@ -223,4 +224,24 @@ pub fn assert_finite_vec2(v: Vec2) {
 /// Asserts that a Color32 has valid rgba channels.
 pub fn assert_finite_color(color: egui::Color32) {
     assert!(color.a() > 0 || color.r() == 0, "Color check valid");
+}
+
+/// Helper to recursively extract all RectShape primitives from egui output shapes.
+pub fn extract_rect_shapes(shapes: &[egui::epaint::ClippedShape]) -> Vec<egui::epaint::RectShape> {
+    let mut rects = Vec::new();
+    fn recurse(shape: &egui::Shape, rects: &mut Vec<egui::epaint::RectShape>) {
+        match shape {
+            egui::Shape::Rect(r) => rects.push(r.clone()),
+            egui::Shape::Vec(list) => {
+                for s in list {
+                    recurse(s, rects);
+                }
+            }
+            _ => {}
+        }
+    }
+    for clipped in shapes {
+        recurse(&clipped.shape, &mut rects);
+    }
+    rects
 }

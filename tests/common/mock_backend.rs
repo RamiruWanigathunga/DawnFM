@@ -134,6 +134,16 @@ impl MockCatalog {
             links: Vec::new(),
         }
     }
+
+    /// Creates a headless `dawnfm::ui::App` instance with sample tracks loaded and `np_open` enabled.
+    pub fn mock_headless_app() -> dawnfm::ui::App {
+        let mut app = dawnfm::ui::App::mock_headless();
+        let tracks = sample_tracks(5);
+        app.queue.replace(tracks, 0, None);
+        app.np_open = true;
+        app.np_tab = dawnfm::ui::NpTab::Art;
+        app
+    }
 }
 
 /// Simulated mock backend message bus tracking requests and feeding responses.

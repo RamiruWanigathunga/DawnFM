@@ -4,8 +4,9 @@
 
 use crate::model::Track;
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub enum Repeat {
+    #[default]
     Off,
     All,
     One,
@@ -14,6 +15,7 @@ pub enum Repeat {
 /// A playlist's load whose next pages also go to the queue, and whether that queue
 /// is shuffled (they're then mixed into what's still to come). `ran_out`: playback
 /// reached the end of what had come, and carries on when more does (or the load ends).
+#[derive(Clone, Debug, PartialEq)]
 pub struct QueueFill {
     pub id: String,
     pub load: u64,
@@ -29,6 +31,7 @@ pub struct Filled {
     pub was_at_end: bool,
 }
 
+#[derive(Clone, Debug, PartialEq)]
 pub struct Queue {
     pub tracks: Vec<Track>,
     /// The song playing (or paused, or loading).
@@ -37,6 +40,12 @@ pub struct Queue {
     /// The queue is a playlist played while its songs were still coming in: the rest
     /// join the queue as they arrive.
     pub fill: Option<QueueFill>,
+}
+
+impl Default for Queue {
+    fn default() -> Self {
+        Self::new(Repeat::Off)
+    }
 }
 
 /// How many songs before and after the current one a saved session keeps: liked-songs

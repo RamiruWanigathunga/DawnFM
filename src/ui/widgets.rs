@@ -782,6 +782,7 @@ pub fn equalizer_shown(ctx: &egui::Context) -> bool {
     ctx.data(|d| d.get_temp::<u64>(equalizer_id())).is_some_and(|f| f + 1 >= now)
 }
 
+#[derive(Clone, Debug, Default)]
 pub struct RowOpts {
     pub number: Option<usize>,
     pub show_album: bool,

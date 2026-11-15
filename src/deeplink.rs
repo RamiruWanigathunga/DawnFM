@@ -85,16 +85,46 @@ pub fn forward_show() -> bool {
     if std::env::args_os().any(|a| a == RELAUNCH_FLAG) {
         return false;
     }
+    #[cfg(windows)]
+    unsafe {
+        use windows::Win32::UI::WindowsAndMessaging::{ASFW_ANY, AllowSetForegroundWindow};
+        let _ = AllowSetForegroundWindow(ASFW_ANY);
+    }
     forward_to_running(SHOW_MSG)
 }
 
+#[cfg_attr(not(windows), allow(dead_code))]
+fn pipe_name() -> String {
+    let user: String = std::env::var("USERNAME")
+        .unwrap_or_default()
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+        .collect();
+    let mut name = format!(r"\\.\pipe\dawnfm-party-{user}");
+    if let Some(dir) = std::env::var_os("YTM_DATA_DIR") {
+        use std::hash::{Hash, Hasher};
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        dir.hash(&mut h);
+        name.push_str(&format!("-{:016x}", h.finish()));
+    }
+    name
+}
+
+#[cfg(windows)]
+pub use win::{forward_to_running, listen, register_protocol};
+
+#[cfg(not(windows))]
 pub fn forward_to_running(_code: &str) -> bool {
     false
 }
 
+#[cfg(not(windows))]
+pub fn register_protocol() {}
+
 type Waker = Box<dyn Fn() + Send>;
 static WAKE: Mutex<Option<Waker>> = Mutex::new(None);
 
+#[cfg(not(windows))]
 /// Wake the UI with `wake` whenever a link arrives. Codes queued before this (a cold
 /// launch from a link) get one wake now.
 pub fn listen(wake: impl Fn() + Send + 'static) {
@@ -118,16 +148,173 @@ fn receive(url: &str) {
     }
 }
 
-/// The scheme is registered by the bundle's Info.plist (`CFBundleURLTypes`);
-/// LaunchServices picks it up when the app is installed or first run.
-pub fn register_protocol() {}
-
-/// Start receiving `ytm-rs:` links. Call on the main thread before the event loop runs,
-/// so the Apple Event that launched the app isn't missed.
+/// Start receiving links. Call on the main thread before the event loop runs,
+/// so the launch event isn't missed.
 pub fn install() {
+    #[cfg(target_os = "macos")]
     mac::install();
 }
 
+#[cfg(windows)]
+mod win {
+    use std::io::Write;
+
+    use windows::Win32::Foundation::{CloseHandle, ERROR_PIPE_CONNECTED, HANDLE};
+    use windows::Win32::Storage::FileSystem::{FILE_FLAG_FIRST_PIPE_INSTANCE, PIPE_ACCESS_INBOUND, ReadFile};
+    use windows::Win32::System::Pipes::{
+        ConnectNamedPipe, CreateNamedPipeW, DisconnectNamedPipe, PIPE_READMODE_BYTE, PIPE_REJECT_REMOTE_CLIENTS, PIPE_TYPE_BYTE,
+        PIPE_WAIT,
+    };
+    use windows::Win32::System::Registry::{HKEY, HKEY_CURRENT_USER, REG_SZ, RegSetKeyValueW};
+    use windows::core::HSTRING;
+
+    use super::{pipe_name, push};
+
+    /// Hand `msg` (a link, or `show`) to a running instance. True if one took it.
+    pub fn forward_to_running(msg: &str) -> bool {
+        let name = pipe_name();
+        // The server has one pipe instance; between clients it is briefly busy.
+        for _ in 0..20 {
+            match std::fs::OpenOptions::new().write(true).open(&name) {
+                Ok(mut pipe) => {
+                    return pipe.write_all(format!("{msg}\n").as_bytes()).and_then(|_| pipe.flush()).is_ok();
+                }
+                // ERROR_PIPE_BUSY: another client is mid-handoff.
+                Err(e) if e.raw_os_error() == Some(231) => std::thread::sleep(std::time::Duration::from_millis(50)),
+                // No server (ERROR_FILE_NOT_FOUND) or anything else: nobody to hand to.
+                Err(_) => return false,
+            }
+        }
+        false
+    }
+
+    struct Pipe(HANDLE);
+    // SAFETY: a pipe handle may be used from any thread.
+    unsafe impl Send for Pipe {}
+    impl Drop for Pipe {
+        fn drop(&mut self) {
+            unsafe {
+                let _ = CloseHandle(self.0);
+            }
+        }
+    }
+
+    /// Serve the pipe on a background thread: each link received is queued and
+    /// `wake` called. Only the first instance gets the pipe; any later one (a plain
+    /// second launch) does nothing here.
+    pub fn listen(wake: impl Fn() + Send + 'static) {
+        let pending = !super::PENDING.lock_unpoisoned().is_empty();
+        if pending {
+            wake();
+        }
+        let name = pipe_name();
+        let handle = unsafe {
+            CreateNamedPipeW(
+                &HSTRING::from(name.as_str()),
+                PIPE_ACCESS_INBOUND | FILE_FLAG_FIRST_PIPE_INSTANCE,
+                PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT | PIPE_REJECT_REMOTE_CLIENTS,
+                1,
+                0,
+                512,
+                0,
+                None,
+            )
+        };
+        if handle.is_invalid() {
+            // ERROR_ACCESS_DENIED here means another instance already serves it.
+            log::info!("party link pipe not served by this instance: {}", windows::core::Error::from_thread());
+            return;
+        }
+        let pipe = Pipe(handle);
+        let spawned = std::thread::Builder::new().name("deeplink".into()).spawn(move || serve(pipe, wake));
+        if let Err(e) = spawned {
+            log::warn!("party link listener: {e}");
+        }
+    }
+
+    fn serve(pipe: Pipe, wake: impl Fn()) {
+        loop {
+            let connected = unsafe { ConnectNamedPipe(pipe.0, None) };
+            if let Err(e) = connected {
+                // A client that connected between create/disconnect and this call.
+                if e.code() != ERROR_PIPE_CONNECTED.to_hresult() {
+                    log::warn!("party link pipe: {e}");
+                    std::thread::sleep(std::time::Duration::from_millis(200));
+                    continue;
+                }
+            }
+            let mut msg = Vec::new();
+            let mut buf = [0u8; 64];
+            loop {
+                let mut n = 0u32;
+                let ok = unsafe { ReadFile(pipe.0, Some(&mut buf), Some(&mut n), None) };
+                if ok.is_err() || n == 0 {
+                    break; // ERROR_BROKEN_PIPE: the client wrote and closed.
+                }
+                msg.extend_from_slice(&buf[..n as usize]);
+                if msg.len() > 256 {
+                    break;
+                }
+            }
+            unsafe {
+                let _ = DisconnectNamedPipe(pipe.0);
+            }
+            let msg = String::from_utf8_lossy(&msg).trim().to_owned();
+            if msg == super::SHOW_MSG {
+                log::info!("another launch asked for the window");
+                super::SHOW.store(true, std::sync::atomic::Ordering::Relaxed);
+                wake();
+                continue;
+            }
+            match super::parse(&msg) {
+                Some(code) => {
+                    log::info!("jam code received from another launch: {code}");
+                    push(code);
+                    wake();
+                }
+                None => log::warn!("party link pipe: ignored an invalid message"),
+            }
+        }
+    }
+
+    /// Register the `dawnfm:` URL protocol for this user, pointing at this exe.
+    /// Call only from an installed copy, so dev builds don't take the protocol over.
+    pub fn register_protocol() {
+        match std::env::current_exe() {
+            Ok(exe) => {
+                if let Err(e) = register_at(HKEY_CURRENT_USER, r"Software\Classes\dawnfm", &exe.to_string_lossy()) {
+                    log::warn!("registering the dawnfm: protocol: {e}");
+                }
+            }
+            Err(e) => log::warn!("registering the dawnfm: protocol: {e}"),
+        }
+    }
+
+    pub(super) fn register_at(root: HKEY, key: &str, exe: &str) -> windows::core::Result<()> {
+        let set = |sub: &str, name: &str, value: &str| -> windows::core::Result<()> {
+            let path = if sub.is_empty() { key.to_string() } else { format!(r"{key}\{sub}") };
+            let data: Vec<u16> = value.encode_utf16().chain(Some(0)).collect();
+            let name = HSTRING::from(name);
+            unsafe {
+                RegSetKeyValueW(
+                    root,
+                    &HSTRING::from(path),
+                    if name.is_empty() { windows::core::PCWSTR::null() } else { windows::core::PCWSTR(name.as_ptr()) },
+                    REG_SZ.0,
+                    Some(data.as_ptr().cast()),
+                    (data.len() * 2) as u32,
+                )
+            }
+            .ok()
+        };
+        set("", "", "URL:dawnfm Protocol")?;
+        set("", "URL Protocol", "")?;
+        set("DefaultIcon", "", &format!("\"{exe}\",0"))?;
+        set(r"shell\open\command", "", &format!("\"{exe}\" \"%1\""))
+    }
+}
+
+#[cfg(target_os = "macos")]
 mod mac {
     use objc2::rc::Retained;
     use objc2::runtime::{AnyObject, NSObject, Sel};
@@ -284,9 +471,12 @@ mod tests {
         listen(|| {
             WOKEN.fetch_add(1, Ordering::Relaxed);
         });
-        mac::simulate("ytm-rs://jam/abc234");
-        mac::simulate("https://example.com/");
-        assert_eq!(take(), ["ABC234"]);
-        assert_eq!(WOKEN.load(Ordering::Relaxed), 1);
+        #[cfg(target_os = "macos")]
+        {
+            mac::simulate("ytm-rs://jam/abc234");
+            mac::simulate("https://example.com/");
+            assert_eq!(take(), ["ABC234"]);
+            assert_eq!(WOKEN.load(Ordering::Relaxed), 1);
+        }
     }
 }

@@ -16,18 +16,26 @@ mod lists;
 mod lyric_prefs;
 mod mini;
 mod notes;
-mod nowplaying;
-mod pages;
+pub mod nowplaying;
+pub mod pages;
 mod playback;
-mod queue;
+pub mod queue;
 mod responses;
 mod scroll;
 mod shell;
 mod sleep;
 mod titlebar;
-pub use titlebar::custom as custom_titlebar;
+pub use titlebar::{custom as custom_titlebar, set_hwnd as set_titlebar_hwnd};
 mod transfer;
-mod widgets;
+pub mod widgets;
+
+pub use pages::{
+    artist, circle_action, collection, collection_genre, filter_collection_tracks,
+    hero_height, metadata_badge, paint_ambient_glow, paint_hero_gradient_dissolve,
+    peach_circle, peach_pill, play_pill, CircleGlyph,
+};
+pub use queue::{Queue, Repeat};
+pub use widgets::{paint_quality_icon, track_bpm_key, track_row, RowOpts};
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
@@ -46,10 +54,8 @@ use crate::model::{Card, Chip, Shelf, Target, Track};
 use crate::shader::Background;
 use crate::theme;
 use lists::{LIKED_MUSIC, Lists};
-use queue::Queue;
 use dev::{dev_pace, dev_screenshot, dev_var};
 use dialogs::text_field;
-pub use queue::Repeat;
 
 /// Animated sleeves are off until the decoder is fixed: the surfacing call sites stay
 /// in place, so turning this back on is all it takes to try again.
@@ -261,8 +267,8 @@ impl Drop for MotionView {
 }
 
 pub struct App {
-    backend: Backend,
-    audio: AudioHandle,
+    pub backend: Backend,
+    pub audio: AudioHandle,
     ch: Channels,
     media: Option<Media>,
     discord: Option<crate::discord::Discord>,
@@ -348,7 +354,7 @@ pub struct App {
     sidebar_cache: Option<Vec<Card>>,
 
     // playback
-    queue: Queue,
+    pub queue: Queue,
     generation: u64,
     buffering: bool,
     /// Unplayable songs skipped in a row; a run of them stops playback instead of
@@ -461,12 +467,12 @@ pub struct App {
     scroll_panes: Vec<egui::Rect>,
 
     // now playing
-    np_open: bool,
-    np_tab: NpTab,
+    pub np_open: bool,
+    pub np_tab: NpTab,
     queue_open: bool,
     /// The lyrics panel at the right of the pages (the player bar's lyrics button).
     lyrics_drawer: bool,
-    fullscreen: bool,
+    pub fullscreen: bool,
     /// The mini player: the window shrunk to a strip.
     mini: mini::Mini,
     /// Every source's lyrics for the current song (by video ID).
@@ -541,7 +547,7 @@ pub struct App {
     hidden_playlists: HashSet<String>,
     /// The collection page whose inline search is open, and what's typed in it.
     coll_search: Option<(String, String)>,
-    actions: Vec<Action>,
+    pub actions: Vec<Action>,
     dialog: Option<Dialog>,
     share_pending: Option<String>,
     smoke: Option<String>,
@@ -570,6 +576,19 @@ pub(super) struct MixFrom {
 }
 
 impl App {
+    /// Creates a headless dummy App instance for integration testing without audio or network dependencies.
+    pub fn mock_headless() -> Self {
+        let (_tx, resp_rx) = crossbeam_channel::unbounded();
+        let (_atx, audio_rx) = crossbeam_channel::unbounded();
+        let (_mtx, media_rx) = crossbeam_channel::unbounded();
+        let (btx, _brx) = crossbeam_channel::unbounded();
+        let tmp = std::env::temp_dir().join(format!("dawnfm_mock_{}", std::process::id()));
+        let audio = AudioHandle::dummy();
+        let backend = Backend::new(tmp, btx, audio.clone(), Arc::new(|| {})).expect("backend mock");
+        let ch = Channels { resp_rx, audio_rx, media_rx };
+        Self::new(backend, audio, ch, None, None, None)
+    }
+
     pub fn new(
         backend: Backend,
         audio: AudioHandle,
@@ -1622,7 +1641,18 @@ const SESSION_KEY: &str = "session";
 fn relaunch() {
     let Ok(exe) = std::env::current_exe() else { return };
     log::info!("restarting");
-    let _ = std::process::Command::new(exe).spawn();
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        const DETACHED_PROCESS: u32 = 0x0000_0008;
+        let script = format!("ping -n 3 127.0.0.1 >NUL & start \"\" \"{}\"", exe.display());
+        let _ = std::process::Command::new("cmd").arg("/C").raw_arg(&script).creation_flags(CREATE_NO_WINDOW | DETACHED_PROCESS).spawn();
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = std::process::Command::new(exe).spawn();
+    }
 }
 
 /// What the sidebar and the account button show, kept for the next launch.
