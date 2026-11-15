@@ -123,6 +123,7 @@ impl Rows {
         RowOpts {
             number,
             show_album,
+            is_album: number.is_some() && !show_album,
             current: self.current.as_deref() == Some(t.id.as_str()),
             playing: self.playing,
             accent: self.accent,
@@ -1093,7 +1094,6 @@ pub fn collection(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
 // ------------------------------------------------------------------ artist
 
 /// Apple's wordmark for the artist, bottom-left at `base`, no wider than `max_w`.
-/// False until the image is ready, so the caller can draw the name instead.
 fn wordmark(ui: &Ui, base: egui::Pos2, logo: &crate::apple::LogoSrc, max_w: f32) -> bool {
     let aspect = logo.w.max(1) as f32 / logo.h.max(1) as f32;
     let mut size = vec2(72.0 * aspect, 72.0);
@@ -1101,13 +1101,10 @@ fn wordmark(ui: &Ui, base: egui::Pos2, logo: &crate::apple::LogoSrc, max_w: f32)
         size = vec2(max_w, max_w / aspect);
     }
     let url = logo.at_height((size.y * 2.0) as u32);
-    let ready = matches!(egui::Image::new(url.as_str()).load_for_size(ui.ctx(), size), Ok(egui::load::TexturePoll::Ready { .. }));
-    if ready {
-        let rect = Rect::from_min_size(pos2(base.x, base.y - 40.0 - size.y), size);
-        let uv = Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0));
-        widgets::paint_remote(ui, &url, rect, 0.0, uv, theme::text());
-    }
-    ready
+    let rect = Rect::from_min_size(pos2(base.x, base.y - 40.0 - size.y), size);
+    let uv = Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0));
+    widgets::paint_remote(ui, &url, rect, 0.0, uv, theme::text());
+    true
 }
 
 fn artist_latest_release_card(ui: &mut Ui, a: &crate::backend::ArtistPage, acts: &mut Vec<Action>, width: f32) {
@@ -1343,9 +1340,11 @@ pub fn artist(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
     ui.painter().text(star_center, Align2::CENTER_CENTER, "★", theme::semibold(16.0), theme::text());
 
     // Artist name: show special Apple wordmark logo if available, otherwise large bold typography
-    let logo_base = hero.left_bottom() + vec2(28.0, -30.0);
-    let drawn = apple.as_ref().and_then(|x| x.logo.as_ref()).is_some_and(|logo| wordmark(ui, logo_base, logo, w * 0.62));
-    if !drawn {
+    let has_logo = apple.as_ref().and_then(|x| x.logo.as_ref()).is_some();
+    if let Some(logo) = apple.as_ref().and_then(|x| x.logo.as_ref()) {
+        let logo_base = hero.left_bottom() + vec2(28.0, -30.0);
+        wordmark(ui, logo_base, logo, w * 0.62);
+    } else {
         let name_pos = pos2(base_x, btn_y - 36.0);
         ui.painter().text(name_pos, Align2::LEFT_BOTTOM, &name, theme::bold(52.0), theme::text());
     }
@@ -1385,7 +1384,7 @@ pub fn artist(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
     if let Some(d) = a.description.as_deref().filter(|d| !d.trim().is_empty()) {
         shelf_header(ui, "", "About", None, None, false);
         let full = ui.available_width().min(820.0);
-        let beside = drawn.then_some(signature.as_ref()).flatten();
+        let beside = has_logo.then_some(signature.as_ref()).flatten();
         if let Some(tex) = beside {
             ui.horizontal_top(|ui| {
                 let sig_w = (full * 0.28).clamp(120.0, 210.0);

@@ -1364,7 +1364,15 @@ fn list_item(r: &Value) -> Option<Track> {
                 Some("MUSIC_PAGE_TYPE_ALBUM") => album = Some(Link { name: name.to_owned(), id: browse_id(run) }),
                 // Search rows put the length in the text ("Artist • Album • 3:22").
                 _ if duration.is_none() && looks_like_duration(name) => duration = parse_duration(name),
-                _ if name.ends_with(" plays") => plays = count(name),
+                _ if plays.is_none()
+                    && (name.ends_with(" plays")
+                        || name.ends_with(" play")
+                        || name.ends_with(" views")
+                        || name.ends_with(" view")
+                        || (c >= 2 && count(name).is_some() && !looks_like_duration(name))) =>
+                {
+                    plays = count(name);
+                }
                 _ => {}
             }
         }
@@ -1647,6 +1655,7 @@ mod tests {
         let t = list_item(&row(ALBUM_ROW)).unwrap();
         assert_eq!((t.title.as_str(), t.track_nr, t.duration), ("Alone Again", Some(1), Some(251)));
         assert!(t.artists.is_empty());
+        assert_eq!(t.plays, Some(54_000_000));
     }
 
     #[test]
