@@ -845,64 +845,64 @@ pub fn player_bar(app: &mut App, ui: &mut Ui, now: f64, frosted: bool) {
         let cap = Rect::from_min_size(pos2(full.center().x - w / 2.0, full.bottom() - 14.0 - H), vec2(w, H));
         ui.interact(cap, ui.scope_id().with("player-strip"), Sense::hover());
 
-        let accent = app.accent_color();
         let is_liquid = theme::is_macos_above_15();
 
         if is_liquid {
             // macOS > 15: Liquid Glass effect
-            // Prismatic colored under-glow and deep specular shadow
+            // Deep specular shadow
             widgets::soft_shadow(ui, cap, radius, 32.0, if theme::light() { 0.22 } else { 0.48 });
-            let under_glow = theme::with_alpha(accent, 0.12);
-            ui.painter().rect_filled(cap.expand(1.5), radius + 1.5, under_glow);
+            if theme::light() {
+                let under_glow = theme::with_alpha(app.accent_color(), 0.06);
+                ui.painter().rect_filled(cap.expand(1.5), radius + 1.5, under_glow);
+            }
 
-            // Translucent liquid body with high refractive clarity
+            // Translucent liquid body: pure neutral black with low opacity in dark mode
             let liquid_fill = if theme::light() {
                 Color32::from_rgba_premultiplied(250, 249, 253, 218)
             } else {
-                Color32::from_rgba_premultiplied(22, 20, 26, 208)
+                Color32::from_rgba_unmultiplied(10, 10, 12, 205)
             };
             ui.painter().rect_filled(cap, radius, liquid_fill);
 
             // Liquid vertical refraction gradient
-            let top_liquid = theme::glass(if theme::light() { 0.15 } else { 0.10 });
+            let top_liquid = theme::glass(if theme::light() { 0.15 } else { 0.08 });
             let bot_liquid = theme::glass(if theme::light() { 0.04 } else { 0.02 });
             rounded_vgradient(ui.painter(), cap, radius, top_liquid, bot_liquid);
 
             // Specular meniscus top reflection
             let sheen_h = H * 0.42;
             let sheen_rect = Rect::from_min_size(cap.min, vec2(cap.width(), sheen_h));
-            let sheen_top = theme::glass(if theme::light() { 0.24 } else { 0.16 });
+            let sheen_top = theme::glass(if theme::light() { 0.24 } else { 0.14 });
             rounded_vgradient(ui.painter(), sheen_rect, radius, sheen_top, Color32::TRANSPARENT);
 
             // Double refractive edge strokes: outer highlight rim and inner hairline
-            ui.painter().rect_stroke(cap, radius, egui::Stroke::new(1.0, theme::glass(0.24)), egui::StrokeKind::Inside);
-            ui.painter().rect_stroke(cap.shrink(1.0), (radius - 1.0).max(0.0), egui::Stroke::new(0.5, theme::glass(0.10)), egui::StrokeKind::Inside);
-            ui.painter().hline(cap.x_range().shrink(radius + 2.0), cap.top() + 1.0, egui::Stroke::new(1.0, theme::glass(0.32)));
-            ui.painter().hline(cap.x_range().shrink(radius + 6.0), cap.bottom() - 1.5, egui::Stroke::new(0.5, theme::glass(0.12)));
+            ui.painter().rect_stroke(cap, radius, egui::Stroke::new(1.0, theme::glass(if theme::light() { 0.24 } else { 0.12 })), egui::StrokeKind::Inside);
+            ui.painter().rect_stroke(cap.shrink(1.0), (radius - 1.0).max(0.0), egui::Stroke::new(0.5, theme::glass(if theme::light() { 0.10 } else { 0.05 })), egui::StrokeKind::Inside);
+            ui.painter().hline(cap.x_range().shrink(radius + 2.0), cap.top() + 1.0, egui::Stroke::new(1.0, theme::glass(if theme::light() { 0.32 } else { 0.18 })));
+            ui.painter().hline(cap.x_range().shrink(radius + 6.0), cap.bottom() - 1.5, egui::Stroke::new(0.5, theme::glass(if theme::light() { 0.12 } else { 0.06 })));
         } else {
             // macOS <= 15: Frosted blur effect
             // Multi-tier soft ambient and drop shadows
             widgets::soft_shadow(ui, cap, radius, 26.0, if theme::light() { 0.18 } else { 0.42 });
             widgets::soft_shadow(ui, cap, radius, 8.0, if theme::light() { 0.08 } else { 0.18 });
 
-            // Frosted glass body: milky translucent matte finish with subtle cover tint
+            // Frosted glass body: pure neutral black with low opacity in dark mode
             let frosted_fill = if theme::light() {
                 Color32::from_rgba_premultiplied(246, 245, 249, 230)
             } else {
-                let dark_base = Color32::from_rgba_premultiplied(26, 24, 30, 224);
-                theme::lerp_color(dark_base, app.look().solid(), 0.22)
+                Color32::from_rgba_unmultiplied(10, 10, 12, 205)
             };
             ui.painter().rect_filled(cap, radius, frosted_fill);
 
             // Diffused specular top sheen
             let sheen_h = H * 0.45;
             let sheen_rect = Rect::from_min_size(cap.min, vec2(cap.width(), sheen_h));
-            let sheen_top = theme::glass(0.08);
+            let sheen_top = theme::glass(if theme::light() { 0.08 } else { 0.06 });
             rounded_vgradient(ui.painter(), sheen_rect, radius, sheen_top, Color32::TRANSPARENT);
 
             // Frosted glass perimeter stroke with top-edge light catch
-            ui.painter().rect_stroke(cap, radius, egui::Stroke::new(1.0, theme::glass(0.15)), egui::StrokeKind::Inside);
-            ui.painter().hline(cap.x_range().shrink(radius + 4.0), cap.top() + 1.0, egui::Stroke::new(1.0, theme::glass(0.24)));
+            ui.painter().rect_stroke(cap, radius, egui::Stroke::new(1.0, theme::glass(if theme::light() { 0.15 } else { 0.10 })), egui::StrokeKind::Inside);
+            ui.painter().hline(cap.x_range().shrink(radius + 4.0), cap.top() + 1.0, egui::Stroke::new(1.0, theme::glass(if theme::light() { 0.24 } else { 0.15 })));
         }
 
         cap

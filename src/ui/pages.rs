@@ -80,7 +80,7 @@ pub fn page(app: &mut App, ui: &mut Ui, now: f64) {
             Page::Jam => super::jam::page(app, ui),
         }
         // Room to scroll the last rows clear of the player's frosted strip.
-        ui.add_space(96.0);
+        ui.add_space(if page == Page::Settings { 24.0 } else { 96.0 });
     });
     selection_bar(app, ui.ctx(), &page, out.inner_rect);
     // Infinite scroll on home: fetch the next shelves when nearing the bottom.

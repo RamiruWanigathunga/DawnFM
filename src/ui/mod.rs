@@ -1145,7 +1145,13 @@ impl App {
     /// Height of the bottom player area: the capsule's 56 points plus the margin it
     /// floats on.
     fn bar_height(&self) -> f32 {
-        if shell::docked(self) { shell::DOCKED_H } else { 96.0 }
+        if self.page == Page::Settings {
+            0.0
+        } else if shell::docked(self) {
+            shell::DOCKED_H
+        } else {
+            96.0
+        }
     }
 
     fn toast(&mut self, msg: impl Into<String>) {
@@ -1440,15 +1446,17 @@ impl eframe::App for App {
                 });
             // The player: a frosted strip over the bottom of the main section, above the
             // pages, so their last rows fade under it instead of stopping at a seam.
-            let strip = egui::Rect::from_min_max(egui::pos2(section.left(), screen.bottom() - self.bar_height()), egui::pos2(main_right, screen.bottom()));
-            egui::Area::new(egui::Id::unique("player-bar"))
-                .fixed_pos(strip.min)
-                .order(egui::Order::Middle)
-                .show(&ctx, |ui| {
-                    ui.scope_builder(egui::UiBuilder::new().max_rect(strip).layout(egui::Layout::top_down(egui::Align::Min)), |ui| {
-                        shell::player_bar(self, ui, now, true);
+            if self.page != Page::Settings {
+                let strip = egui::Rect::from_min_max(egui::pos2(section.left(), screen.bottom() - self.bar_height()), egui::pos2(main_right, screen.bottom()));
+                egui::Area::new(egui::Id::unique("player-bar"))
+                    .fixed_pos(strip.min)
+                    .order(egui::Order::Middle)
+                    .show(&ctx, |ui| {
+                        ui.scope_builder(egui::UiBuilder::new().max_rect(strip).layout(egui::Layout::top_down(egui::Align::Min)), |ui| {
+                            shell::player_bar(self, ui, now, true);
+                        });
                     });
-                });
+            }
         }
         if np > 0.001 {
             let pages = theme::set_mode(&ctx, false);
