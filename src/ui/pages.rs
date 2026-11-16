@@ -1407,7 +1407,7 @@ pub fn artist(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
             ui.horizontal_top(|ui| {
                 let sig_w = (full * 0.28).clamp(120.0, 210.0);
                 let text_w = (full - sig_w - 32.0).max(220.0);
-                let g = widgets::galley_wrapped(ui, d.trim(), theme::regular(14.5), theme::text_dim(), text_w, 8);
+                let g = widgets::galley_wrapped(ui, d.trim(), theme::regular(14.5), theme::text_dim(), text_w, usize::MAX);
                 ui.label(g);
                 ui.add_space(32.0);
                 let tex_size = tex.size_vec2();
@@ -1423,7 +1423,7 @@ pub fn artist(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
                 egui::Image::from_texture(tex).uv(Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0))).paint_at(ui, img);
             });
         } else {
-            let g = widgets::galley_wrapped(ui, d.trim(), theme::regular(14.5), theme::text_dim(), full, 8);
+            let g = widgets::galley_wrapped(ui, d.trim(), theme::regular(14.5), theme::text_dim(), full, usize::MAX);
             ui.label(g);
         }
     }
