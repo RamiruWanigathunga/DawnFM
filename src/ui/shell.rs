@@ -692,7 +692,7 @@ pub fn search_results(app: &mut App, ctx: &egui::Context) {
         return;
     }
     let t = theme::anim_bool(ctx, "search-results-open", true, 0.15);
-    let width = (rect.width() + 40.0).clamp(240.0, 270.0);
+    let width = rect.width().clamp(320.0, 560.0);
     let pos = rect.left_bottom() + vec2(0.0, 6.0 - 6.0 * (1.0 - t));
     let mut close = ctx.input(|i| i.key_pressed(egui::Key::Escape));
     let mut act: Option<Action> = None;
@@ -707,11 +707,16 @@ pub fn search_results(app: &mut App, ctx: &egui::Context) {
             .show(ui, |ui| {
                 ui.set_width(width - 16.0);
                 let Some(r) = app.search.as_ref().filter(|r| r.query == q) else {
+                    ui.add_space(4.0);
                     ui.horizontal(|ui| {
                         ui.add_space(8.0);
                         ui.spinner();
                         ui.label(egui::RichText::new("Searching…").font(theme::regular(14.0)).color(theme::text_dim()));
                     });
+                    ui.add_space(8.0);
+                    // Keep the panel a useful size while the results are on their way.
+                    let now = ui.input(|i| i.time);
+                    super::widgets::skeleton_rows(ui, now, 4);
                     ui.ctx().request_repaint_after(std::time::Duration::from_millis(100));
                     return;
                 };
