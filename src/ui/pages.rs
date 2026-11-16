@@ -1237,9 +1237,11 @@ fn artist_top_songs_section(ui: &mut Ui, a: &crate::backend::ArtistPage, acts: &
                         widgets::play_triangle(ui, art_rect.center(), 6.0, Color32::WHITE);
                     }
 
-                    // Title & Subtitle
+                    // Title & Subtitle, with the length kept clear at the right edge.
                     let text_x = art_rect.right() + 10.0;
-                    let text_w = (tile_rect.right() - text_x - 10.0).max(30.0);
+                    let right_pad = 12.0;
+                    let dur_w = if t.duration.is_some() { 36.0 } else { 0.0 };
+                    let text_w = (tile_rect.right() - text_x - right_pad - dur_w).max(30.0);
                     let title_g = widgets::galley(ui, &t.title, theme::semibold(13.0), theme::text(), text_w);
                     ui.painter().galley(pos2(text_x, tile_rect.center().y - 14.0), title_g, theme::text());
 
@@ -1249,6 +1251,10 @@ fn artist_top_songs_section(ui: &mut Ui, a: &crate::backend::ArtistPage, acts: &
                     }
                     let sub_g = widgets::galley(ui, &sub, theme::regular(11.5), theme::text_dim(), text_w);
                     ui.painter().galley(pos2(text_x, tile_rect.center().y + 1.0), sub_g, theme::text_dim());
+
+                    if let Some(d) = t.duration {
+                        ui.painter().text(pos2(tile_rect.right() - right_pad, tile_rect.center().y), Align2::RIGHT_CENTER, super::fmt_time(d), theme::regular(11.5), theme::text_dim());
+                    }
 
                     if resp.clicked() {
                         acts.push(Action::Play(top.clone(), global_idx));
