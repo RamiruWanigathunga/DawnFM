@@ -893,7 +893,9 @@ pub fn collection(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
     ui.horizontal_top(|ui| {
         let (img, _) = ui.allocate_exact_size(Vec2::splat(side), Sense::hover());
         let radius = theme::card_radius() + 2.0;
-        widgets::soft_shadow(ui, img, radius, 40.0, 0.5);
+        // Light mode needs a far softer shadow: the dark one reads as a grey halo.
+        let (blur, alpha) = if theme::light() { (26.0, 0.14) } else { (40.0, 0.5) };
+        widgets::soft_shadow(ui, img, radius, blur, alpha);
         paint_cover(ui, img, &c.thumbs, radius, 1.0);
         if let Some(s) = &sprite {
             widgets::paint_motion(ui, img, radius, s);
