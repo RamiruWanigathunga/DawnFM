@@ -974,25 +974,20 @@ pub fn collection(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
                     egui::Popup::menu(&more).show(|ui| {
                         ui.set_width(226.0);
                         ui.add_space(3.0);
-                        if let Some(first) = tracks.first()
-                            && widgets::menu_action(ui, Some(icon::RADIO), &t!("start_radio"))
-                        {
-                            acts.push(Action::Radio(first.clone()));
-                        }
-                        if let Some(save_id) = save_id.clone()
-                            && widgets::menu_action(ui, Some(icon::LIBRARY), if saved { "Remove from library" } else { "Save to library" })
-                        {
-                            acts.push(Action::SaveCollection(save_id, !saved));
-                        }
+                        let mut any = false;
                         if app.logged_in && !auto && !tracks.is_empty()
                             && widgets::menu_action(ui, Some(icon::LIST_CHECKS), if selecting { "Done selecting" } else { "Select" })
                         {
                             if selecting { stop_select = true } else { start_select = true }
                         }
-                        if app.logged_in && !auto && (save_id.is_some() || owned) {
-                            ui.separator();
+                        if app.logged_in && !auto && !tracks.is_empty() {
+                            any = true;
                         }
                         if owned {
+                            if any {
+                                ui.separator();
+                            }
+                            any = true;
                             if widgets::menu_action(ui, Some(icon::MUSIC), "Edit playlist") {
                                 acts.push(Action::EditPlaylist);
                             }
@@ -1003,7 +998,7 @@ pub fn collection(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
                                 acts.push(Action::DeletePlaylist);
                             }
                         }
-                        if app.logged_in && !auto && !owned && save_id.is_none() {
+                        if any {
                             ui.separator();
                         }
                         if widgets::menu_action(ui, Some(icon::LINK), "Share") {
