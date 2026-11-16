@@ -123,6 +123,7 @@ impl Rows {
         RowOpts {
             number,
             show_album,
+            show_plays: false,
             is_album: number.is_some() && !show_album,
             current: self.current.as_deref() == Some(t.id.as_str()),
             playing: self.playing,
@@ -417,18 +418,21 @@ struct ListCtx<'a> {
     sel: &'a mut Selection,
     page: &'a Page,
     own: bool,
+    /// Show play counts even though these aren't album songs (the artist's Top Songs).
+    plays: bool,
 }
 
 /// A long song list; only the rows on screen are built. Clicking one plays `tracks` from it,
 /// or picks it while selecting: Ctrl-click picks one song, Shift-click a run of them.
 #[allow(clippy::too_many_arguments)]
 fn list(ui: &mut Ui, rows: &Rows, liked: &HashSet<String>, tracks: &[Track], show_album: bool, number: impl Fn(usize, &Track) -> Option<usize>, cx: ListCtx, acts: &mut Vec<Action>) {
-    let ListCtx { sel, page, own } = cx;
+    let ListCtx { sel, page, own, plays } = cx;
     let selecting = sel.on(page);
     let mods = ui.input(|i| i.modifiers);
     widgets::visible_rows(ui, tracks.len(), |ui, i| {
         let t = &tracks[i];
         let o = RowOpts {
+            show_plays: plays,
             selected: selecting.then(|| sel.rows.contains(&i)),
             remove: own.then_some(i),
             ..rows.opts(liked, t, number(i, t), show_album)
@@ -877,6 +881,8 @@ pub fn collection(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
     let acts = &mut app.actions;
     let tracks = &c.tracks;
     let is_album = c.is_album;
+    // The artist page links here: its rows show the songs' play counts.
+    let top_songs = app.artist.as_ref().is_some_and(|a| a.top_playlist.as_deref() == Some(id));
     let filter_on = app.coll_search.as_ref().is_some_and(|(fid, _)| fid == id);
     let selecting = app.selection.on(&app.page);
     let mut toggle_search = false;
@@ -1085,7 +1091,7 @@ pub fn collection(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
     let shown: &[Track] = if needle.is_empty() { tracks } else { &filtered };
     let number = |i: usize, t: &Track| is_album.then(|| t.track_nr.map_or(i + 1, |n| n as usize));
     let own = app.logged_in && c.owned && !is_album;
-    list(ui, &rows, &app.liked, shown, !is_album, number, ListCtx { sel: &mut app.selection, page: &app.page, own }, acts);
+    list(ui, &rows, &app.liked, shown, !is_album, number, ListCtx { sel: &mut app.selection, page: &app.page, own, plays: top_songs }, acts);
     if more {
         widgets::skeleton_rows(ui, now, 3);
     }
@@ -1237,7 +1243,10 @@ fn artist_top_songs_section(ui: &mut Ui, a: &crate::backend::ArtistPage, acts: &
                     let title_g = widgets::galley(ui, &t.title, theme::semibold(13.0), theme::text(), text_w);
                     ui.painter().galley(pos2(text_x, tile_rect.center().y - 14.0), title_g, theme::text());
 
-                    let sub = t.album.as_ref().map(|a| a.name.clone()).unwrap_or_else(|| t.artist_line());
+                    let mut sub = t.album.as_ref().map(|a| a.name.clone()).unwrap_or_else(|| t.artist_line());
+                    if let Some(p) = t.plays.map(crate::backend::compact) {
+                        sub = if sub.is_empty() { format!("{p} plays") } else { format!("{sub} \u{2022} {p} plays") };
+                    }
                     let sub_g = widgets::galley(ui, &sub, theme::regular(11.5), theme::text_dim(), text_w);
                     ui.painter().galley(pos2(text_x, tile_rect.center().y + 1.0), sub_g, theme::text_dim());
 
@@ -1457,7 +1466,7 @@ fn library(app: &mut App, ui: &mut Ui, tab: LibTab, now: f64) {
                 return;
             }
             let Some(h) = &app.history else { return };
-            list(ui, &rows, &app.liked, h, true, plain, ListCtx { sel: &mut app.selection, page: &app.page, own: false }, &mut app.actions);
+            list(ui, &rows, &app.liked, h, true, plain, ListCtx { sel: &mut app.selection, page: &app.page, own: false, plays: false }, &mut app.actions);
         }
         // Liked Music, kept like any playlist.
         LibTab::Songs => {
@@ -1482,7 +1491,7 @@ fn library(app: &mut App, ui: &mut Ui, tab: LibTab, now: f64) {
                 });
                 ui.add_space(10.0);
             }
-            list(ui, &rows, &app.liked, liked, true, plain, ListCtx { sel: &mut app.selection, page: &app.page, own: false }, &mut app.actions);
+            list(ui, &rows, &app.liked, liked, true, plain, ListCtx { sel: &mut app.selection, page: &app.page, own: false, plays: false }, &mut app.actions);
             if more {
                 widgets::skeleton_rows(ui, now, 3);
             }
@@ -1543,7 +1552,7 @@ fn downloads(app: &mut App, ui: &mut Ui, now: f64) {
     });
     ui.add_space(12.0);
     let rows = Rows::new(app, now);
-    list(ui, &rows, &app.liked, &songs, true, |_, _| None, ListCtx { sel: &mut app.selection, page: &app.page, own: false }, &mut app.actions);
+    list(ui, &rows, &app.liked, &songs, true, |_, _| None, ListCtx { sel: &mut app.selection, page: &app.page, own: false, plays: false }, &mut app.actions);
 }
 
 // ------------------------------------------------------------------ settings

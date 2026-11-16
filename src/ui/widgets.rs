@@ -786,6 +786,8 @@ pub fn equalizer_shown(ctx: &egui::Context) -> bool {
 pub struct RowOpts {
     pub number: Option<usize>,
     pub show_album: bool,
+    /// Show the play count on rows that aren't album songs (an artist's Top Songs).
+    pub show_plays: bool,
     pub is_album: bool,
     pub current: bool,
     pub playing: bool,
@@ -964,28 +966,32 @@ pub fn track_row(ui: &mut Ui, t: &Track, o: &RowOpts, acts: &mut Vec<Action>) ->
         x += 54.0;
     }
     let right = rect.right() - 20.0;
-    let dur_w = 52.0;
+    let dur_w = 56.0;
+    // Breathing room between the texts and the length at the row's end.
+    let dur_gap = 18.0;
     let avail = right - dur_w - x;
     let wide = avail > 520.0;
     // Album rows (numbered), wide: one line in columns, as in Music: title, artist,
     // play count, length. Only album songs show the play count; downloads, history,
     // and playlists are excluded.
     let album_row = o.is_album || (o.number.is_some() && !o.show_album);
-    let plays_text: Option<String> = if album_row {
+    let plays_text: Option<String> = if album_row || o.show_plays {
         t.plays.map(crate::backend::compact)
     } else {
         None
     };
+    let plays_w = if plays_text.is_some() { 64.0 } else { 0.0 };
+    // Where the title/artist/album columns end: the play and length columns follow.
+    let content_right = right - dur_w - if plays_text.is_some() { plays_w + dur_gap } else { 0.0 };
 
     if album_row && wide {
         let title_col = theme::text();
-        let plays_w = if plays_text.is_some() { 64.0 } else { 0.0 };
-        let content_w = right - dur_w - plays_w - x;
+        let content_w = content_right - x;
         let artist_x = x + content_w * 0.48;
         text_at(ui, pos2(x, cy - 9.0), &t.title, theme::semibold(14.5), title_col, artist_x - x - 16.0);
         linked_text(ui, pos2(artist_x, cy - 8.0), &t.artist_line(), &t.artists, theme::regular(13.5), theme::text_dim(), content_w - (artist_x - x) - 16.0, acts);
         if let Some(p) = &plays_text {
-            ui.painter().text(pos2(right - dur_w - 14.0, cy), Align2::RIGHT_CENTER, p, theme::regular(13.0), theme::text_dim());
+            ui.painter().text(pos2(content_right, cy), Align2::RIGHT_CENTER, p, theme::regular(13.0), theme::text_dim());
         }
         if let Some(d) = t.duration {
             ui.painter().text(pos2(right, cy), Align2::RIGHT_CENTER, super::fmt_time(d), theme::regular(13.0), theme::text_dim());
@@ -994,31 +1000,28 @@ pub fn track_row(ui: &mut Ui, t: &Track, o: &RowOpts, acts: &mut Vec<Action>) ->
         return resp;
     }
     // Other rows: title + artists, then album, then plays when there's room.
-    let (title_w, plays_x, album_x): (f32, Option<f32>, Option<f32>) = match (wide, o.show_album) {
-        (true, true) => (avail * 0.55, None, Some(x + avail * 0.6)),
-        _ => (avail, None, None),
+    let (title_w, album_x): (f32, Option<f32>) = match (wide, o.show_album) {
+        (true, true) => (avail * 0.55, Some(x + avail * 0.6)),
+        _ => (avail, None),
     };
     let title_col = theme::text();
-    let sub = match (album_row, &plays_text, plays_x) {
-        (true, _, _) => None,
-        (false, _, _) => Some(t.artist_line()),
-    };
+    let sub = if album_row { None } else { Some(t.artist_line()) };
     let sub = match (sub, &o.added_by) {
         (Some(s), Some(by)) if !s.is_empty() => Some(format!("{s} \u{2022} Added by {by}")),
         (_, Some(by)) => Some(format!("Added by {by}")),
         (sub, _) => sub,
     };
     let title_y = if sub.is_some() { cy - 18.0 } else { cy - 9.0 };
-    let text_max_w = if plays_text.is_some() { title_w.min(right - dur_w - 74.0 - x) } else { title_w };
+    let text_max_w = title_w.min(content_right - x).max(20.0);
     text_at(ui, pos2(x, title_y), &t.title, theme::semibold(14.5), title_col, text_max_w);
     if let Some(sub) = &sub {
         linked_text(ui, pos2(x, cy + 2.0), sub, &t.artists, theme::regular(13.0), theme::text_dim(), text_max_w, acts);
     }
     if let Some(p) = &plays_text {
-        ui.painter().text(pos2(right - dur_w - 14.0, cy), Align2::RIGHT_CENTER, p, theme::regular(13.0), theme::text_dim());
+        ui.painter().text(pos2(content_right, cy), Align2::RIGHT_CENTER, p, theme::regular(13.0), theme::text_dim());
     }
     if let (Some(ax), Some(album)) = (album_x, &t.album) {
-        let w = plays_x.unwrap_or(right - dur_w) - ax - 10.0;
+        let w = (content_right - ax).max(20.0);
         let g = galley(ui, &album.name, theme::regular(13.5), theme::text_dim(), w);
         let ar = Rect::from_min_size(pos2(ax, cy - 9.0), g.size());
         ui.painter().galley(ar.min, g, theme::text_dim());
