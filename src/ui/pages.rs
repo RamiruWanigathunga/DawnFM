@@ -1335,17 +1335,25 @@ pub fn artist(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
         }
     });
 
-    // Circle 2: Large circular Play button (▶) with red accent
+    // Circle 2: Large circular Play/Pause button with red accent
     let gap = 14.0;
     let play_center = pos2(base_x + 38.0 + gap + 24.0, btn_y);
     let play_rect = Rect::from_center_size(play_center, vec2(48.0, 48.0));
-    let play_resp = named(ui.interact(play_rect, ui.scope_id().with("hero_play"), Sense::click()), "Play artist").on_hover_cursor(egui::CursorIcon::PointingHand);
+    let artist_target = Target::Artist(id.to_owned());
+    let active = widgets::active_state(ui, &artist_target);
+    let playing = active == Some(true);
+    let play_name = if playing { "Pause artist" } else { "Play artist" };
+    let play_resp = named(ui.interact(play_rect, ui.scope_id().with("hero_play"), Sense::click()), play_name).on_hover_cursor(egui::CursorIcon::PointingHand);
     let play_h = play_resp.hovered();
     let play_bg = if play_h { Color32::from_rgb(0xFA, 0x48, 0x5E) } else { theme::RED };
     ui.painter().circle_filled(play_center, 24.0, play_bg);
-    widgets::play_triangle(ui, play_center, 8.5, Color32::WHITE);
-    if play_resp.clicked() && !top.is_empty() {
-        acts.push(Action::Play(top.clone(), 0));
+    widgets::play_pause_glyph(ui, play_center, 8.5, Color32::WHITE, playing);
+    if play_resp.clicked() {
+        if active.is_some() {
+            acts.push(Action::TogglePlay);
+        } else if !top.is_empty() {
+            acts.push(Action::Play(top.clone(), 0));
+        }
     }
 
     // Circle 3: Star button (★)
@@ -1488,9 +1496,7 @@ fn library(app: &mut App, ui: &mut Ui, tab: LibTab, now: f64) {
             let liked = &o.c.tracks;
             if !liked.is_empty() {
                 ui.horizontal(|ui| {
-                    if pill(ui, &t!("play"), Some(icon::PLAY), true).clicked() {
-                        app.actions.push(Action::Play(liked.clone(), 0));
-                    }
+                    play_pill(ui, &mut app.actions, &Target::Playlist(super::LIKED_MUSIC.into()), liked);
                     if pill(ui, &t!("shuffle"), Some(icon::SHUFFLE), false).clicked() {
                         let mut t = liked.clone();
                         super::shuffle(&mut t);
