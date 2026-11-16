@@ -1155,15 +1155,14 @@ fn artist_top_songs_section(ui: &mut Ui, a: &crate::backend::ArtistPage, acts: &
         return;
     }
     let num_cols = if width >= 650.0 { 3 } else if width >= 420.0 { 2 } else { 1 };
-    let items_per_page = (num_cols * 5).max(5); // At least 15 songs in 3-column mode, scaling down to fit smaller widths
-    let page_id = ui.scope_id().with("top_songs_carousel");
-    let mut cur_page = ui.ctx().data(|d| d.get_temp::<usize>(page_id)).unwrap_or(0);
+    let rows_per_page = 5;
+    let items_per_page = (num_cols * rows_per_page).max(1);
     let total_pages = top.len().div_ceil(items_per_page).max(1);
-    if cur_page >= total_pages {
-        cur_page = 0;
-    }
+    let id = format!("artist-top-songs-{}", a.id);
+    let (at_start, at_end) = widgets::h_scroll_edges(ui, &id);
+    let mut nudge = 0;
 
-    // Header row: "Top Songs" + clickable chevron ">", and on the right "<" ">" carousel pagination buttons
+    // Header row: "Top Songs" + clickable chevron ">", and on the right the carousel arrows.
     ui.horizontal(|ui| {
         let title_label = ui.label(RichText::new("Top Songs").font(theme::bold(22.0)).color(theme::text()));
         if let Some(pl) = &a.top_playlist {
@@ -1175,7 +1174,7 @@ fn artist_top_songs_section(ui: &mut Ui, a: &crate::backend::ArtistPage, acts: &
         }
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             ui.spacing_mut().item_spacing = vec2(8.0, 0.0);
-            if cur_page + 1 < total_pages {
+            if !at_end {
                 let (next_r, next_resp) = ui.allocate_exact_size(Vec2::splat(28.0), Sense::click());
                 let next_resp = named(next_resp, "Next songs").on_hover_cursor(egui::CursorIcon::PointingHand);
                 let nh = if next_resp.hovered() { 1.0 } else { 0.0 };
@@ -1183,12 +1182,10 @@ fn artist_top_songs_section(ui: &mut Ui, a: &crate::backend::ArtistPage, acts: &
                 ui.painter().rect_stroke(next_r, 6.0, egui::Stroke::new(1.0, theme::glass(0.08)), egui::StrokeKind::Inside);
                 ui.painter().text(next_r.center(), Align2::CENTER_CENTER, "›", theme::bold(16.0), theme::text());
                 if next_resp.clicked() {
-                    cur_page += 1;
-                    ui.ctx().data_mut(|d| d.insert_temp(page_id, cur_page));
+                    nudge = 1;
                 }
             }
-
-            if cur_page > 0 {
+            if !at_start {
                 let (prev_r, prev_resp) = ui.allocate_exact_size(Vec2::splat(28.0), Sense::click());
                 let prev_resp = named(prev_resp, "Previous songs").on_hover_cursor(egui::CursorIcon::PointingHand);
                 let ph = if prev_resp.hovered() { 1.0 } else { 0.0 };
@@ -1196,8 +1193,7 @@ fn artist_top_songs_section(ui: &mut Ui, a: &crate::backend::ArtistPage, acts: &
                 ui.painter().rect_stroke(prev_r, 6.0, egui::Stroke::new(1.0, theme::glass(0.08)), egui::StrokeKind::Inside);
                 ui.painter().text(prev_r.center(), Align2::CENTER_CENTER, "‹", theme::bold(16.0), theme::text());
                 if prev_resp.clicked() {
-                    cur_page = cur_page.saturating_sub(1);
-                    ui.ctx().data_mut(|d| d.insert_temp(page_id, cur_page));
+                    nudge = -1;
                 }
             }
         });
@@ -1205,72 +1201,79 @@ fn artist_top_songs_section(ui: &mut Ui, a: &crate::backend::ArtistPage, acts: &
 
     ui.add_space(10.0);
 
-    // Compact song tiles grid (showing up to 15 top tracks in 5-row configuration)
-    let start = cur_page * items_per_page;
-    let page_tracks = &top[start..(start + items_per_page).min(top.len())];
-
+    // Compact song tiles in pages of five rows; the carousel slides smoothly sideways.
     let col_gap = 12.0;
     let col_w = ((width - (num_cols - 1) as f32 * col_gap) / num_cols as f32).max(120.0);
     let tile_h = 46.0;
+    let row_gap = 8.0;
+    let rows_shown = if total_pages > 1 { rows_per_page } else { top.len().div_ceil(num_cols).clamp(1, rows_per_page) };
+    let page_h = rows_shown as f32 * tile_h + rows_shown.saturating_sub(1) as f32 * row_gap;
 
-    let num_rows = page_tracks.len().div_ceil(num_cols);
-    for row in 0..num_rows {
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing = vec2(col_gap, 0.0);
-            for col in 0..num_cols {
-                let idx = row * num_cols + col;
-                if idx < page_tracks.len() {
-                    let global_idx = start + idx;
-                    let t = &page_tracks[idx];
-                    let (tile_rect, resp) = ui.allocate_exact_size(vec2(col_w, tile_h), Sense::click());
-                    let resp = named(resp, &t.title).on_hover_cursor(egui::CursorIcon::PointingHand);
-                    let h = if resp.hovered() { 1.0 } else { 0.0 };
-                    if h > 0.0 {
-                        ui.painter().rect_filled(tile_rect, 8.0, theme::glass(0.08));
-                    }
+    widgets::h_scroll(ui, &id, nudge, total_pages, width, 16.0, |ui| {
+        ui.spacing_mut().item_spacing.x = 16.0;
+        for page in 0..total_pages {
+            let start = page * items_per_page;
+            let page_tracks = &top[start..(start + items_per_page).min(top.len())];
+            ui.allocate_ui_with_layout(vec2(width, page_h), egui::Layout::top_down(egui::Align::LEFT), |ui| {
+                ui.set_width(width);
+                ui.spacing_mut().item_spacing.y = row_gap;
+                for row in 0..rows_shown {
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing = vec2(col_gap, 0.0);
+                        for col in 0..num_cols {
+                            let idx = row * num_cols + col;
+                            if idx < page_tracks.len() {
+                                let global_idx = start + idx;
+                                let t = &page_tracks[idx];
+                                let (tile_rect, resp) = ui.allocate_exact_size(vec2(col_w, tile_h), Sense::click());
+                                let resp = named(resp, &t.title).on_hover_cursor(egui::CursorIcon::PointingHand);
+                                let h = if resp.hovered() { 1.0 } else { 0.0 };
+                                if h > 0.0 {
+                                    ui.painter().rect_filled(tile_rect, 8.0, theme::glass(0.08));
+                                }
 
-                    // 40x40 artwork thumbnail
-                    let art_rect = Rect::from_center_size(pos2(tile_rect.left() + 23.0, tile_rect.center().y), Vec2::splat(40.0));
-                    paint_cover(ui, art_rect, &t.thumbs, 6.0, 1.0);
-                    if h > 0.0 {
-                        ui.painter().rect_filled(art_rect, 6.0, theme::shade(0.4));
-                        widgets::play_triangle(ui, art_rect.center(), 6.0, Color32::WHITE);
-                    }
+                                // 40x40 artwork thumbnail
+                                let art_rect = Rect::from_center_size(pos2(tile_rect.left() + 23.0, tile_rect.center().y), Vec2::splat(40.0));
+                                paint_cover(ui, art_rect, &t.thumbs, 6.0, 1.0);
+                                if h > 0.0 {
+                                    ui.painter().rect_filled(art_rect, 6.0, theme::shade(0.4));
+                                    widgets::play_triangle(ui, art_rect.center(), 6.0, Color32::WHITE);
+                                }
 
-                    // Title & Subtitle, with the length kept clear at the right edge.
-                    let text_x = art_rect.right() + 10.0;
-                    let right_pad = 12.0;
-                    let dur_w = if t.duration.is_some() { 36.0 } else { 0.0 };
-                    let text_w = (tile_rect.right() - text_x - right_pad - dur_w).max(30.0);
-                    let title_g = widgets::galley(ui, &t.title, theme::semibold(13.0), theme::text(), text_w);
-                    ui.painter().galley(pos2(text_x, tile_rect.center().y - 14.0), title_g, theme::text());
+                                // Title & Subtitle, with the length kept clear at the right edge.
+                                let text_x = art_rect.right() + 10.0;
+                                let right_pad = 12.0;
+                                let dur_w = if t.duration.is_some() { 36.0 } else { 0.0 };
+                                let text_w = (tile_rect.right() - text_x - right_pad - dur_w).max(30.0);
+                                let title_g = widgets::galley(ui, &t.title, theme::semibold(13.0), theme::text(), text_w);
+                                ui.painter().galley(pos2(text_x, tile_rect.center().y - 14.0), title_g, theme::text());
 
-                    let mut sub = t.album.as_ref().map(|a| a.name.clone()).unwrap_or_else(|| t.artist_line());
-                    if let Some(p) = t.plays.map(crate::backend::compact) {
-                        sub = if sub.is_empty() { format!("{p} plays") } else { format!("{sub} \u{2022} {p} plays") };
-                    }
-                    let sub_g = widgets::galley(ui, &sub, theme::regular(11.5), theme::text_dim(), text_w);
-                    ui.painter().galley(pos2(text_x, tile_rect.center().y + 1.0), sub_g, theme::text_dim());
+                                let mut sub = t.album.as_ref().map(|a| a.name.clone()).unwrap_or_else(|| t.artist_line());
+                                if let Some(p) = t.plays.map(crate::backend::compact) {
+                                    sub = if sub.is_empty() { format!("{p} plays") } else { format!("{sub} \u{2022} {p} plays") };
+                                }
+                                let sub_g = widgets::galley(ui, &sub, theme::regular(11.5), theme::text_dim(), text_w);
+                                ui.painter().galley(pos2(text_x, tile_rect.center().y + 1.0), sub_g, theme::text_dim());
 
-                    if let Some(d) = t.duration {
-                        ui.painter().text(pos2(tile_rect.right() - right_pad, tile_rect.center().y), Align2::RIGHT_CENTER, super::fmt_time(d), theme::regular(11.5), theme::text_dim());
-                    }
+                                if let Some(d) = t.duration {
+                                    ui.painter().text(pos2(tile_rect.right() - right_pad, tile_rect.center().y), Align2::RIGHT_CENTER, super::fmt_time(d), theme::regular(11.5), theme::text_dim());
+                                }
 
-                    if resp.clicked() {
-                        acts.push(Action::Play(top.clone(), global_idx));
-                    }
-                    egui::Popup::context_menu(&resp).show(|ui| {
-                        widgets::song_menu(ui, t, liked.contains(&t.id), None, acts);
+                                if resp.clicked() {
+                                    acts.push(Action::Play(top.clone(), global_idx));
+                                }
+                                egui::Popup::context_menu(&resp).show(|ui| {
+                                    widgets::song_menu(ui, t, liked.contains(&t.id), None, acts);
+                                });
+                            } else {
+                                ui.allocate_space(vec2(col_w, tile_h));
+                            }
+                        }
                     });
-                } else {
-                    ui.allocate_space(vec2(col_w, tile_h));
                 }
-            }
-        });
-        if row + 1 < num_rows {
-            ui.add_space(8.0);
+            });
         }
-    }
+    });
 }
 
 pub fn artist(app: &mut App, ui: &mut Ui, id: &str, now: f64) {

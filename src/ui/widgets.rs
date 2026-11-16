@@ -1063,6 +1063,12 @@ fn shelf_edge_id(id: &str) -> egui::Id {
     egui::Id::unique(("hscroll-edge", id))
 }
 
+/// Whether the `h_scroll` with this `id` is at its left and right ends (from the last
+/// frame), so a header can show or hide its arrows.
+pub fn h_scroll_edges(ui: &Ui, id: &str) -> (bool, bool) {
+    ui.ctx().data(|d| d.get_temp::<(bool, bool)>(shelf_edge_id(id))).unwrap_or((true, false))
+}
+
 /// Section header with optional strapline/avatar and ‹ › scroll arrows. `id` is the
 /// shelf's `h_scroll` id: an arrow is left out once the shelf can't go that way.
 /// Returns (scroll left, scroll right) clicks.
