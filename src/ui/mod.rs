@@ -336,6 +336,9 @@ pub struct App {
     lists: Lists,
     artist: Option<ArtistPage>,
     library: Option<Library>,
+    /// A save/remove shown in the library before YouTube Music confirms it: the card and
+    /// which way it went, so a failure can put the library back.
+    optimistic_save: Option<(Card, bool)>,
     /// When the library was last requested; the sidebar spinner gives up after a while.
     library_requested: std::time::Instant,
     history: Option<Vec<Track>>,
@@ -673,6 +676,7 @@ impl App {
             lists: Lists::default(),
             artist: None,
             library: None,
+            optimistic_save: None,
             library_requested: std::time::Instant::now(),
             history: None,
             liked: HashSet::new(),

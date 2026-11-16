@@ -3,7 +3,7 @@
 use std::time::Duration;
 
 use crate::backend::Req;
-use crate::model::{Target, Track};
+use crate::model::{Card, Target, Track};
 
 use super::lists::LIKED_MUSIC;
 use super::queue::QueueFill;
@@ -192,7 +192,26 @@ impl App {
                 }
             }
             Action::SaveCollection(id, save) => {
-                if self.logged_in { self.backend.request(Req::SaveCollection { id, save }); }
+                if self.logged_in {
+                    // Flip the library tick now: the save's round trip, and the library
+                    // refresh after it, are far too slow to leave the button stuck.
+                    let card = self.lists.get(&id).map(|o| {
+                        let c = &o.c;
+                        Card {
+                            title: c.title.clone(),
+                            subtitle: c.byline(),
+                            thumbs: c.thumbs.clone(),
+                            target: if c.is_album { Target::Album(id.clone()) } else { Target::Playlist(id.clone()) },
+                            round: false,
+                            links: c.artists.clone(),
+                        }
+                    });
+                    if let Some(card) = card {
+                        self.set_saved(&card, save);
+                        self.optimistic_save = Some((card, save));
+                    }
+                    self.backend.request(Req::SaveCollection { id, save });
+                }
                 else { self.toast("Sign in to save to library"); }
             }
             Action::HomeChip(params) => {

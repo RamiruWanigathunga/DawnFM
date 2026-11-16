@@ -616,6 +616,7 @@ impl App {
 
     /// A playlist was edited, added to, removed from, saved or deleted; `message` says which.
     fn on_playlist_changed(&mut self, id: String, message: &'static str) {
+        self.optimistic_save = None;
         self.request_library();
         if message == "Playlist deleted" {
             // Its load is dropped too, and the queue stops waiting for it.
@@ -732,6 +733,12 @@ impl App {
         self.loading = false;
         self.home_loading = false;
         self.radio_pending = false;
+        // A save that failed didn't happen: take the optimistic entry back out.
+        if e.starts_with("Save to library failed")
+            && let Some((card, save)) = self.optimistic_save.take()
+        {
+            self.set_saved(&card, !save);
+        }
         if let Some(h) = &mut self.home {
             h.loading_more = None;
             h.picks_loading = false;
