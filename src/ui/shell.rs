@@ -750,21 +750,38 @@ pub fn search_results(app: &mut App, ctx: &egui::Context) {
                         ui.painter().galley(pos2(art.right() + 12.0, r.top() + 26.0), line(sub, theme::regular(12.5), theme::text_dim()), theme::text_dim());
                         resp.clicked()
                     };
-                    if !r.artists.is_empty() {
+                    // A typed song name shows its songs first; an exact artist name keeps
+                    // the artist section on top.
+                    let songs_first = r.tracks.iter().any(|t| t.title.trim().eq_ignore_ascii_case(q.trim()))
+                        || !r.artists.iter().any(|c| c.title.trim().eq_ignore_ascii_case(q.trim()));
+                    let draw_artists = |ui: &mut Ui, act: &mut Option<Action>| {
+                        if r.artists.is_empty() {
+                            return;
+                        }
                         heading(ui, "ARTISTS");
                         for (i, c) in r.artists.iter().take(3).enumerate() {
                             if row(ui, ("ARTISTS", i), &c.title, &super::widgets::card_subtitle(&c.subtitle), &c.thumbs, c.round) {
-                                act = Some(Action::Open(c.target.clone()));
+                                *act = Some(Action::Open(c.target.clone()));
                             }
                         }
-                    }
-                    if !r.tracks.is_empty() {
+                    };
+                    let draw_songs = |ui: &mut Ui, act: &mut Option<Action>| {
+                        if r.tracks.is_empty() {
+                            return;
+                        }
                         heading(ui, "SONGS");
                         for (i, tr) in r.tracks.iter().take(5).enumerate() {
                             if row(ui, ("song", i), &tr.title, &tr.artist_line(), &tr.thumbs, false) {
-                                act = Some(Action::Play(r.tracks.clone(), i));
+                                *act = Some(Action::Play(r.tracks.clone(), i));
                             }
                         }
+                    };
+                    if songs_first {
+                        draw_songs(ui, &mut act);
+                        draw_artists(ui, &mut act);
+                    } else {
+                        draw_artists(ui, &mut act);
+                        draw_songs(ui, &mut act);
                     }
                     for (label, cards) in [("ALBUMS", &r.albums), ("PLAYLISTS", &r.playlists)] {
                         if cards.is_empty() {
