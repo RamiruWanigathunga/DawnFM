@@ -53,6 +53,11 @@ pub fn page(app: &mut App, ui: &mut Ui, now: f64) {
     let page = app.page.clone();
     // Each page (each album, each search) keeps its own scroll position.
     let mut area = egui::ScrollArea::vertical().id_salt(("page", &page)).auto_shrink(false);
+    // The scroll position is remembered between pages (and between runs); a fresh launch
+    // still opens at the top instead of halfway down where the last one was left.
+    if std::mem::take(&mut app.scroll_top) {
+        area = area.vertical_scroll_offset(0.0);
+    }
     // Settings always starts at the top when navigated to.
     if matches!(page, Page::Settings) && t < 1.0 {
         area = area.vertical_scroll_offset(0.0);

@@ -302,6 +302,8 @@ pub struct App {
     back: Vec<Page>,
     forward: Vec<Page>,
     page_changed: f64,
+    /// A fresh launch starts each page at the top, not where the last run left it.
+    scroll_top: bool,
     loading: bool,
     /// The current page's request failed with nothing cached: show a retry, not a skeleton.
     load_failed: bool,
@@ -656,6 +658,7 @@ impl App {
             back: Vec::new(),
             forward: Vec::new(),
             page_changed: 0.0,
+            scroll_top: true,
             loading: false,
             load_failed: false,
             search_text: String::new(),
