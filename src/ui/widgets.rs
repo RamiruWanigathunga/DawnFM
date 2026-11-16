@@ -981,8 +981,11 @@ pub fn track_row(ui: &mut Ui, t: &Track, o: &RowOpts, acts: &mut Vec<Action>) ->
         None
     };
     let plays_w = if plays_text.is_some() { 64.0 } else { 0.0 };
-    // Where the title/artist/album columns end: the play and length columns follow.
-    let content_right = right - dur_w - if plays_text.is_some() { plays_w + dur_gap } else { 0.0 };
+    // The play count column sits before the length, with a gap between them.
+    let plays_right = right - dur_w - if plays_text.is_some() { dur_gap } else { 0.0 };
+    // Where the title/artist/album columns end: left of the play count's own column,
+    // never under it, so a long album name can't run into the count.
+    let content_right = plays_right - if plays_text.is_some() { plays_w + 16.0 } else { 0.0 };
 
     if album_row && wide {
         let title_col = theme::text();
@@ -991,7 +994,7 @@ pub fn track_row(ui: &mut Ui, t: &Track, o: &RowOpts, acts: &mut Vec<Action>) ->
         text_at(ui, pos2(x, cy - 9.0), &t.title, theme::semibold(14.5), title_col, artist_x - x - 16.0);
         linked_text(ui, pos2(artist_x, cy - 8.0), &t.artist_line(), &t.artists, theme::regular(13.5), theme::text_dim(), content_w - (artist_x - x) - 16.0, acts);
         if let Some(p) = &plays_text {
-            ui.painter().text(pos2(content_right, cy), Align2::RIGHT_CENTER, p, theme::regular(13.0), theme::text_dim());
+            ui.painter().text(pos2(plays_right, cy), Align2::RIGHT_CENTER, p, theme::regular(13.0), theme::text_dim());
         }
         if let Some(d) = t.duration {
             ui.painter().text(pos2(right, cy), Align2::RIGHT_CENTER, super::fmt_time(d), theme::regular(13.0), theme::text_dim());
@@ -1018,7 +1021,7 @@ pub fn track_row(ui: &mut Ui, t: &Track, o: &RowOpts, acts: &mut Vec<Action>) ->
         linked_text(ui, pos2(x, cy + 2.0), sub, &t.artists, theme::regular(13.0), theme::text_dim(), text_max_w, acts);
     }
     if let Some(p) = &plays_text {
-        ui.painter().text(pos2(content_right, cy), Align2::RIGHT_CENTER, p, theme::regular(13.0), theme::text_dim());
+        ui.painter().text(pos2(plays_right, cy), Align2::RIGHT_CENTER, p, theme::regular(13.0), theme::text_dim());
     }
     if let (Some(ax), Some(album)) = (album_x, &t.album) {
         let w = (content_right - ax).max(20.0);
