@@ -266,6 +266,20 @@ impl Drop for MotionView {
     }
 }
 
+/// Horizontal trackpad points that make a swipe a page turn.
+const SWIPE_POINTS: f32 = 120.0;
+
+/// A two-finger swipe on the trackpad, on its way to turning the page.
+#[derive(Default)]
+struct SwipeNav {
+    /// Horizontal points so far (positive = content moved right).
+    dx: f32,
+    /// When the last scroll event arrived, so a swipe can be told from a new one.
+    at: f64,
+    /// Already went back/forward: the rest of the gesture (and its momentum) is ignored.
+    fired: bool,
+}
+
 pub struct App {
     pub backend: Backend,
     pub audio: AudioHandle,
@@ -304,6 +318,9 @@ pub struct App {
     page_changed: f64,
     /// A fresh launch starts each page at the top, not where the last run left it.
     scroll_top: bool,
+    /// The trackpad swipe in progress: horizontal points so far, when it last moved,
+    /// and whether it has already turned the page.
+    swipe: SwipeNav,
     loading: bool,
     /// The current page's request failed with nothing cached: show a retry, not a skeleton.
     load_failed: bool,
@@ -659,6 +676,7 @@ impl App {
             forward: Vec::new(),
             page_changed: 0.0,
             scroll_top: true,
+            swipe: SwipeNav::default(),
             loading: false,
             load_failed: false,
             search_text: String::new(),
@@ -941,6 +959,63 @@ impl App {
             self.back.push(std::mem::replace(&mut self.page, p));
             self.page_loaded();
         }
+    }
+
+    /// Two-finger trackpad swipes walk the page history the way Safari's do: fingers to
+    /// the left go back, to the right forward. The page changes at once (no slide); an
+    /// arrow shows at the side while the swipe is going on.
+    fn swipe_nav(&mut self, ctx: &egui::Context, now: f64) {
+        // Read after the pages are drawn: a horizontal shelf takes its swipe's delta out
+        // of this, so only swipes that no shelf wanted turn the page.
+        let dx = ctx.input(|i| if i.modifiers.any() { 0.0 } else { i.smooth_scroll_delta.x });
+        if dx.abs() > 0.01 {
+            // A pause ends the last gesture, so the next swipe counts from zero.
+            if now - self.swipe.at > 0.35 {
+                self.swipe.dx = 0.0;
+                self.swipe.fired = false;
+            }
+            self.swipe.at = now;
+            self.swipe.dx += dx;
+            if !self.swipe.fired && self.swipe.dx.abs() >= SWIPE_POINTS {
+                self.swipe.fired = true;
+                // The content moves left (negative) for back, right for forward.
+                if self.swipe.dx < 0.0 {
+                    self.nav_back();
+                } else {
+                    self.nav_forward();
+                }
+                // The new page draws on the next frame, at once.
+                ctx.request_repaint();
+            }
+        } else if now - self.swipe.at > 0.35 {
+            self.swipe.dx = 0.0;
+            self.swipe.fired = false;
+        }
+    }
+
+    /// The hint that a swipe is about to turn the page: a dim arrow at the side it goes to.
+    fn paint_swipe_arrow(&self, ctx: &egui::Context, now: f64) {
+        let going = self.swipe.dx.abs();
+        if self.swipe.fired || going < 6.0 || now - self.swipe.at > 0.35 {
+            return;
+        }
+        let screen = ctx.content_rect();
+        let back = self.swipe.dx < 0.0;
+        let p = (going / SWIPE_POINTS).clamp(0.0, 1.0);
+        let a = 0.3 + 0.6 * p;
+        let center = egui::pos2(
+            if back { screen.left() + 30.0 } else { screen.right() - 30.0 },
+            screen.top() + 92.0,
+        );
+        let paint = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::unique("swipe-arrow")));
+        paint.circle_filled(center, 17.0, Color32::from_black_alpha((0.30 * a * 255.0) as u8));
+        paint.circle_stroke(center, 17.0, egui::Stroke::new(1.0, Color32::from_white_alpha((0.22 * a * 255.0) as u8)));
+        let color = Color32::from_white_alpha((0.9 * a * 255.0) as u8);
+        let d = if back { -4.0 } else { 4.0 };
+        let stroke = egui::Stroke::new(2.0, color);
+        paint.line_segment([center + egui::vec2(d, -6.0), center + egui::vec2(-d, 0.0)], stroke);
+        paint.line_segment([center + egui::vec2(-d, 0.0), center + egui::vec2(d, 6.0)], stroke);
+        ctx.request_repaint();
     }
 
     /// Reload the current page's data in place: no page transition, the page stays as
@@ -1489,6 +1564,13 @@ impl eframe::App for App {
         titlebar::resize_edges(&ctx);
         // Back from the mini player.
         self.mini.fade_in(&ctx, now, shell::base_color(self));
+
+        // The swipe hint sits above the pages, while the gesture is still going.
+        if layout == mini::Layout::Full && !self.np_open && self.dialog.is_none() {
+            // After the pages are drawn, so shelves have taken their own swipes first.
+            self.swipe_nav(&ctx, now);
+            self.paint_swipe_arrow(&ctx, now);
+        }
 
         if dev_var("YTM_THEME_TOUR").is_some() {
             self.theme_tour(&ctx, now);
