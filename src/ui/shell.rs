@@ -1479,8 +1479,67 @@ pub fn zoom_badge(ctx: &egui::Context, now: f64) {
     ctx.request_repaint();
 }
 
-pub fn toast(app: &mut App, ctx: &egui::Context, now: f64) {
-    let Some((msg, shown)) = &app.toast else { return };
+/// The song-change card: cover, title and artist at the top of the page for a few
+/// seconds when a new song starts. Settings › Window turns it off; the macOS
+/// notification says the same thing. Clicking it opens Now Playing.
+pub fn song_toast(app: &mut App, ctx: &egui::Context, now: f64) {
+    let Some((track, shown)) = app.song_toast.clone() else { return };
+    let age = (now - shown) as f32;
+    if age > 5.0 {
+        app.song_toast = None;
+        return;
+    }
+    // Now playing and the mini player show the song themselves.
+    if app.np_open || app.mini.target() {
+        return;
+    }
+    let t = theme::ease_out(age / 0.25) * (1.0 - ((age - 4.4) / 0.6).clamp(0.0, 1.0));
+    let screen = ctx.content_rect();
+    egui::Area::new(egui::Id::unique("song-toast"))
+        .order(egui::Order::Tooltip)
+        .pivot(Align2::CENTER_TOP)
+        .fixed_pos(pos2(screen.center().x, screen.top() + 12.0 - 12.0 * (1.0 - t)))
+        .show(ctx, |ui| {
+            ui.set_opacity(t);
+            let out = egui::Frame::new()
+                .fill(theme::menu_fill())
+                .corner_radius(14)
+                .inner_margin(egui::Margin::symmetric(10, 10))
+                .shadow(egui::epaint::Shadow { offset: [0, 10], blur: 30, spread: 0, color: theme::shade(0.45) })
+                .show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        let (art, _) = ui.allocate_exact_size(vec2(46.0, 46.0), Sense::hover());
+                        match crate::model::pick_thumb(&track.thumbs, 92) {
+                            Some(thumb) => widgets::paint_remote(ui, &thumb.url, art, 7.0, thumb.square_uv(), Color32::WHITE),
+                            None => {
+                                ui.painter().rect_filled(art, 7.0, theme::glass(0.10));
+                            }
+                        }
+                        ui.add_space(2.0);
+                        ui.vertical(|ui| {
+                            ui.set_max_width(300.0);
+                            ui.add_space(1.0);
+                            ui.add(egui::Label::new(egui::RichText::new(&track.title).font(theme::semibold(13.5)).color(theme::text())).truncate());
+                            ui.add(egui::Label::new(egui::RichText::new(track.artist_line()).font(theme::regular(12.0)).color(theme::text_dim())).truncate());
+                        });
+                    });
+                });
+            let resp = out.response.interact(Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
+            if resp.clicked() {
+                app.song_toast = None;
+                app.np_open = true;
+                ctx.request_repaint();
+            }
+        });
+    // Frames while it fades in and out; in between it just waits.
+    if age < 0.25 || age > 4.3 {
+        ctx.request_repaint();
+    } else {
+        ctx.request_repaint_after(std::time::Duration::from_secs_f32(4.3 - age));
+    }
+}
+
+pub fn toast(app: &mut App, ctx: &egui::Context, now: f64) {    let Some((msg, shown)) = &app.toast else { return };
     if *shown < 0.0 {
         return;
     }

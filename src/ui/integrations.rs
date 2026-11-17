@@ -143,17 +143,42 @@ impl App {
         }
     }
 
-    /// "Notify on song change": when a new song starts and the window isn't focused,
-    /// post "Title — Artist".
-    pub(super) fn sync_notify(&mut self, ctx: &egui::Context) {
-        let Some(t) = self.playing_track().filter(|_| self.playing() && !self.buffering) else { return };
+    /// Show the in-app song-change card now: Settings › Notifications' Preview, using
+    /// the song that's playing (or a sample one).
+    pub(super) fn preview_song_toast(&mut self, now: f64) {
+        let track = self.playing_track().cloned().unwrap_or_else(|| crate::model::Track {
+            id: String::new(),
+            title: "Song title".to_owned(),
+            artists: vec![crate::model::Link { name: "Artist".to_owned(), id: None }],
+            album: None,
+            duration: None,
+            thumbs: Vec::new(),
+            track_nr: None,
+            plays: None,
+            music_video: false,
+        });
+        self.song_toast = Some((track, now));
+    }
+
+    /// "Notify on song change": when a new song starts, show it in the app and (if the
+    /// window isn't in front) as a macOS notification.
+    pub(super) fn sync_notify(&mut self, ctx: &egui::Context, now: f64) {
+        let Some(t) = self.playing_track().filter(|_| self.playing() && !self.buffering).cloned() else { return };
         if self.notified.as_deref() == Some(t.id.as_str()) {
             return;
         }
-        let text = crate::notify::text(&t.title, &t.artist_line());
+        // The song a launch picks up (or the first one played after it) isn't a change:
+        // the player bar says what's playing already.
+        let first = self.notified.is_none();
         self.notified = Some(t.id.clone());
+        if first {
+            return;
+        }
+        if self.notify_in_app {
+            self.song_toast = Some((t.clone(), now));
+        }
         if self.notify_songs && !ctx.input(|i| i.focused) {
-            crate::notify::post(text);
+            crate::notify::post(crate::notify::text(&t.title, &t.artist_line()));
         }
     }
 

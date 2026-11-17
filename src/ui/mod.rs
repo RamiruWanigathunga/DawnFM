@@ -556,6 +556,10 @@ pub struct App {
     close_to_tray: bool,
     /// Settings › Window: a notification when a new song starts while the window isn't focused.
     pub(super) notify_songs: bool,
+    /// Settings › Window: the same song change shown in the app, whichever window has focus.
+    pub(super) notify_in_app: bool,
+    /// The song-change card and when it appeared, while it's on screen.
+    pub(super) song_toast: Option<(Track, f64)>,
     /// The last song `sync_notify` saw start, so each one is announced once.
     notified: Option<String>,
     /// Settings › Window: draw with wgpu (Vulkan) from the next start (renderer.rs).
@@ -734,6 +738,8 @@ impl App {
             updater: None,
             close_to_tray: get("close_to_tray").is_some_and(|v| v == "1"),
             notify_songs: get("notify_songs").is_some_and(|v| v == "1"),
+            notify_in_app: get("notify_in_app").is_none_or(|v| v == "1"),
+            song_toast: None,
             notified: None,
             wgpu_renderer,
             tray: None,
@@ -1354,7 +1360,7 @@ impl eframe::App for App {
         self.sync_lastfm();
         self.sync_dock(ctx);
         self.sync_menubar(ctx);
-        self.sync_notify(ctx);
+        self.sync_notify(ctx, now);
         self.sync_server_queue(ctx, now);
         self.tick_sleep(ctx);
         self.tick_updates(ctx, now);
@@ -1557,6 +1563,7 @@ impl eframe::App for App {
         if let Some(url) = self.share_pending.take() { ctx.copy_text(url); }
         shell::suggestions(self, &ctx);
         shell::search_results(self, &ctx);
+        shell::song_toast(self, &ctx, now);
         shell::toast(self, &ctx, now);
         shell::zoom_badge(&ctx, now);
         // A click takes effect in the next frame's `logic`: have that frame now, not at
@@ -1668,6 +1675,7 @@ impl eframe::App for App {
         }
         storage.set_string("close_to_tray", b(self.close_to_tray));
         storage.set_string("notify_songs", b(self.notify_songs));
+        storage.set_string("notify_in_app", b(self.notify_in_app));
         storage.set_string("lyrics_drawer", b(self.lyrics_drawer));
         // The sidebar's playlist order, completed with any playlist that appeared since
         // it was last changed (so a drag can place them all).
