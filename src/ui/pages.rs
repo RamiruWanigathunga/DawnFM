@@ -2112,19 +2112,11 @@ fn settings_appearance(app: &mut App, ui: &mut Ui) {
     });
 }
 
-/// Settings › Notifications: what a song change says, in the app and on the desktop.
+/// Settings › Notifications: what a song change says on the desktop.
 fn settings_notifications(app: &mut App, ui: &mut Ui) {
     section_label(ui, "Notifications", None);
     settings_card(ui, |ui| {
-        setting_row(ui, "In-app notifications", Some("The cover, song and artist at the top of the page for a few seconds when a new song starts. Click it to open Now Playing."), |ui| {
-            toggle(ui, &mut app.notify_in_app, "In-app notifications");
-            ui.add_space(8.0);
-            if pill(ui, "Preview", None, false).clicked() {
-                app.preview_song_toast(ui.input(|i| i.time));
-            }
-        });
-        divider(ui);
-        setting_row(ui, "Desktop notifications", Some("Also show the song change as a macOS notification, so it's there when the window isn't in front."), |ui| {
+        setting_row(ui, "Desktop notifications", Some("Show a macOS notification when a new song starts while the window isn't in front."), |ui| {
             toggle(ui, &mut app.notify_songs, "Desktop notifications");
         });
     });
