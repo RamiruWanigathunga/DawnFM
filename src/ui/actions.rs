@@ -354,18 +354,8 @@ impl App {
             }
         }
         if close_w {
-            #[cfg(target_os = "macos")]
-            {
-                ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
-                self.window_hidden = true;
-            }
-            #[cfg(not(target_os = "macos"))]
-            {
-                if self.close_to_tray {
-                    ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
-                    self.window_hidden = true;
-                }
-            }
+            ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+            self.window_hidden = true;
         }
     if vol_up || vol_down {
             let v = (self.audio.volume() + if vol_up { 0.05 } else { -0.05 }).clamp(0.0, 1.0);

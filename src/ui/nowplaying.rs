@@ -37,7 +37,7 @@ pub fn overlay(app: &mut App, ctx: &egui::Context, now: f64, screen: Rect) {
             let art = matches!(b.mode, BgMode::Kawarp | BgMode::CoverStatic | BgMode::CoverFullbleed);
             if let Some(bg) = app.bg.as_ref().filter(|_| art) {
                 let blend = theme::ease_in_out(((now - app.art_changed) / 1.4) as f32);
-                if blend < 1.0 || (app.anim_bg && b.mode != BgMode::CoverStatic && app.playing()) {
+                if blend < 1.0 || (b.mode != BgMode::CoverStatic && app.playing()) {
                     super::animate(ctx);
                 }
                 let level = if app.reactive_bg && app.playing() { app.audio.status.level() * b.reactive } else { 0.0 };

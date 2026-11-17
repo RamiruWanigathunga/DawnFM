@@ -452,7 +452,6 @@ pub struct App {
     chrome_applied: Option<String>,
     /// Light or dark pages (the ytm-rs theme's; see `light_pages`).
     appearance: theme::Appearance,
-    anim_bg: bool,
     reactive_bg: bool,
     /// Skip the parts of music videos SponsorBlock marks as not music.
     sponsorblock: bool,
@@ -552,20 +551,16 @@ pub struct App {
     media_cover: Arc<std::sync::Mutex<Option<(String, String)>>>,
 
     // window
-    /// Clicking × hides the window to the tray instead of quitting.
-    close_to_tray: bool,
     /// Settings › Window: a notification when a new song starts while the window isn't focused.
     pub(super) notify_songs: bool,
     /// The last song `sync_notify` saw start, so each one is announced once.
     notified: Option<String>,
     /// Settings › Window: draw with wgpu (Vulkan) from the next start (renderer.rs).
     pub(super) wgpu_renderer: bool,
-    /// The app icon (`appicon::ALL` id) shown on the window and in the tray.
-    /// The tray icon, while the window is hidden.
-    tray: Option<crate::tray::Tray>,
-    /// Closing for real (Quit from the tray, restart to update): don't hide.
+    /// The app icon (`appicon::ALL` id) shown on the window.
+    /// Closing for real (Quit from the menu, restart to update): don't hide.
     exiting: bool,
-    /// Minimized, or hidden in the tray: the window's geometry isn't worth saving.
+    /// Minimized, or hidden: the window's geometry isn't worth saving.
     window_hidden: bool,
     /// eframe's saved window geometry ("window") from the last time it was visible.
     good_window: Option<String>,
@@ -732,11 +727,9 @@ impl App {
             output_device: get("output_device").filter(|d| !d.is_empty()).map(|id| (id, get("output_device_name").unwrap_or_default())),
             output_devices: Vec::new(),
             updater: None,
-            close_to_tray: get("close_to_tray").is_some_and(|v| v == "1"),
             notify_songs: get("notify_songs").is_some_and(|v| v == "1"),
             notified: None,
             wgpu_renderer,
-            tray: None,
             exiting: false,
             window_hidden: false,
             good_window: get("window"),
@@ -791,7 +784,6 @@ impl App {
             chrome_applied: None,
             // Dev hook: YTM_APPEARANCE=light|dark|system tries a mode without saving it.
             appearance: theme::Appearance::from_key(&dev_var("YTM_APPEARANCE").map(str::to_owned).or_else(|| get("appearance")).unwrap_or_default()),
-            anim_bg: get("anim_bg").is_none_or(|v| v == "1"),
             reactive_bg: get("reactive_bg").is_none_or(|v| v == "1"),
             sponsorblock: get("sponsorblock").is_some_and(|v| v == "1"),
             crossfade: get("crossfade").is_some_and(|v| v == "1"),
@@ -1349,7 +1341,7 @@ impl eframe::App for App {
         }
         self.mini.tick(ctx, now);
         self.tray_window(ctx);
-        self.window_hidden = self.tray.is_some() || ctx.input(|i| i.viewport().minimized == Some(true) || i.viewport().visible() == Some(false));
+        self.window_hidden = ctx.input(|i| i.viewport().minimized == Some(true) || i.viewport().visible() == Some(false));
         self.sync_discord();
         self.sync_lastfm();
         self.sync_dock(ctx);
@@ -1393,7 +1385,7 @@ impl eframe::App for App {
             // The playing row's bars need a steady, full rate to read as smooth; 30 fps
             // behind other windows.
             ctx.request_repaint_after(Duration::from_millis(if focused { 16 } else { 33 }));
-        } else if playing && self.anim_bg && shell::pages_bg_moves(self.look()) {
+        } else if playing && shell::pages_bg_moves(self.look()) {
             ctx.request_repaint_after(Duration::from_millis(66));
         } else if playing || self.buffering {
             ctx.request_repaint_after(Duration::from_millis(250));
@@ -1666,7 +1658,6 @@ impl eframe::App for App {
             storage.set_string("window", w.clone());
             self.good_window = Some(w);
         }
-        storage.set_string("close_to_tray", b(self.close_to_tray));
         storage.set_string("notify_songs", b(self.notify_songs));
         storage.set_string("lyrics_drawer", b(self.lyrics_drawer));
         // The sidebar's playlist order, completed with any playlist that appeared since
@@ -1697,7 +1688,6 @@ impl eframe::App for App {
         if dev_var("YTM_FONT").is_none() {
             storage.set_string("font", theme::font_choice());
         }
-        storage.set_string("anim_bg", b(self.anim_bg));
         storage.set_string("reactive_bg", b(self.reactive_bg));
         storage.set_string("signature_api", self.signature_api.clone());
         storage.set_string("hires_source", self.hires_sources.join("\n"));

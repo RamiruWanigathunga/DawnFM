@@ -130,8 +130,6 @@ pub fn install(wake: impl Fn() + Send + Sync + Clone + 'static) {
     MenuEvent::set_event_handler(Some(move |e: MenuEvent| {
         let id = e.id.as_ref();
         match id {
-            "show" => crate::tray::push(crate::tray::Cmd::Show, &wake),
-            "quit" => crate::tray::push(crate::tray::Cmd::Quit, &wake),
             "mb-site" => open(REPO),
             "mb-issue" => open(&format!("{REPO}/issues/new")),
             _ => {

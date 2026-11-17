@@ -111,7 +111,7 @@ pub fn background(app: &mut App, ui: &mut Ui, screen: Rect, now: f64, only: Opti
     let dim = if light { 1.0 } else { look.app.page_dim.unwrap_or(b.page_dim).clamp(0.02, 1.0) };
     // Now playing animates the shader itself, so keep the clock running for it too.
     let animated = matches!(b.mode, BgMode::Kawarp | BgMode::CoverFullbleed) && b.speed > 0.0;
-    let moving = app.anim_bg && animated && app.playing();
+    let moving = animated && app.playing();
     if moving {
         app.bg_time += dt * b.speed as f64;
     }

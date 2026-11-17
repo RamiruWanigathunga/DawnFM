@@ -2074,10 +2074,7 @@ fn settings_appearance(app: &mut App, ui: &mut Ui) {
             });
             divider(ui);
         }
-        setting_row(ui, "Animated background", Some("The album art slowly drifts behind everything."), |ui| {
-            toggle(ui, &mut app.anim_bg, "Animated background");
-        });
-        divider(ui);
+
         setting_row(ui, "Size", Some("Everything in the app, larger or smaller. ⌘+ and ⌘− do the same from anywhere, and ⌘0 goes back to 100%."), |ui| {
             // Right to left: larger, the size (a click resets it), smaller.
             let ctx = ui.ctx().clone();
@@ -2126,10 +2123,6 @@ fn settings_notifications(app: &mut App, ui: &mut Ui) {
 fn settings_window(app: &mut App, ui: &mut Ui) {
     section_label(ui, "Window", None);
     settings_card(ui, |ui| {
-        setting_row(ui, "Close to tray", Some("Clicking × hides the window and keeps the music playing. Click the tray icon to bring it back, or right-click it to quit."), |ui| {
-            toggle(ui, &mut app.close_to_tray, "Close to tray");
-        });
-        divider(ui);
         let api = crate::renderer::api_name();
         let title = format!("Draw with {api}");
         let desc = format!(
