@@ -451,6 +451,12 @@ impl App {
                 self.go(Page::Playlist(id));
             }
             Resp::PlaylistChanged { id, message } => self.on_playlist_changed(id, message),
+            Resp::Subscribed { channel, subscribed } => {
+                self.optimistic_sub = None;
+                if let Some(sub) = self.artist.as_mut().and_then(|a| a.following.as_mut()).filter(|s| s.channel == channel) {
+                    sub.subscribed = subscribed;
+                }
+            }
             Resp::Collaboration(c) => {
                 if let Some(Dialog::Collaborate { id, info, busy, .. }) = &mut self.dialog
                     && *id == c.playlist_id
@@ -738,6 +744,13 @@ impl App {
             && let Some((card, save)) = self.optimistic_save.take()
         {
             self.set_saved(&card, !save);
+        }
+        // Same for a subscription YouTube Music refused: the button goes back.
+        if (e.starts_with("Subscribe failed") || e.starts_with("Unsubscribe failed"))
+            && let Some((channel, was)) = self.optimistic_sub.take()
+            && let Some(sub) = self.artist.as_mut().and_then(|a| a.following.as_mut()).filter(|s| s.channel == channel)
+        {
+            sub.subscribed = was;
         }
         if let Some(h) = &mut self.home {
             h.loading_more = None;

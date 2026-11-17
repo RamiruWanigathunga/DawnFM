@@ -4,7 +4,7 @@
 
 use serde_json::{Value, json};
 
-use crate::backend::{ArtistPage, Collection};
+use crate::backend::{ArtistPage, ArtistSub, Collection};
 use crate::model::{Card, Chip, Link, Shelf, ShelfKind, Target, Thumb, Track};
 use crate::ytmapi::Api;
 
@@ -598,6 +598,7 @@ fn parse_artist(v: &Value, id: &str) -> Option<ArtistPage> {
     let name = text(&h["title"])?;
     let sub = &h["subscriptionButton"]["subscribeButtonRenderer"];
     let subscribers = text(&sub["subscriberCountText"]).or_else(|| text(&sub["shortSubscriberCountText"])).and_then(|t| count(&t));
+    let following = artist_sub(sub, id);
     let sections = arr(&v["contents"]["singleColumnBrowseResultsRenderer"]["tabs"][0]["tabRenderer"]["content"]["sectionListRenderer"]["contents"]);
     let me = Link { name: name.clone(), id: Some(id.to_owned()) };
     let mut page = ArtistPage {
@@ -610,6 +611,7 @@ fn parse_artist(v: &Value, id: &str) -> Option<ArtistPage> {
         albums: Vec::new(),
         playlists: Vec::new(),
         similar: Vec::new(),
+        following,
         name,
     };
     for s in sections {
@@ -641,6 +643,22 @@ fn parse_artist(v: &Value, id: &str) -> Option<ArtistPage> {
         }
     }
     Some(page)
+}
+
+/// The artist header's subscription button: whether the account is subscribed, and what
+/// subscribing sends. `None` when the page has no button for them.
+fn artist_sub(sub: &Value, id: &str) -> Option<ArtistSub> {
+    if sub.is_null() {
+        return None;
+    }
+    let channel = sub["channelId"].as_str().unwrap_or(id).to_owned();
+    // The button YouTube's page shows says which way it would go; its endpoint carries
+    // the params Subscribe sends.
+    let params = arr(&sub["serviceEndpoints"]).iter().find_map(|e| {
+        let s = &e["subscribeEndpoint"];
+        (!s.is_null()).then(|| s["params"].as_str().map(str::to_owned)).flatten()
+    });
+    Some(ArtistSub { channel, subscribed: sub["subscribed"].as_bool().unwrap_or(false), params })
 }
 
 // ------------------------------------------------------------- radio and explore
@@ -1094,6 +1112,19 @@ pub async fn delete_playlist(api: &Api, id: &str) -> anyhow::Result<()> {
 pub async fn save_collection(api: &Api, playlist_id: &str, save: bool) -> anyhow::Result<()> {
     let endpoint = if save { "like/like" } else { "like/removelike" };
     write(api, endpoint, json!({"target": {"playlistId": playlist_id}})).await?;
+    Ok(())
+}
+
+/// Subscribe to `channel` (or unsubscribe), the account's YouTube subscription: the one
+/// the YouTube Music app shows on the artist, so it stays in step with it. `params` is
+/// what the artist page's Subscribe button sends; Unsubscribe goes without it.
+pub async fn set_subscribed(api: &Api, channel: &str, subscribe: bool, params: Option<&str>) -> anyhow::Result<()> {
+    let endpoint = if subscribe { "subscription/subscribe" } else { "subscription/unsubscribe" };
+    let mut body = json!({"channelIds": [channel]});
+    if subscribe && let Some(p) = params {
+        body["params"] = json!(p);
+    }
+    write(api, endpoint, body).await?;
     Ok(())
 }
 
@@ -2045,8 +2076,25 @@ mod tests {
     }
 
     #[test]
-    fn list_rows_say_whether_they_are_music_videos() {
-        let row = |kind: &str| list_item(&album_row("x", "Song", kind)["musicResponsiveListItemRenderer"]).unwrap().music_video;
+    fn artist_subscription_button_state_and_params() {
+        let sub = json!({
+            "channelId": "UCabc",
+            "subscribed": true,
+            "serviceEndpoints": [{"subscribeEndpoint": {"channelIds": ["UCabc"], "params": "EgIIGxgA"}}],
+        });
+        let s = artist_sub(&sub, "UCabc").unwrap();
+        assert!(s.subscribed);
+        assert_eq!(s.channel, "UCabc");
+        assert_eq!(s.params.as_deref(), Some("EgIIGxgA"));
+        // Pages without a subscribe button (some topic channels) get none.
+        assert!(artist_sub(&Value::Null, "UCabc").is_none());
+        // Unsubscribe's own endpoint carries no params; the button must still work.
+        let plain = json!({"channelId": "UCxyz", "subscribed": false});
+        assert_eq!(artist_sub(&plain, "UCxyz").unwrap().params, None);
+    }
+
+    #[test]
+    fn list_rows_say_whether_they_are_music_videos() {        let row = |kind: &str| list_item(&album_row("x", "Song", kind)["musicResponsiveListItemRenderer"]).unwrap().music_video;
         assert!(row("MUSIC_VIDEO_TYPE_OMV"));
         assert!(!row("MUSIC_VIDEO_TYPE_ATV"));
         // User uploads and covers have no song version to look for.

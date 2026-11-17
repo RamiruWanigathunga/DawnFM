@@ -125,6 +125,8 @@ pub enum Action {
     Collaborate,
     DeletePlaylist,
     SaveCollection(String, bool),
+    /// Subscribe to (or unsubscribe from) the artist page's channel.
+    SetSubscribed(bool),
     HomeChip(Option<String>),
     OpenNowPlaying(bool),
     /// Into the mini player (true) or back to the full window.
@@ -358,6 +360,9 @@ pub struct App {
     /// A save/remove shown in the library before YouTube Music confirms it: the card and
     /// which way it went, so a failure can put the library back.
     optimistic_save: Option<(Card, bool)>,
+    /// A subscription shown flipped on the artist page before YouTube confirms it: the
+    /// channel and the state it had, so a failure can put it back.
+    optimistic_sub: Option<(String, bool)>,
     /// When the library was last requested; the sidebar spinner gives up after a while.
     library_requested: std::time::Instant,
     history: Option<Vec<Track>>,
@@ -698,6 +703,7 @@ impl App {
             artist: None,
             library: None,
             optimistic_save: None,
+            optimistic_sub: None,
             library_requested: std::time::Instant::now(),
             history: None,
             liked: HashSet::new(),

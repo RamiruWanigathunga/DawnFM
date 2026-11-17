@@ -1358,14 +1358,28 @@ pub fn artist(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
         }
     }
 
-    // Circle 3: Star button (★)
-    let star_center = pos2(play_center.x + 24.0 + gap + 19.0, btn_y);
-    let star_rect = Rect::from_center_size(star_center, vec2(38.0, 38.0));
-    let star_resp = named(ui.interact(star_rect, ui.scope_id().with("hero_star"), Sense::click()), "Favorite artist").on_hover_cursor(egui::CursorIcon::PointingHand);
-    let star_h = star_resp.hovered();
-    ui.painter().circle_filled(star_center, 19.0, theme::glass(0.15 + 0.08 * (star_h as u8 as f32)));
-    ui.painter().circle_stroke(star_center, 19.0, egui::Stroke::new(1.0, theme::glass(0.12)));
-    ui.painter().text(star_center, Align2::CENTER_CENTER, "★", theme::semibold(16.0), theme::text());
+    // Circle 3: the account's YouTube subscription to this artist, as a pill: the same
+    // subscription the YouTube Music app shows, so it stays in step with it.
+    if let Some(sub) = &a.following {
+        let label = if sub.subscribed { "Subscribed" } else { "Subscribe" };
+        let galley = ui.painter().layout_no_wrap(label.to_owned(), theme::semibold(13.5), theme::text());
+        let check_w = if sub.subscribed { 20.0 } else { 0.0 };
+        let w = galley.size().x + check_w + 32.0;
+        let pill = Rect::from_min_size(pos2(play_center.x + 24.0 + gap, btn_y - 17.0), vec2(w, 34.0));
+        let resp = named(ui.interact(pill, ui.scope_id().with("hero_sub"), Sense::click()), label).on_hover_cursor(egui::CursorIcon::PointingHand);
+        let h = resp.hovered() as u8 as f32;
+        ui.painter().rect_filled(pill, 17.0, theme::glass(0.14 + 0.09 * h));
+        ui.painter().rect_stroke(pill, 17.0, egui::Stroke::new(1.0, theme::glass(0.16 + 0.08 * h)), egui::StrokeKind::Inside);
+        let mut x = pill.left() + 16.0;
+        if sub.subscribed {
+            widgets::icon_at(ui, pos2(x + 4.0, btn_y), icon::CHECK, 14.0, theme::text());
+            x += check_w;
+        }
+        ui.painter().galley(pos2(x, btn_y - galley.size().y / 2.0), galley, theme::text());
+        if resp.clicked() {
+            acts.push(Action::SetSubscribed(!sub.subscribed));
+        }
+    }
 
     // Artist name: show special Apple wordmark logo if available, otherwise large bold typography
     let has_logo = apple.as_ref().and_then(|x| x.logo.as_ref()).is_some();

@@ -94,6 +94,9 @@ pub enum Req {
     Collaboration(String),
     SetCollaboration { info: ytm::Collaboration, change: ytm::CollabChange },
     SaveCollection { id: String, save: bool },
+    /// Subscribe to (or unsubscribe from) the artist's channel `channel`, the account's
+    /// YouTube subscription; `params` is the Subscribe button's.
+    SetSubscribed { channel: String, subscribe: bool, params: Option<String> },
     SetCookie(String),
     Logout,
 }
@@ -139,6 +142,7 @@ impl Req {
             Req::Collaboration(_) => "Loading collaboration",
             Req::SetCollaboration { .. } => "Collaboration",
             Req::SaveCollection { .. } => "Save to library",
+            Req::SetSubscribed { subscribe, .. } => if *subscribe { "Subscribe" } else { "Unsubscribe" },
             Req::SetCookie(_) => "Sign in",
             Req::Logout => "Sign out",
         }
@@ -222,6 +226,19 @@ pub struct ArtistPage {
     pub albums: Vec<Card>,
     pub playlists: Vec<Card>,
     pub similar: Vec<Card>,
+    /// The account's subscription to the artist; `None` when YouTube's page has no
+    /// subscribe button for them.
+    pub following: Option<ArtistSub>,
+}
+
+/// The account's YouTube subscription to an artist's channel: the same one the YouTube
+/// Music app and youtube.com share, so subscribing here shows up there.
+pub struct ArtistSub {
+    /// The channel to subscribe to (usually the artist page's own id).
+    pub channel: String,
+    pub subscribed: bool,
+    /// The `params` YouTube's Subscribe button sends; Unsubscribe goes without.
+    pub params: Option<String>,
 }
 
 pub struct Library {
@@ -284,6 +301,8 @@ pub enum Resp {
     LikedMany { video_ids: Vec<String>, failed: Vec<String>, like: bool },
     PlaylistCreated { id: String, songs: usize },
     PlaylistChanged { id: String, message: &'static str },
+    /// The account's subscription to the artist's channel `channel` is now `subscribed`.
+    Subscribed { channel: String, subscribed: bool },
     Collaboration(ytm::Collaboration),
     /// Playback for `generation` failed before reaching the audio engine.
     PlayError { generation: u64, msg: String },
@@ -857,6 +876,10 @@ impl Backend {
                 Req::SaveCollection { id, save } => {
                     ytm::save_collection(api, &id, save).await?;
                     Resp::PlaylistChanged { id, message: if save { "Saved to library" } else { "Removed from library" } }
+                }
+                Req::SetSubscribed { channel, subscribe, params } => {
+                    ytm::set_subscribed(api, &channel, subscribe, params.as_deref()).await?;
+                    Resp::Subscribed { channel, subscribed: subscribe }
                 }
                 Req::SetCookie(input) => {
                     self.set_cookie(&input).await?;

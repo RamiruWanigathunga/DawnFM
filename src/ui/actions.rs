@@ -214,6 +214,22 @@ impl App {
                 }
                 else { self.toast("Sign in to save to library"); }
             }
+            // The account's YouTube subscription to the artist, flipped at once (the
+            // round trip is slow) and put back if YouTube Music refuses it.
+            Action::SetSubscribed(subscribe) => {
+                if !self.logged_in {
+                    self.toast("Sign in to subscribe");
+                } else if let Some(sub) = self.artist.as_mut().and_then(|a| a.following.as_mut()) {
+                    self.optimistic_sub = Some((sub.channel.clone(), sub.subscribed));
+                    sub.subscribed = subscribe;
+                    let req = Req::SetSubscribed {
+                        channel: sub.channel.clone(),
+                        subscribe,
+                        params: sub.params.clone(),
+                    };
+                    self.backend.request(req);
+                }
+            }
             Action::HomeChip(params) => {
                 self.home_loading = true;
                 if let Some(h) = &mut self.home {
