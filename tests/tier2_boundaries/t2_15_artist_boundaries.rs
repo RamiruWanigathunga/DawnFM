@@ -30,6 +30,7 @@ fn test_artist_page_empty_and_large_bio() {
         albums: Vec::new(),
         playlists: Vec::new(),
         similar: Vec::new(),
+        photo: Vec::new(),
         following: None,
     };
     assert!(empty_artist.name.is_empty());
@@ -47,6 +48,7 @@ fn test_artist_page_empty_and_large_bio() {
         albums: Vec::new(),
         playlists: Vec::new(),
         similar: Vec::new(),
+        photo: Vec::new(),
         following: None,
     };
     assert_eq!(large_artist.description.as_ref().unwrap().len(), 100_000);

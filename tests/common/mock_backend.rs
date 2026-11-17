@@ -87,6 +87,7 @@ impl MockCatalog {
                 Self::mock_card("Post Malone", "Artist • 24M subscribers"),
                 Self::mock_card("Dua Lipa", "Artist • 22M subscribers"),
             ],
+            photo: sample_thumbs(),
             following: None,
         }
     }

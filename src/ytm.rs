@@ -611,6 +611,7 @@ fn parse_artist(v: &Value, id: &str) -> Option<ArtistPage> {
         albums: Vec::new(),
         playlists: Vec::new(),
         similar: Vec::new(),
+        photo: thumbs(&v["microformat"]["microformatDataRenderer"]),
         following,
         name,
     };
@@ -2091,6 +2092,18 @@ mod tests {
         // Unsubscribe's own endpoint carries no params; the button must still work.
         let plain = json!({"channelId": "UCxyz", "subscribed": false});
         assert_eq!(artist_sub(&plain, "UCxyz").unwrap().params, None);
+    }
+
+    #[test]
+    fn artist_photo_comes_from_the_square_microformat_thumbnail() {
+        // microformatDataRenderer.thumbnail is {"thumbnails": …} itself, not wrapped in
+        // another "thumbnail" the way the header's musicThumbnailRenderer is.
+        let v = json!({"microformat": {"microformatDataRenderer": {"thumbnail": {"thumbnails": [
+            {"url": "https://x/y=w544-h544-p", "width": 544, "height": 544},
+        ]}}}});
+        let t = thumbs(&v["microformat"]["microformatDataRenderer"]);
+        assert_eq!(t.len(), 1);
+        assert_eq!((t[0].width, t[0].height), (544, 544));
     }
 
     #[test]

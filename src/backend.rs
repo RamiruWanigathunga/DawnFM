@@ -226,6 +226,9 @@ pub struct ArtistPage {
     pub albums: Vec<Card>,
     pub playlists: Vec<Card>,
     pub similar: Vec<Card>,
+    /// The artist's square photo (the round avatar YouTube shows for them), for small
+    /// pictures; `banner` is the wide one and crops badly at that size.
+    pub photo: Vec<Thumb>,
     /// The account's subscription to the artist; `None` when YouTube's page has no
     /// subscribe button for them.
     pub following: Option<ArtistSub>,
@@ -732,7 +735,13 @@ impl Backend {
                 Req::Playlist { id, load, stream: true } => self.stream_playlist(id, load, me).await?,
                 Req::Artist(id) => Resp::Artist(ytm::artist(api, &id).await?),
                 // The artist page's header picture, cropped square where it's drawn.
-                Req::ArtistPhoto(id) => Resp::ArtistPhoto { thumbs: ytm::artist(api, &id).await?.banner, id },
+                Req::ArtistPhoto(id) => {
+                    // The round avatar is the square photo, not the wide banner: a square
+                    // cut of that crops the face.
+                    let a = ytm::artist(api, &id).await?;
+                    let thumbs = if a.photo.is_empty() { a.banner } else { a.photo };
+                    Resp::ArtistPhoto { thumbs, id }
+                }
                 Req::Library => self.library().await?,
                 Req::History => Resp::History(ytm::history(api).await?),
                 Req::Account => {
