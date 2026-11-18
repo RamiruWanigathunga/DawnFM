@@ -1455,6 +1455,22 @@ pub fn artist(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
 
 // ------------------------------------------------------------------ library
 
+/// The artists behind the songs in recently played, newest first, each once.
+fn played_artists(history: &[Track]) -> Vec<crate::model::Link> {
+    let mut seen = HashSet::new();
+    let mut out = Vec::new();
+    for t in history {
+        for a in &t.artists {
+            let Some(id) = a.id.clone() else { continue };
+            if !seen.insert(id.clone()) {
+                continue;
+            }
+            out.push(crate::model::Link { name: a.name.clone(), id: Some(id) });
+        }
+    }
+    out
+}
+
 fn library(app: &mut App, ui: &mut Ui, tab: LibTab, now: f64) {
     page_title(ui, "Library");
     if !app.logged_in {
@@ -1506,11 +1522,27 @@ fn library(app: &mut App, ui: &mut Ui, tab: LibTab, now: f64) {
                 placeholder(app, ui, now, 2, CARD);
                 return;
             }
-            let Some(artists) = &app.library_artists else { return };
-            if artists.is_empty() {
+            let followed = app.library_artists.as_deref().unwrap_or_default();
+            if followed.is_empty() {
                 ui.label(RichText::new("Artists you follow show up here.").color(theme::text_dim()));
             } else {
-                grid(ui, artists, &mut app.actions);
+                grid(ui, followed, &mut app.actions);
+            }
+            // The artists behind the songs in History, newest first.
+            let played = app.history.as_deref().map(played_artists).unwrap_or_default();
+            if !played.is_empty() {
+                section_label(ui, "From your history", None);
+                ui.horizontal_wrapped(|ui| {
+                    ui.spacing_mut().item_spacing = vec2(8.0, 8.0);
+                    for a in &played {
+                        if pill(ui, &a.name, None, false).clicked() {
+                            if let Some(id) = &a.id {
+                                app.actions.push(Action::Open(Target::Artist(id.clone())));
+                            }
+                        }
+                    }
+                });
+                ui.add_space(10.0);
             }
         }
         // Liked Music, kept like any playlist.
@@ -2629,6 +2661,25 @@ fn keycap(ui: &Ui, right: egui::Pos2, key: &str) -> f32 {
 #[cfg(test)]
 mod tests {
     use crate::backend::Collection;
+
+    #[test]
+    fn played_artists_are_newest_first_and_once() {
+        use crate::model::{Link, Track};
+        let row = |artists: Vec<(&str, Option<&str>)>| Track {
+            id: String::new(),
+            title: String::new(),
+            artists: artists.into_iter().map(|(n, id)| Link { name: n.into(), id: id.map(str::to_owned) }).collect(),
+            album: None,
+            duration: None,
+            thumbs: vec![],
+            track_nr: None,
+            plays: None,
+            music_video: false,
+        };
+        let history = vec![row(vec![("A", Some("id-a")), ("Unlinked", None)]), row(vec![("B", Some("id-b")), ("A", Some("id-a"))])];
+        let names: Vec<_> = super::played_artists(&history).into_iter().map(|a| a.name).collect();
+        assert_eq!(names, ["A", "B"]);
+    }
 
     #[test]
     fn home_subtitles_lose_their_counts() {

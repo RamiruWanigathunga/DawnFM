@@ -1063,7 +1063,13 @@ impl App {
             }
             Page::Artist(id) => Some(Req::Artist(id.clone())),
             Page::Library(LibTab::History) if self.logged_in => Some(Req::History),
-            Page::Library(LibTab::Artists) if self.logged_in => Some(Req::Artists),
+            Page::Library(LibTab::Artists) if self.logged_in => {
+                // The "From your history" rows need History too.
+                if self.history.is_none() {
+                    self.backend.request(Req::History);
+                }
+                Some(Req::Artists)
+            }
             Page::Library(LibTab::Songs) => {
                 if self.logged_in {
                     self.visit_list(LIKED_MUSIC, false);
