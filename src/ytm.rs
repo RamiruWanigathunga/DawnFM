@@ -862,12 +862,12 @@ pub async fn saved_albums(api: &Api) -> anyhow::Result<Vec<Card>> {
 
 /// The artists the account follows (Library › Artists).
 pub async fn library_artists(api: &Api) -> anyhow::Result<Vec<Card>> {
-    library_channels(api, "FEmusic_library_corpus_artists").await
+    artist_list(api, "FEmusic_library_corpus_artists").await
 }
 
-/// A library page of followed channels (artists or podcasts), every page of it: each is
-/// a round card opening its channel page (a podcast show is an artist page to YouTube).
-async fn library_channels(api: &Api, browse_id: &str) -> anyhow::Result<Vec<Card>> {
+/// A library page of followed artist channels, every page of it: each is a round card
+/// opening the artist's channel page.
+async fn artist_list(api: &Api, browse_id: &str) -> anyhow::Result<Vec<Card>> {
     let v = api.call_signed_in("browse", json!({ "browseId": browse_id })).await?;
     let mut cards = Vec::new();
     let mut token = None;
