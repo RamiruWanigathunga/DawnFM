@@ -390,6 +390,48 @@ pub fn paint_cover_fill(ui: &Ui, rect: Rect, thumbs: &[Thumb], tint: Color32) {
     paint_remote(ui, &url, rect, 0.0, Rect::from_center_size(uv.center(), size), tint);
 }
 
+/// The cover in `rect`, sharp on the left and dissolving into what is behind it: from
+/// `fade_from` (a fraction of the width) its alpha falls to nothing at the right edge.
+/// Over the blurred full-bleed backdrop this is the artwork on the left melting into
+/// the lyrics' side. Dissolves between tracks like [`paint_cover_xfade`].
+pub fn paint_cover_fade(ui: &Ui, site: egui::Id, rect: Rect, thumbs: &[Thumb], px: u32, fade_from: f32, tint: Color32) {
+    if !ui.is_rect_visible(rect) {
+        return;
+    }
+    let px = fetch_px(px);
+    let Some(t) = pick_thumb(thumbs, px.min(544)) else { return };
+    let url = steady_url(ui.ctx(), &t.url, px);
+    let ready = matches!(egui::Image::new(&url).load_for_size(ui.ctx(), rect.size()), Ok(egui::load::TexturePoll::Ready { .. }));
+    let uv = t.square_uv();
+    dissolve(ui, site, &url, uv, ready, &mut |u, uv, a| {
+        fade_mesh(ui, u, rect, uv, tint.gamma_multiply(a), fade_from);
+    });
+}
+
+/// One image into `rect`, its right edge fading from `fade_from` of the width to nothing.
+fn fade_mesh(ui: &Ui, url: &str, rect: Rect, uv: Rect, tint: Color32, fade_from: f32) {
+    let Ok(egui::load::TexturePoll::Ready { texture }) = egui::Image::new(url).load_for_size(ui.ctx(), rect.size()) else { return };
+    let fade_from = fade_from.clamp(0.0, 0.999);
+    // Strips along the width, each side's alpha set per vertex: the fade is smooth,
+    // not a handful of steps.
+    const SLICES: usize = 64;
+    let mut mesh = egui::Mesh::with_texture(texture.id);
+    for i in 0..=SLICES {
+        let f = i as f32 / SLICES as f32;
+        let a = if f <= fade_from { 1.0 } else { (1.0 - f) / (1.0 - fade_from) };
+        let color = tint.gamma_multiply(a);
+        let x = rect.left() + rect.width() * f;
+        let u = uv.left() + uv.width() * f;
+        mesh.vertices.push(egui::epaint::Vertex { pos: pos2(x, rect.top()), uv: pos2(u, uv.top()), color });
+        mesh.vertices.push(egui::epaint::Vertex { pos: pos2(x, rect.bottom()), uv: pos2(u, uv.bottom()), color });
+        if i > 0 {
+            let j = (2 * i) as u32;
+            mesh.indices.extend_from_slice(&[j - 2, j - 1, j, j, j - 1, j + 1]);
+        }
+    }
+    ui.painter().add(egui::Shape::mesh(mesh));
+}
+
 /// Start loading a cover at `px` without drawing it, so it's ready when it appears.
 pub fn preload_cover(ctx: &egui::Context, thumbs: &[Thumb], px: u32) {
     let px = fetch_px(px);

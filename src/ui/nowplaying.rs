@@ -215,11 +215,34 @@ fn body(app: &mut App, ui: &mut Ui, now: f64) {
             widgets::preload_cover(ui.ctx(), &track.thumbs, px);
         }
         if beside_cover && art_vis < 0.999 {
+            // The sharp cover itself, filling the window's height from its top left and
+            // melting into the blurred backdrop before the lyrics (reCover, and the app's
+            // own look). `area` is the window less the overlay's 32 × 20 margins.
+            let side = area.height() + 40.0;
+            let art = Rect::from_min_size(pos2(area.left() - 32.0, area.top() - 20.0), Vec2::splat(side));
+            let lyrics_left = content.left() + content.width() * 0.46;
+            let fade_to = lyrics_left.min(art.right());
+            let fade_from = (fade_to - art.left()).max(0.0) / side * 0.72;
+            let tint = Color32::from_gray((look.background.np_dim.clamp(0.0, 1.0) * 255.0) as u8);
+            let mut cui = ui.new_child(egui::UiBuilder::new().max_rect(art));
+            cui.multiply_opacity(1.0 - art_vis);
+            widgets::paint_cover_fade(&cui, egui::Id::unique("np-art-fade"), art, &track.thumbs, (side * ppp) as u32, fade_from, tint);
+            // A soft shade under the sleeve, so the song's white text stays legible on
+            // any cover: dark at the bottom left, gone toward the top and the lyrics.
+            let scrim = Rect::from_min_max(pos2(art.left(), content.bottom() - 260.0), pos2((lyrics_left + 24.0).min(art.right()), content.bottom()));
+            let mut shade = egui::Mesh::default();
+            let white = egui::epaint::WHITE_UV;
+            shade.vertices.push(egui::epaint::Vertex { pos: scrim.left_bottom(), uv: white, color: Color32::from_black_alpha(130) });
+            shade.vertices.push(egui::epaint::Vertex { pos: scrim.right_bottom(), uv: white, color: Color32::TRANSPARENT });
+            shade.vertices.push(egui::epaint::Vertex { pos: scrim.left_top(), uv: white, color: Color32::TRANSPARENT });
+            shade.vertices.push(egui::epaint::Vertex { pos: scrim.right_top(), uv: white, color: Color32::TRANSPARENT });
+            shade.indices.extend_from_slice(&[0, 1, 2, 2, 1, 3]);
+            cui.painter().add(egui::Shape::mesh(shade));
+
             // Minimal controls floating directly over the background without any glass card
             let w = (content.width() * 0.38).clamp(300.0, 440.0);
             let cw = w + 40.0;
             let cover_mid = area.left() - 32.0 + (area.height() + 40.0) / 2.0;
-            let lyrics_left = content.left() + content.width() * 0.46;
             let left = (cover_mid - cw / 2.0).min(lyrics_left - 12.0 - cw).max(content.left() + 8.0);
             let h = 196.0;
             let card = Rect::from_min_size(pos2(left, content.bottom() - h), vec2(cw, h));
