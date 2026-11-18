@@ -46,7 +46,7 @@ fn test_dynamic_locale_switch_updates_artist_page_ui() {
     // Hero aspect ratio constraint is independent of string length
     let viewport_width = 1200.0f32;
     let h_height = hero_height(viewport_width);
-    assert_eq!(h_height, 380.0);
+    assert_eq!(h_height, 480.0);
 }
 
 #[test]

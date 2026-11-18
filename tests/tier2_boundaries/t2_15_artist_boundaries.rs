@@ -10,11 +10,11 @@ use crate::common::run_headless_ui;
 #[test]
 fn test_artist_hero_boundaries() {
     // 0.0 width
-    assert_eq!(hero_height(0.0), 240.0);
+    assert_eq!(hero_height(0.0), 260.0);
     // Negative width
-    assert_eq!(hero_height(-500.0), 240.0);
+    assert_eq!(hero_height(-500.0), 260.0);
     // Huge 10k width
-    assert_eq!(hero_height(10_000.0), 380.0);
+    assert_eq!(hero_height(10_000.0), 480.0);
 }
 
 #[test]

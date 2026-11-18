@@ -40,8 +40,8 @@ fn test_workload_heavy_catalog_browse_session() {
     let viewport_width = 1440.0f32;
     let hero_h = hero_height(viewport_width);
     assert!(
-        hero_h >= 240.0 && hero_h <= 380.0,
-        "F15: Hero banner height ({}) must be clamped within [240, 380]",
+        hero_h >= 260.0 && hero_h <= 480.0,
+        "F15: Hero banner height ({}) must be clamped within [260, 480]",
         hero_h
     );
 
@@ -157,8 +157,8 @@ fn test_heavy_browse_artist_hero_aspect_and_concert_badges() {
     for &w in &widths {
         let h = hero_height(w);
         assert!(
-            h >= 240.0 && h <= 380.0,
-            "F15: Banner height ({}) must stay clamped between [240, 380] for viewport {}",
+            h >= 260.0 && h <= 480.0,
+            "F15: Banner height ({}) must stay clamped between [260, 480] for viewport {}",
             h,
             w
         );

@@ -1529,12 +1529,17 @@ impl eframe::App for App {
                 self.scroll_panes.push(r.response.rect);
             }
             let main_right = ui.available_rect_before_wrap().right();
+            let is_artist = matches!(self.page, Page::Artist(_));
+            let left_margin = if is_artist { 0 } else { 28 };
+            let top_margin = if is_artist { 0 } else { titlebar::top_margin(14, 42.0) };
             egui::CentralPanel::default()
                 // No right margin: the page's scroll bar sits at the very edge; the page
                 // keeps the same gap inside (see `pages::page`).
-                .frame(egui::Frame::new().inner_margin(egui::Margin { left: 28, right: 0, top: titlebar::top_margin(14, 42.0), bottom: 0 }))
+                .frame(egui::Frame::new().inner_margin(egui::Margin { left: left_margin, right: 0, top: top_margin, bottom: 0 }))
                 .show(ui, |ui| {
-                    ui.add_space(2.0);
+                    if !is_artist {
+                        ui.add_space(2.0);
+                    }
                     pages::page(self, ui, now);
                 });
             // The player: a frosted strip over the bottom of the main section, above the

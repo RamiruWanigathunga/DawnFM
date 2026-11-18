@@ -69,9 +69,12 @@ pub fn page(app: &mut App, ui: &mut Ui, now: f64) {
         area = area.vertical_scroll_offset(y);
     }
     let out = area.show(ui, |ui| {
-        // The page's own 28 pt right gap, plus room for the scroll bar beside it.
-        ui.set_max_width((ui.available_width() - 48.0).max(0.0));
-        ui.add_space(18.0 * (1.0 - t));
+        let is_artist = matches!(page, Page::Artist(_));
+        if !is_artist {
+            // The page's own 28 pt right gap, plus room for the scroll bar beside it.
+            ui.set_max_width((ui.available_width() - 48.0).max(0.0));
+            ui.add_space(18.0 * (1.0 - t));
+        }
         match &page {
             Page::Home => home(app, ui, now),
             Page::New => new(app, ui, now),
@@ -354,7 +357,7 @@ pub fn paint_hero_gradient_dissolve(painter: &egui::Painter, rect: Rect, bg: Col
 }
 
 pub fn hero_height(viewport_width: f32) -> f32 {
-    (viewport_width * 0.34).clamp(240.0, 380.0)
+    (viewport_width * 0.40).clamp(260.0, 480.0)
 }
 
 pub fn filter_collection_tracks<'a>(tracks: &'a [Track], needle: &str) -> Vec<&'a Track> {
@@ -1280,7 +1283,9 @@ fn artist_top_songs_section(ui: &mut Ui, a: &crate::backend::ArtistPage, acts: &
 
 pub fn artist(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
     if app.artist.as_ref().is_none_or(|a| a.id != id) {
-        placeholder(app, ui, now, 2, CARD);
+        egui::Frame::new().inner_margin(egui::Margin { left: 28, right: 48, top: 14, bottom: 0 }).show(ui, |ui| {
+            placeholder(app, ui, now, 2, CARD);
+        });
         return;
     }
     let accent = app.accent_color();
@@ -1299,7 +1304,7 @@ pub fn artist(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
     let acts = &mut app.actions;
     let top = &a.top;
 
-    // Full-width cinematic hero banner (~380px) fading into the page.
+    // Full-width cinematic hero banner fading into the page.
     let w = ui.available_width();
     let hero_h = hero_height(w);
     let (hero, _) = ui.allocate_exact_size(vec2(w, hero_h), Sense::hover());
@@ -1307,10 +1312,9 @@ pub fn artist(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
         let img_ratio = if t.height > 0 { t.width as f32 / t.height as f32 } else { 16.0 / 9.0 };
         let vis_h = (img_ratio / (w / hero_h)).min(1.0);
         let uv = Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, vis_h));
-        ui.painter().rect_filled(hero, 14.0, theme::glass(0.07));
-        widgets::paint_remote(ui, &t.url, hero, 14.0, uv, Color32::WHITE);
+        widgets::paint_remote(ui, &t.url, hero, 0.0, uv, Color32::WHITE);
     } else {
-        ui.painter().rect_filled(hero, 14.0, theme::with_alpha(accent, 0.25));
+        ui.painter().rect_filled(hero, 0.0, theme::with_alpha(accent, 0.25));
     }
     // Smooth multi-stop downward vertical gradient dissolve into page background
     paint_hero_gradient_dissolve(ui.painter(), hero, theme::bg());
@@ -1396,66 +1400,69 @@ pub fn artist(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
         ui.painter().text(pos2(base_x, btn_y - 30.0), Align2::LEFT_BOTTOM, stats, theme::regular(13.0), theme::text_dim());
     }
 
-    // Split Two-Column Layout Section below hero banner
-    ui.add_space(26.0);
-    let is_wide = w >= 780.0;
-    if is_wide {
-        let left_w = (w * 0.30).clamp(280.0, 320.0);
-        let right_w = (w - left_w - 32.0).max(360.0);
-        ui.horizontal_top(|ui| {
-            // Left Column: Latest Release card
-            ui.allocate_ui_with_layout(vec2(left_w, 0.0), egui::Layout::top_down(egui::Align::LEFT), |ui| {
-                ui.label(RichText::new("Latest Release").font(theme::bold(18.0)).color(theme::text()));
-                ui.add_space(8.0);
-                artist_latest_release_card(ui, a, acts, left_w);
-            });
-            ui.add_space(24.0);
-            // Right Column: Top Songs 3-column grid with carousel pagination
-            ui.allocate_ui_with_layout(vec2(right_w, 0.0), egui::Layout::top_down(egui::Align::LEFT), |ui| {
-                artist_top_songs_section(ui, a, acts, right_w, &app.liked);
-            });
-        });
-    } else {
-        // Graceful responsive collapse on narrow window
-        ui.label(RichText::new("Latest Release").font(theme::bold(18.0)).color(theme::text()));
-        ui.add_space(8.0);
-        artist_latest_release_card(ui, a, acts, w.min(420.0));
-        ui.add_space(20.0);
-        artist_top_songs_section(ui, a, acts, w, &app.liked);
-    }
-
-    ui.add_space(24.0);
-    card_row(ui, "a-albums", "Albums & singles", &a.albums, acts);
-    card_row(ui, "a-pl", "Featured on", &a.playlists, acts);
-    card_row(ui, "a-sim", "Fans might also like", &a.similar, acts);
-    if let Some(d) = a.description.as_deref().filter(|d| !d.trim().is_empty()) {
-        shelf_header(ui, "", "About", None, None, false);
-        let full = ui.available_width().min(820.0);
-        let beside = has_logo.then_some(signature.as_ref()).flatten();
-        if let Some(tex) = beside {
+    // Content sections below the hero banner, padded to match the rest of the app.
+    egui::Frame::new().inner_margin(egui::Margin { left: 28, right: 48, top: 0, bottom: 0 }).show(ui, |ui| {
+        let cw = ui.available_width();
+        ui.add_space(26.0);
+        let is_wide = cw >= 780.0;
+        if is_wide {
+            let left_w = (cw * 0.30).clamp(280.0, 320.0);
+            let right_w = (cw - left_w - 32.0).max(360.0);
             ui.horizontal_top(|ui| {
-                let sig_w = (full * 0.28).clamp(120.0, 210.0);
-                let text_w = (full - sig_w - 32.0).max(220.0);
-                let g = widgets::galley_wrapped(ui, d.trim(), theme::regular(14.5), theme::text_dim(), text_w, usize::MAX);
-                ui.label(g);
-                ui.add_space(32.0);
-                let tex_size = tex.size_vec2();
-                let aspect = tex_size.x / tex_size.y.max(1.0);
-                let mut size = vec2(sig_w, sig_w / aspect);
-                if size.y > 140.0 {
-                    size = vec2(140.0 * aspect, 140.0);
-                }
-                let (rect, _) = ui.allocate_exact_size(vec2(size.x, size.y + 22.0), Sense::hover());
-                ui.painter().text(rect.left_top(), Align2::LEFT_TOP, format!("Signed by {name}"), theme::regular(12.0), theme::text_dim());
-                let img = Rect::from_min_size(pos2(rect.left(), rect.top() + 22.0), size);
-                let tex = egui::load::SizedTexture::from_handle(tex);
-                egui::Image::from_texture(tex).uv(Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0))).paint_at(ui, img);
+                // Left Column: Latest Release card
+                ui.allocate_ui_with_layout(vec2(left_w, 0.0), egui::Layout::top_down(egui::Align::LEFT), |ui| {
+                    ui.label(RichText::new("Latest Release").font(theme::bold(18.0)).color(theme::text()));
+                    ui.add_space(8.0);
+                    artist_latest_release_card(ui, a, acts, left_w);
+                });
+                ui.add_space(24.0);
+                // Right Column: Top Songs 3-column grid with carousel pagination
+                ui.allocate_ui_with_layout(vec2(right_w, 0.0), egui::Layout::top_down(egui::Align::LEFT), |ui| {
+                    artist_top_songs_section(ui, a, acts, right_w, &app.liked);
+                });
             });
         } else {
-            let g = widgets::galley_wrapped(ui, d.trim(), theme::regular(14.5), theme::text_dim(), full, usize::MAX);
-            ui.label(g);
+            // Graceful responsive collapse on narrow window
+            ui.label(RichText::new("Latest Release").font(theme::bold(18.0)).color(theme::text()));
+            ui.add_space(8.0);
+            artist_latest_release_card(ui, a, acts, cw.min(420.0));
+            ui.add_space(20.0);
+            artist_top_songs_section(ui, a, acts, cw, &app.liked);
         }
-    }
+
+        ui.add_space(24.0);
+        card_row(ui, "a-albums", "Albums & singles", &a.albums, acts);
+        card_row(ui, "a-pl", "Featured on", &a.playlists, acts);
+        card_row(ui, "a-sim", "Fans might also like", &a.similar, acts);
+        if let Some(d) = a.description.as_deref().filter(|d| !d.trim().is_empty()) {
+            shelf_header(ui, "", "About", None, None, false);
+            let full = ui.available_width().min(820.0);
+            let beside = has_logo.then_some(signature.as_ref()).flatten();
+            if let Some(tex) = beside {
+                ui.horizontal_top(|ui| {
+                    let sig_w = (full * 0.28).clamp(120.0, 210.0);
+                    let text_w = (full - sig_w - 32.0).max(220.0);
+                    let g = widgets::galley_wrapped(ui, d.trim(), theme::regular(14.5), theme::text_dim(), text_w, usize::MAX);
+                    ui.label(g);
+                    ui.add_space(32.0);
+                    let tex_size = tex.size_vec2();
+                    let aspect = tex_size.x / tex_size.y.max(1.0);
+                    let mut size = vec2(sig_w, sig_w / aspect);
+                    if size.y > 140.0 {
+                        size = vec2(140.0 * aspect, 140.0);
+                    }
+                    let (rect, _) = ui.allocate_exact_size(vec2(size.x, size.y + 22.0), Sense::hover());
+                    ui.painter().text(rect.left_top(), Align2::LEFT_TOP, format!("Signed by {name}"), theme::regular(12.0), theme::text_dim());
+                    let img = Rect::from_min_size(pos2(rect.left(), rect.top() + 22.0), size);
+                    let tex = egui::load::SizedTexture::from_handle(tex);
+                    egui::Image::from_texture(tex).uv(Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0))).paint_at(ui, img);
+                });
+            } else {
+                let g = widgets::galley_wrapped(ui, d.trim(), theme::regular(14.5), theme::text_dim(), full, usize::MAX);
+                ui.label(g);
+            }
+        }
+    });
 }
 
 // ------------------------------------------------------------------ library

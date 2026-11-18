@@ -10,14 +10,14 @@ use crate::common::{run_headless_ui, MockCatalog};
 
 #[test]
 fn test_artist_hero_aspect_ratio_clamp() {
-    // Narrow viewport (500px -> clamped to min 240px)
-    assert_eq!(hero_height(500.0), 240.0);
-    // Standard viewport (800px -> 800 * 0.34 = 272.0)
-    assert_eq!(hero_height(800.0), 272.0);
-    // Wide viewport (1200px -> 1200 * 0.34 = 408 -> clamped to max 380px)
-    assert_eq!(hero_height(1200.0), 380.0);
-    // Ultra-wide 4K viewport (2500px -> clamped to max 380px)
-    assert_eq!(hero_height(2500.0), 380.0);
+    // Narrow viewport (500px -> clamped to min 260px)
+    assert_eq!(hero_height(500.0), 260.0);
+    // Standard viewport (800px -> 800 * 0.40 = 320.0)
+    assert_eq!(hero_height(800.0), 320.0);
+    // Wide viewport (1200px -> 1200 * 0.40 = 480.0)
+    assert_eq!(hero_height(1200.0), 480.0);
+    // Ultra-wide 4K viewport (2500px -> clamped to max 480px)
+    assert_eq!(hero_height(2500.0), 480.0);
 }
 
 #[test]
