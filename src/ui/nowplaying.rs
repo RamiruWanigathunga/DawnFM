@@ -247,7 +247,7 @@ fn body(app: &mut App, ui: &mut Ui, now: f64) {
             let h = 196.0;
             let card = Rect::from_min_size(pos2(left, content.bottom() - h), vec2(cw, h));
             let mut cui = ui.new_child(egui::UiBuilder::new().max_rect(card));
-            cui.multiply_opacity((1.0 - art_vis) * controls_alpha);
+            cui.multiply_opacity(1.0 - art_vis);
             sleeve(app, &mut cui, card.left() + 20.0, w, card.top() + 16.0, &track, no_lyrics, now, controls_alpha);
         }
         if beside_cover { Rect::from_min_max(pos2(content.left() + content.width() * 0.46, content.top()), content.max) } else { content }
@@ -377,15 +377,18 @@ fn sleeve(app: &mut App, ui: &mut Ui, x0: f32, w: f32, info_y: f32, track: &crat
     let controls_rect = Rect::from_min_size(pos2(x0, info_y), vec2(w, 196.0));
     ui.ctx().data_mut(|d| d.insert_temp(egui::Id::unique("np-controls-rect"), controls_rect));
 
-    if controls <= 0.001 {
-        return;
+    // When a song is playing, minimize controls to only artist name and song name; on hover, expand.
+    // When paused, dragging seek, or popup menu open, keep controls expanded.
+    let playing = app.playing() || app.buffering;
+    let hovered = ui.rect_contains_pointer(controls_rect.expand(16.0));
+    let busy = app.seek_drag.is_some() || egui::Popup::is_any_open(ui.ctx());
+    let expanded = !playing || hovered || busy;
+    let expand_alpha = theme::anim_bool(ui.ctx(), "np-sleeve-expand", expanded, 0.25);
+    if expand_alpha > 0.0 && expand_alpha < 1.0 {
+        super::animate(ui.ctx());
     }
-    let mut cui = ui.new_child(egui::UiBuilder::new().id_salt("np-controls").max_rect(ui.max_rect()));
-    cui.multiply_opacity(controls);
-    let ui = &mut cui;
-    let interactive = controls > 0.01;
 
-    // The star and the ⋯ menu share the information line's right end.
+    // The song title and artist lines ALWAYS remain visible (even when controls are minimized)
     let text_w = w - 76.0;
     text_at(ui, pos2(x0, info_y), &track.title, theme::semibold(17.0), Color32::WHITE, text_w);
     // Each artist opens their own page (features included); the album follows the
@@ -408,7 +411,7 @@ fn sleeve(app: &mut App, ui: &mut Ui, x0: f32, w: f32, info_y: f32, track: &crat
             let c1 = c0 + album.name.chars().count();
             let a0 = g.pos_from_cursor(egui::text::CCursor::new(c0)).min.x;
             let a1 = g.pos_from_cursor(egui::text::CCursor::new(c1)).min.x;
-            if a1 - a0 >= 2.0 && interactive {
+            if a1 - a0 >= 2.0 {
                 let r = Rect::from_min_max(pos2(line_rect.left() + a0, line_rect.top()), pos2(line_rect.left() + a1, line_rect.bottom()));
                 let resp = ui.interact(r, ui.scope_id().with(("album-link", &album.name)), Sense::click());
                 let resp = named(resp, &album.name).on_hover_cursor(egui::CursorIcon::PointingHand);
@@ -423,6 +426,15 @@ fn sleeve(app: &mut App, ui: &mut Ui, x0: f32, w: f32, info_y: f32, track: &crat
             }
         }
     }
+
+    let effective_alpha = expand_alpha * controls;
+    if effective_alpha <= 0.001 {
+        return;
+    }
+    let mut cui = ui.new_child(egui::UiBuilder::new().id_salt("np-controls").max_rect(ui.max_rect()));
+    cui.multiply_opacity(effective_alpha);
+    let ui = &mut cui;
+    let interactive = effective_alpha > 0.5;
     // The star: a 30 px disc that washes under the pointer and fills in the accent
     // once liked. The ⋯ menu sits at the line's end, as on music.youtube.com.
     let liked = app.liked.contains(&heard.id);

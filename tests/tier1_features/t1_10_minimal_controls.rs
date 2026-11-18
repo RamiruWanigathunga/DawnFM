@@ -176,3 +176,71 @@ fn test_minimal_controls_contain_volume_slider() {
     let dummy = dawnfm::audio::AudioHandle::dummy();
     assert_eq!(dummy.volume(), 0.0);
 }
+
+#[test]
+fn test_now_playing_sleeve_minimizes_when_playing_and_expands_on_hover() {
+    let mut runner = HeadlessRunner::new().with_size(1200.0, 780.0);
+    let mut app = MockCatalog::mock_headless_app();
+    app.np_open = true;
+
+    // Simulate active playback
+    app.audio.status.playing.store(true, std::sync::atomic::Ordering::Relaxed);
+    assert!(app.playing());
+
+    let screen = Rect::from_min_size(Pos2::ZERO, vec2(1200.0, 780.0));
+
+    // Pointer far away from controls
+    runner.move_mouse(pos2(10.0, 10.0));
+    runner.step_time(1.0);
+
+    let (_, full_output) = runner.run_frame(|ctx| {
+        nowplaying::overlay(&mut app, ctx, 1.0, screen);
+    });
+
+    let controls_rect: Rect = runner
+        .context()
+        .data(|d| d.get_temp(egui::Id::unique("np-controls-rect")))
+        .unwrap_or(Rect::NOTHING);
+    assert!(controls_rect.is_finite() && controls_rect.width() > 0.0);
+
+    // When playing and unhovered, seek bar and playback controls are minimized (hidden)
+    let rects = extract_rect_shapes(&full_output.shapes);
+    let seek_bar_shapes: Vec<_> = rects
+        .iter()
+        .filter(|r| {
+            r.rect.width() >= 100.0
+                && r.rect.height() <= 12.0
+                && r.rect.intersects(controls_rect)
+        })
+        .collect();
+    assert!(
+        seek_bar_shapes.is_empty(),
+        "When song is playing and unhovered, seek bar must be minimized/hidden"
+    );
+
+    // Now hover directly over the controls rect
+    runner.move_mouse(controls_rect.center());
+    runner.run_frame(|ctx| {
+        nowplaying::overlay(&mut app, ctx, 1.1, screen);
+    });
+    runner.step_time(0.5);
+
+    let (_, full_output_hovered) = runner.run_frame(|ctx| {
+        nowplaying::overlay(&mut app, ctx, 1.6, screen);
+    });
+
+    // On hover, controls expand: seek bar is now rendered
+    let rects_hovered = extract_rect_shapes(&full_output_hovered.shapes);
+    let seek_bar_shapes_hovered: Vec<_> = rects_hovered
+        .iter()
+        .filter(|r| {
+            r.rect.width() >= 100.0
+                && r.rect.height() <= 12.0
+                && r.rect.intersects(controls_rect)
+        })
+        .collect();
+    assert!(
+        !seek_bar_shapes_hovered.is_empty(),
+        "On hover, controls must expand to show seek bar and playback controls"
+    );
+}
