@@ -1384,11 +1384,16 @@ pub fn artist(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
     // Artist name: show special Apple wordmark logo if available, otherwise large bold typography
     let has_logo = apple.as_ref().and_then(|x| x.logo.as_ref()).is_some();
     if let Some(logo) = apple.as_ref().and_then(|x| x.logo.as_ref()) {
-        let logo_base = hero.left_bottom() + vec2(28.0, -30.0);
+        let logo_base = hero.left_bottom() + vec2(28.0, -54.0);
         wordmark(ui, logo_base, logo, w * 0.62);
     } else {
-        let name_pos = pos2(base_x, btn_y - 36.0);
+        let name_pos = pos2(base_x, btn_y - 54.0);
         ui.painter().text(name_pos, Align2::LEFT_BOTTOM, &name, theme::bold(52.0), theme::text());
+    }
+    // Monthly audience and subscribers, as YouTube Music writes them.
+    let stats = [a.audience.as_deref(), a.subscribers.as_deref()].into_iter().flatten().collect::<Vec<_>>().join(" • ");
+    if !stats.is_empty() {
+        ui.painter().text(pos2(base_x, btn_y - 30.0), Align2::LEFT_BOTTOM, stats, theme::regular(13.0), theme::text_dim());
     }
 
     // Split Two-Column Layout Section below hero banner

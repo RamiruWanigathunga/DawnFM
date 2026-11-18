@@ -221,7 +221,10 @@ pub struct ArtistPage {
     pub id: String,
     pub name: String,
     pub banner: Vec<Thumb>,
-    pub subscribers: Option<u64>,
+    /// "1.84M monthly audience", as YouTube Music writes it.
+    pub audience: Option<String>,
+    /// "304K subscribers", as YouTube Music writes it.
+    pub subscribers: Option<String>,
     pub description: Option<String>,
     pub top: Vec<Track>,
     /// "Top songs" playlist behind the shelf's Show all button.

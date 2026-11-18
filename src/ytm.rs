@@ -597,13 +597,15 @@ fn parse_artist(v: &Value, id: &str) -> Option<ArtistPage> {
     let h = ["musicImmersiveHeaderRenderer", "musicVisualHeaderRenderer"].iter().map(|k| &v["header"][*k]).find(|h| !h.is_null())?;
     let name = text(&h["title"])?;
     let sub = &h["subscriptionButton"]["subscribeButtonRenderer"];
-    let subscribers = text(&sub["subscriberCountText"]).or_else(|| text(&sub["shortSubscriberCountText"])).and_then(|t| count(&t));
+    let audience = text(&h["monthlyListenerCount"]);
+    let subscribers = text(&sub["longSubscriberCountText"]).or_else(|| text(&sub["subscriberCountText"])).or_else(|| text(&sub["shortSubscriberCountText"]));
     let following = artist_sub(sub, id);
     let sections = arr(&v["contents"]["singleColumnBrowseResultsRenderer"]["tabs"][0]["tabRenderer"]["content"]["sectionListRenderer"]["contents"]);
     let me = Link { name: name.clone(), id: Some(id.to_owned()) };
     let mut page = ArtistPage {
         id: id.to_owned(),
         banner: thumbs(&h["thumbnail"]["musicThumbnailRenderer"]),
+        audience,
         subscribers,
         description: text(&h["description"]),
         top: Vec::new(),
@@ -2146,6 +2148,37 @@ mod tests {
         // Unsubscribe's own endpoint carries no params; the button must still work.
         let plain = json!({"channelId": "UCxyz", "subscribed": false});
         assert_eq!(artist_sub(&plain, "UCxyz").unwrap().params, None);
+    }
+
+    #[test]
+    fn artist_header_shows_monthly_audience_and_subscriber_count() {
+        // Trimmed from an artist page's header (November 2026). The counts come as
+        // ready-written runs, and the subscriber line is `longSubscriberCountText`.
+        let v = json!({
+            "header": {"musicImmersiveHeaderRenderer": {
+                "title": {"runs": [{"text": "The Weeknd"}]},
+                "monthlyListenerCount": {"runs": [{"text": "240M monthly audience"}]},
+                "subscriptionButton": {"subscribeButtonRenderer": {
+                    "channelId": "UC0WP5P-ufpRfjbNrmOWwLBQ",
+                    "subscribed": true,
+                    "longSubscriberCountText": {"runs": [{"text": "40.3M subscribers"}]},
+                    "serviceEndpoints": [{"subscribeEndpoint": {"channelIds": ["UC0WP5P-ufpRfjbNrmOWwLBQ"], "params": "EgIIGxgA"}}],
+                }},
+            }},
+            "contents": {"singleColumnBrowseResultsRenderer": {"tabs": []}},
+        });
+        let p = parse_artist(&v, "UClYV6hHlupm_S_ObS1W-DYw").unwrap();
+        assert_eq!(p.audience.as_deref(), Some("240M monthly audience"));
+        assert_eq!(p.subscribers.as_deref(), Some("40.3M subscribers"));
+        let sub = p.following.unwrap();
+        assert_eq!(sub.channel, "UC0WP5P-ufpRfjbNrmOWwLBQ");
+        assert!(sub.subscribed);
+        // A page that writes only the short count still finds one.
+        let short = json!({"header": {"musicImmersiveHeaderRenderer": {
+            "title": {"runs": [{"text": "Small"}]},
+            "subscriptionButton": {"subscribeButtonRenderer": {"shortSubscriberCountText": {"runs": [{"text": "12K subscribers"}]}}},
+        }}});
+        assert_eq!(parse_artist(&short, "UCsmall").unwrap().subscribers.as_deref(), Some("12K subscribers"));
     }
 
     #[test]
