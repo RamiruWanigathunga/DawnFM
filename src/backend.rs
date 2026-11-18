@@ -40,6 +40,8 @@ pub enum Req {
     Playlist { id: String, load: u64, stream: bool },
     Library,
     History,
+    /// The artists the account follows.
+    Artists,
     /// The signed-in account's name and photo.
     Account,
     /// The channels the signed-in Google account can act as.
@@ -115,6 +117,7 @@ impl Req {
             Req::Playlist { .. } => "Loading playlist",
             Req::Library => "Loading library",
             Req::History => "Loading history",
+            Req::Artists => "Loading artists",
             Req::Account => "Account",
             Req::Channels => "Channels",
             Req::SwitchChannel { .. } => "Switching channel",
@@ -276,6 +279,8 @@ pub enum Resp {
     ArtistPhoto { id: String, thumbs: Vec<Thumb> },
     Library(Library),
     History(Vec<Track>),
+    /// The artists the account follows.
+    Artists(Vec<Card>),
     Account { name: Option<String> },
     Channels(Channels),
     /// A `Req::SwitchChannel` is done (requests go as `epoch` now), or `error` says why it isn't.
@@ -331,6 +336,7 @@ impl Resp {
                 | Resp::Suggest { .. }
                 | Resp::Library(_)
                 | Resp::History(_)
+                | Resp::Artists(_)
                 | Resp::Account { .. }
                 | Resp::Channels(_)
                 | Resp::ServerQueue(_)
@@ -744,6 +750,7 @@ impl Backend {
                 }
                 Req::Library => self.library().await?,
                 Req::History => Resp::History(ytm::history(api).await?),
+                Req::Artists => Resp::Artists(ytm::library_artists(api).await?),
                 Req::Account => {
                     let (name, _photo) = ytm::account(api).await?;
                     Resp::Account { name }

@@ -1469,7 +1469,7 @@ fn library(app: &mut App, ui: &mut Ui, tab: LibTab, now: f64) {
     ui.add_space(12.0);
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 10.0;
-        for (t, label) in [(LibTab::Playlists, "Playlists"), (LibTab::Songs, "Liked songs"), (LibTab::Albums, "Albums"), (LibTab::History, "History")] {
+        for (t, label) in [(LibTab::Playlists, "Playlists"), (LibTab::Songs, "Liked songs"), (LibTab::Albums, "Albums"), (LibTab::Artists, "Artists"), (LibTab::History, "History")] {
             if chip(ui, label, tab == t).clicked() {
                 // Tabs swap in place (no history entry); the current one refreshes.
                 if tab == t {
@@ -1500,6 +1500,18 @@ fn library(app: &mut App, ui: &mut Ui, tab: LibTab, now: f64) {
             }
             let Some(h) = &app.history else { return };
             list(ui, &rows, &app.liked, h, true, plain, ListCtx { sel: &mut app.selection, page: &app.page, own: false, plays: false }, &mut app.actions);
+        }
+        LibTab::Artists => {
+            if app.library_artists.is_none() {
+                placeholder(app, ui, now, 2, CARD);
+                return;
+            }
+            let Some(artists) = &app.library_artists else { return };
+            if artists.is_empty() {
+                ui.label(RichText::new("Artists you follow show up here.").color(theme::text_dim()));
+            } else {
+                grid(ui, artists, &mut app.actions);
+            }
         }
         // Liked Music, kept like any playlist.
         LibTab::Songs => {
@@ -1542,7 +1554,7 @@ fn library(app: &mut App, ui: &mut Ui, tab: LibTab, now: f64) {
                     grid(ui, &lib.playlists, &mut app.actions)
                 }
                 LibTab::Albums => grid(ui, &lib.albums, &mut app.actions),
-                LibTab::Songs | LibTab::History => unreachable!(),
+                LibTab::Songs | LibTab::History | LibTab::Artists => unreachable!(),
             }
         }
     }

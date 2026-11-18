@@ -304,6 +304,10 @@ impl App {
                 self.history = Some(h);
                 self.loading = false;
             }
+            Resp::Artists(a) => {
+                self.library_artists = Some(a);
+                self.loading = false;
+            }
             Resp::Downloaded { title, path } => {
                 log::info!("downloaded to {}", path.display());
                 self.toast(format!("Downloaded \u{201c}{title}\u{201d}"));

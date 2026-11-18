@@ -83,6 +83,7 @@ pub enum LibTab {
     Playlists,
     Songs,
     Albums,
+    Artists,
     History,
 }
 
@@ -366,6 +367,8 @@ pub struct App {
     /// When the library was last requested; the sidebar spinner gives up after a while.
     library_requested: std::time::Instant,
     history: Option<Vec<Track>>,
+    /// The artists the account follows (Library › Artists).
+    library_artists: Option<Vec<crate::model::Card>>,
     liked: HashSet<String>,
     /// Songs whose unlike is queued and hasn't gone through yet.
     unliking: HashMap<String, Track>,
@@ -701,6 +704,7 @@ impl App {
             optimistic_sub: None,
             library_requested: std::time::Instant::now(),
             history: None,
+            library_artists: None,
             liked: HashSet::new(),
             unliking: HashMap::new(),
             selection: Selection::default(),
@@ -859,6 +863,7 @@ impl App {
             Ok("library") => app.go(Page::Library(LibTab::Playlists)),
             Ok("liked") => app.go(Page::Library(LibTab::Songs)),
             Ok("history") => app.go(Page::Library(LibTab::History)),
+            Ok("artists") => app.go(Page::Library(LibTab::Artists)),
             Ok("settings") => app.go(Page::Settings),
             Ok("transfer") => app.go(Page::Transfer),
             Ok("jam") => app.go(Page::Jam),
@@ -1058,6 +1063,7 @@ impl App {
             }
             Page::Artist(id) => Some(Req::Artist(id.clone())),
             Page::Library(LibTab::History) if self.logged_in => Some(Req::History),
+            Page::Library(LibTab::Artists) if self.logged_in => Some(Req::Artists),
             Page::Library(LibTab::Songs) => {
                 if self.logged_in {
                     self.visit_list(LIKED_MUSIC, false);
@@ -1074,6 +1080,7 @@ impl App {
             Page::Album(id) | Page::Playlist(id) => self.opened(id).is_some(),
             Page::Artist(id) => self.artist.as_ref().is_some_and(|a| &a.id == id),
             Page::Library(LibTab::History) => self.history.is_some(),
+            Page::Library(LibTab::Artists) => self.library_artists.is_some(),
             Page::Library(LibTab::Songs) => self.opened(LIKED_MUSIC).is_some(),
             Page::Library(_) => self.library.is_some(),
             _ => false,

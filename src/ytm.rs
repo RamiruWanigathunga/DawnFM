@@ -860,6 +860,60 @@ pub async fn saved_albums(api: &Api) -> anyhow::Result<Vec<Card>> {
     saved(api, "4qmFsgIoEhRGRW11c2ljX2xpa2VkX2FsYnVtcxoQZ2dNR0tnUUlBQkFCb0FZQg%3D%3D").await
 }
 
+/// The artists the account follows (Library › Artists).
+pub async fn library_artists(api: &Api) -> anyhow::Result<Vec<Card>> {
+    library_channels(api, "FEmusic_library_corpus_artists").await
+}
+
+/// A library page of followed channels (artists or podcasts), every page of it: each is
+/// a round card opening its channel page (a podcast show is an artist page to YouTube).
+async fn library_channels(api: &Api, browse_id: &str) -> anyhow::Result<Vec<Card>> {
+    let v = api.call_signed_in("browse", json!({ "browseId": browse_id })).await?;
+    let mut cards = Vec::new();
+    let mut token = None;
+    for tab in arr(&v["contents"]["singleColumnBrowseResultsRenderer"]["tabs"]) {
+        for s in arr(&tab["tabRenderer"]["content"]["sectionListRenderer"]["contents"]) {
+            let items = arr(&s["musicShelfRenderer"]["contents"]);
+            cards.extend(channel_cards(items));
+            if token.is_none() {
+                token = item_token(items);
+            }
+        }
+    }
+    for _ in 0..100 {
+        let Some(t) = token.take() else { break };
+        // A later page failing keeps the pages already loaded.
+        let v = match api.call_signed_in("browse", json!({ "continuation": t })).await {
+            Ok(v) => v,
+            Err(e) => {
+                log::warn!("library channels: {e}");
+                break;
+            }
+        };
+        let items = arr(&v["continuationContents"]["musicShelfContinuation"]["contents"]);
+        if items.is_empty() {
+            break;
+        }
+        cards.extend(channel_cards(items));
+        token = item_token(items);
+    }
+    Ok(cards)
+}
+
+/// The channels of a library shelf as round cards: the name and the subscriber line.
+fn channel_cards(items: &[Value]) -> Vec<Card> {
+    items
+        .iter()
+        .filter_map(|i| {
+            let r = &i["musicResponsiveListItemRenderer"];
+            let title = text(&r["flexColumns"][0]["musicResponsiveListItemFlexColumnRenderer"]["text"])?;
+            let id = r["navigationEndpoint"]["browseEndpoint"]["browseId"].as_str()?.to_owned();
+            let subtitle = text(&r["flexColumns"][1]["musicResponsiveListItemFlexColumnRenderer"]["text"]).unwrap_or_default();
+            Some(Card { title, subtitle, thumbs: thumbs(&r["thumbnail"]["musicThumbnailRenderer"]), target: Target::Artist(id), round: true, links: Vec::new() })
+        })
+        .collect()
+}
+
 /// The signed-in account's name and photo, as its account menu shows them (for a brand
 /// account, the channel's).
 pub async fn account(api: &Api) -> anyhow::Result<(Option<String>, Option<String>)> {
