@@ -589,7 +589,9 @@ fn list_page(items: &[Value]) -> (Vec<Track>, Vec<Option<String>>, Option<String
 // ----------------------------------------------------------------------- artists
 
 pub async fn artist(api: &Api, id: &str) -> anyhow::Result<ArtistPage> {
-    let v = api.call("browse", json!({ "browseId": id }), false).await?;
+    // Signed in when there is an account: the header's Subscribe button says whether it
+    // already follows the artist, and an anonymous page always says it doesn't.
+    let v = api.call("browse", json!({ "browseId": id }), true).await?;
     parse_artist(&v, id).ok_or_else(|| anyhow::anyhow!("YouTube Music returned an empty artist page"))
 }
 

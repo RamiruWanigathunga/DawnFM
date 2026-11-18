@@ -254,7 +254,7 @@ impl App {
             Resp::ArtistPhoto { id, thumbs } => {
                 self.artist_photos.insert(id, thumbs);
             }
-            Resp::Artist(a) => {
+            Resp::Artist(mut a) => {
                 // A slow answer for an artist left meanwhile doesn't replace the one on screen.
                 if matches!(&self.page, Page::Artist(id) if *id != a.id) {
                     return;
@@ -285,6 +285,13 @@ impl App {
                 }
                 if !prefetch_urls.is_empty() {
                     crate::images::prefetch_thumbs(&self.backend, prefetch_urls);
+                }
+                // A page answered while a subscribe is in flight can carry the state from
+                // before it: keep the flipped button until YouTube confirms the change.
+                if let Some((channel, was)) = &self.optimistic_sub
+                    && let Some(sub) = a.following.as_mut().filter(|s| &s.channel == channel)
+                {
+                    sub.subscribed = self.artist.as_ref().filter(|p| p.id == a.id).and_then(|p| p.following.as_ref()).map_or(!*was, |s| s.subscribed);
                 }
                 self.artist = Some(a);
             }
