@@ -601,8 +601,8 @@ pub fn card(ui: &mut Ui, c: &Card, width: f32, liked: bool, acts: &mut Vec<Actio
         let p = ui.interact(prect, resp.id.with("play"), Sense::click());
         let playing = active == Some(true);
         let p = named(p, &format!("{} {}", if playing { "Pause" } else { "Play" }, c.title)).on_hover_cursor(egui::CursorIcon::PointingHand);
-        let ph = if p.hovered() { 1.0 } else { 0.0 };
-        ui.painter().circle_filled(center, 18.0 + 1.5 * ph, theme::shade(0.62 * h));
+        let ph = theme::anim_bool(ui.ctx(), p.id.with("ph"), p.hovered(), 0.15);
+        ui.painter().circle_filled(center, 18.0 + 1.5 * ph, theme::shade((0.62 + 0.10 * ph) * h));
         play_pause_glyph(ui, center, 8.5, theme::with_alpha(Color32::WHITE, h), playing);
         play_hit = p.clicked();
     }
@@ -806,22 +806,14 @@ pub fn active_state(ui: &Ui, target: &Target) -> Option<bool> {
 /// Round button glyph: pause bars while `active` is playing, otherwise a play triangle.
 pub fn play_pause_glyph(ui: &Ui, center: Pos2, r: f32, color: Color32, playing: bool) {
     if playing {
-        for dx in [-0.45, 0.45] {
-            let bar = Rect::from_center_size(center + vec2(dx * r, 0.0), vec2(r * 0.42, r * 1.7));
-            ui.painter().rect_filled(bar, r * 0.1, color);
-        }
+        super::glyphs::draw(ui, center, r * 2.8, super::glyphs::PAUSE, color);
     } else {
         play_triangle(ui, center, r, color);
     }
 }
 
 pub fn play_triangle(ui: &Ui, center: Pos2, r: f32, color: Color32) {
-    let pts = vec![
-        center + vec2(-r * 0.6, -r),
-        center + vec2(r * 1.0, 0.0),
-        center + vec2(-r * 0.6, r),
-    ];
-    ui.painter().add(egui::Shape::convex_polygon(pts, color, egui::Stroke::NONE));
+    super::glyphs::draw(ui, center, r * 2.8, super::glyphs::PLAY, color);
 }
 
 // ------------------------------------------------------------------ playing bars
