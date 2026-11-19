@@ -1331,6 +1331,7 @@ pub fn queue_list(app: &mut App, ui: &mut Ui, salt: &str) {
                 is_dragged,
                 remove_queue: (!current).then_some(i),
                 added_by: by.get(&t.id).cloned(),
+                alt: k % 2 == 0,
                 ..rows.opts(liked, t, None, false)
             };
             let resp = widgets::track_row(ui, t, &o, acts);

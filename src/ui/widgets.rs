@@ -894,6 +894,8 @@ pub struct RowOpts {
     pub is_dragged: bool,
     /// Whether this row can be dragged.
     pub draggable: bool,
+    /// Alternating row background tint for visual clarity across song lists.
+    pub alt: bool,
 }
 
 const ROW_H: f32 = 56.0;
@@ -1012,7 +1014,7 @@ pub fn track_row(ui: &mut Ui, t: &Track, o: &RowOpts, acts: &mut Vec<Action>) ->
     };
     let resp = named(ui.interact(hit_rect, base.id.with("play"), sense), &t.title).on_hover_cursor(cursor);
     let h = if base.contains_pointer() { 1.0 } else { 0.0 };
-    if o.number.is_some_and(|n| n % 2 == 1) {
+    if o.alt || o.number.is_some_and(|n| n % 2 == 1) {
         ui.painter().rect_filled(rect, 8.0, theme::glass(0.025));
     }
     if h > 0.0 || o.current || o.is_dragged {
