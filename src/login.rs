@@ -198,6 +198,16 @@ fn run(site: Site, profile_dir: PathBuf) -> anyhow::Result<Outcome> {
         .with_inner_size(tao::dpi::LogicalSize::new(480.0, 720.0))
         .build(&event_loop)?;
 
+    if let Some(monitor) = window.primary_monitor().or_else(|| window.current_monitor()) {
+        let screen_size = monitor.size();
+        let scale = monitor.scale_factor();
+        let win_w = (480.0 * scale) as i32;
+        let win_h = (720.0 * scale) as i32;
+        let x = (screen_size.width as i32 - win_w) / 2;
+        let y = (screen_size.height as i32 - win_h) / 2;
+        window.set_outer_position(tao::dpi::PhysicalPosition::new(x.max(0), y.max(0)));
+    }
+
     let proxy = event_loop.create_proxy();
     let proxy_nav = event_loop.create_proxy();
     let proxy_retry = event_loop.create_proxy();

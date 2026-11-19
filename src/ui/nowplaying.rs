@@ -19,7 +19,7 @@ pub fn overlay(app: &mut App, ctx: &egui::Context, now: f64, screen: Rect) {
     }
     // The player brings its own transport, so it takes the whole window: the capsule
     // under it belongs to the pages it covers.
-    let full = screen;
+    let full = if ctx.viewport_rect().is_positive() { ctx.viewport_rect() } else { screen };
     let rect = full.translate(vec2(0.0, full.height() * (1.0 - t)));
     let look = app.look();
     let b = &look.background;
@@ -242,8 +242,7 @@ fn body(app: &mut App, ui: &mut Ui, now: f64) {
             // Minimal controls floating directly over the background without any glass card
             let w = (content.width() * 0.38).clamp(300.0, 440.0);
             let cw = w + 40.0;
-            let cover_mid = area.left() - 32.0 + (area.height() + 40.0) / 2.0;
-            let left = (cover_mid - cw / 2.0).min(lyrics_left - 12.0 - cw).max(content.left() + 8.0);
+            let left = (content.left() + 8.0).min(lyrics_left - 12.0 - cw).max(content.left());
             let h = 196.0;
             let card = Rect::from_min_size(pos2(left, content.bottom() - h), vec2(cw, h));
             let mut cui = ui.new_child(egui::UiBuilder::new().max_rect(card));

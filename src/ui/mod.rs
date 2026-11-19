@@ -1419,7 +1419,7 @@ impl eframe::App for App {
         let ctx = ui.ctx().clone();
         self.shortcuts(&ctx);
         let now = ctx.input(|i| i.time);
-        let screen = ctx.content_rect();
+        let screen = if ctx.viewport_rect().is_positive() { ctx.viewport_rect() } else { ctx.content_rect() };
 
         self.sync_look();
         let look = self.look();
