@@ -1105,69 +1105,59 @@ pub fn player_bar(app: &mut App, ui: &mut Ui, now: f64, _frosted: bool) {
     let star_x = r_base - 3.0 * r_spacing;
     let opt_x = r_base - 4.0 * r_spacing;
 
-    // In-place volume slider: hover over volume/slider clears options and star, and shows slider in that little area
-    let slider_w = (r_spacing * 2.0 + 8.0).min(72.0);
-    let slider_rect = Rect::from_center_size(pos2(vol_x - 14.0 - slider_w / 2.0, cy), vec2(slider_w, 16.0));
+    // In-place volume slider: hover over volume shows slider in front of the volume icon
+    let slider_w = (r_spacing * 2.0).min(64.0);
     let r_vol = Rect::from_center_size(pos2(vol_x, cy), Vec2::splat(28.0));
-    let vol_zone = slider_rect.expand2(vec2(8.0, 8.0)).union(r_vol);
+    let slider_rect = Rect::from_min_size(pos2(vol_x + 14.0, cy - 8.0), vec2(slider_w, 16.0));
 
-    let is_vol_hovered = ui.input(|i| i.pointer.hover_pos()).is_some_and(|p| vol_zone.contains(p));
+    let hover_icon = ui.input(|i| i.pointer.hover_pos()).is_some_and(|p| r_vol.contains(p));
+    let hover_slider = ui.input(|i| i.pointer.hover_pos()).is_some_and(|p| slider_rect.expand2(vec2(6.0, 8.0)).union(r_vol).contains(p));
     let vol_open_id = ui.scope_id().with("bar-vol-open");
     let was_vol_open = ui.data(|d| d.get_temp::<bool>(vol_open_id).unwrap_or(false));
-    let vol_active = is_vol_hovered || (was_vol_open && ui.input(|i| i.pointer.any_down()));
+    let is_dragging = was_vol_open && ui.input(|i| i.pointer.any_down());
+    let vol_active = hover_icon || (was_vol_open && (hover_slider || is_dragging));
     ui.data_mut(|d| d.insert_temp(vol_open_id, vol_active));
     let v_reveal = theme::anim_bool(&ctx, "bar-vol-reveal-inline", vol_active, 0.16);
 
-    // If volume is not actively taking over the space, show Options and Star
-    if v_reveal < 0.95 {
-        let opt_alpha = (1.0 - v_reveal).clamp(0.0, 1.0);
-        let opt_ink = |h: f32| theme::with_alpha(ink(h), opt_alpha);
-
-        // 1. Options (...)
-        let r_opt = Rect::from_center_size(pos2(opt_x, cy), Vec2::splat(28.0));
-        if let Some(t) = &track {
-            if opt_alpha > 0.5 {
-                super::nowplaying::options_menu(app, ui, r_opt, t, false);
-            }
-        } else {
-            let resp = ui.interact(r_opt, ui.scope_id().with("bar-opt-disabled"), Sense::hover());
-            let _ = named(resp, &t!("options"));
-            for dx in [-5.0, 0.0, 5.0] {
-                ui.painter().circle_filled(r_opt.center() + vec2(dx, 0.0), 1.8, opt_ink(0.0));
-            }
-        }
-
-        // 2. Star / Like
-        let heard = if held { track.clone() } else { app.playing_track().cloned().or_else(|| track.clone()) };
-        let liked = heard.as_ref().is_some_and(|t| app.liked.contains(&t.id));
-        let like_label = if liked { t!("remove_from_favourites") } else { t!("add_to_favourites") };
-        let r_star = Rect::from_center_size(pos2(star_x, cy), Vec2::splat(28.0));
-        if opt_alpha > 0.5 {
-            let star_resp = ui.interact(r_star, ui.scope_id().with(("bar-r", "like")), Sense::click());
-            let star_resp = named(star_resp, &like_label).on_hover_cursor(egui::CursorIcon::PointingHand);
-            let star_h = if star_resp.hovered() { 1.0 } else { 0.0 };
-            let pop = heard.as_ref().map_or(0.0, |t| theme::anim_bool(&ctx, ("liked", &t.id), liked, 0.3));
-            let dim = if heard.is_some() { 1.0 } else { 0.4 };
-            let tint = theme::lerp_color(opt_ink(star_h), accent, pop).gamma_multiply(dim * opt_alpha);
-            let size = 18.0 * (1.0 + 0.25 * (pop * std::f32::consts::PI).sin());
-            glyphs::draw(ui, r_star.center(), size, glyphs::STAR, tint);
-            if pop > 0.0 {
-                glyphs::draw(ui, r_star.center(), size, glyphs::STAR_FILLED, theme::with_alpha(tint, tint.a() as f32 / 255.0 * pop));
-            }
-            if star_resp.clicked() && let Some(t) = heard {
-                app.actions.push(Action::Like(t, !liked));
-            }
+    // 1. Options (...)
+    let r_opt = Rect::from_center_size(pos2(opt_x, cy), Vec2::splat(28.0));
+    if let Some(t) = &track {
+        super::nowplaying::options_menu(app, ui, r_opt, t, false);
+    } else {
+        let resp = ui.interact(r_opt, ui.scope_id().with("bar-opt-disabled"), Sense::hover());
+        let _ = named(resp, &t!("options"));
+        for dx in [-5.0, 0.0, 5.0] {
+            ui.painter().circle_filled(r_opt.center() + vec2(dx, 0.0), 1.8, ink(0.0));
         }
     }
 
-    // When volume is hovered, draw the volume slider in that little area
+    // 2. Star / Like
+    let heard = if held { track.clone() } else { app.playing_track().cloned().or_else(|| track.clone()) };
+    let liked = heard.as_ref().is_some_and(|t| app.liked.contains(&t.id));
+    let like_label = if liked { t!("remove_from_favourites") } else { t!("add_to_favourites") };
+    let r_star = Rect::from_center_size(pos2(star_x, cy), Vec2::splat(28.0));
+    let star_resp = ui.interact(r_star, ui.scope_id().with(("bar-r", "like")), Sense::click());
+    let star_resp = named(star_resp, &like_label).on_hover_cursor(egui::CursorIcon::PointingHand);
+    let star_h = if star_resp.hovered() { 1.0 } else { 0.0 };
+    let pop = heard.as_ref().map_or(0.0, |t| theme::anim_bool(&ctx, ("liked", &t.id), liked, 0.3));
+    let dim = if heard.is_some() { 1.0 } else { 0.4 };
+    let tint = theme::lerp_color(ink(star_h), accent, pop).gamma_multiply(dim);
+    let size = 18.0 * (1.0 + 0.25 * (pop * std::f32::consts::PI).sin());
+    glyphs::draw(ui, r_star.center(), size, glyphs::STAR, tint);
+    if pop > 0.0 {
+        glyphs::draw(ui, r_star.center(), size, glyphs::STAR_FILLED, theme::with_alpha(tint, tint.a() as f32 / 255.0 * pop));
+    }
+    if star_resp.clicked() && let Some(t) = heard {
+        app.actions.push(Action::Like(t, !liked));
+    }
+
+    // When volume is hovered, draw the volume slider in front of the volume icon
     if v_reveal > 0.05 {
         volume_slider(app, ui, slider_rect, "bar-vol-inline");
     }
 
     // 3. Volume
     let vol = app.audio.volume();
-    let r_vol = Rect::from_center_size(pos2(vol_x, cy), Vec2::splat(28.0));
     let vol_resp = ui.interact(r_vol, ui.scope_id().with(("bar-r", "vol")), Sense::click());
     let vol_resp = named(vol_resp, "Volume").on_hover_cursor(egui::CursorIcon::PointingHand);
     let vol_h = if vol_resp.hovered() || v_reveal > 0.5 { 1.0 } else { 0.0 };
@@ -1189,33 +1179,47 @@ pub fn player_bar(app: &mut App, ui: &mut Ui, now: f64, _frosted: bool) {
         }
     }
 
-    // 4. Lyrics
-    let lyrics_on = if app.np_open { app.np_tab == NpTab::Lyrics && !app.no_lyrics() } else { app.lyrics_drawer && !app.queue_open };
-    let lyrics_label = format!("{} (⌘L)", t!("lyrics"));
-    let r_lyr = Rect::from_center_size(pos2(lyr_x, cy), Vec2::splat(28.0));
-    let lyr_resp = ui.interact(r_lyr, ui.scope_id().with(("bar-r", "lyrics")), Sense::click());
-    let lyr_resp = named(lyr_resp, &lyrics_label).on_hover_cursor(egui::CursorIcon::PointingHand);
-    let lyr_h = if lyr_resp.hovered() { 1.0 } else { 0.0 };
-    glyphs::draw(ui, r_lyr.center(), 18.0, if lyrics_on { glyphs::LYRICS } else { glyphs::LYRICS_OFF }, if lyrics_on { accent } else { ink(lyr_h) });
-    if lyr_resp.clicked() {
-        app.toggle_lyrics();
-    }
+    // 4. Lyrics & 5. Queue: fade out when volume slider expands in front of volume
+    if v_reveal < 0.95 {
+        let r_alpha = (1.0 - v_reveal).clamp(0.0, 1.0);
+        let r_ink = |h: f32| theme::with_alpha(ink(h), r_alpha);
 
-    // 5. Queue / Up Next
-    let queue_open = if app.np_open { app.np_tab == NpTab::UpNext } else { app.queue_open };
-    let r_q = Rect::from_center_size(pos2(q_x, cy), Vec2::splat(28.0));
-    let q_resp = ui.interact(r_q, ui.scope_id().with(("bar-r", "queue")), Sense::click());
-    let q_resp = named(q_resp, &t!("up_next")).on_hover_cursor(egui::CursorIcon::PointingHand);
-    let q_h = if q_resp.hovered() { 1.0 } else { 0.0 };
-    glyphs::draw(ui, r_q.center(), 18.0, glyphs::QUEUE, if queue_open { accent } else { ink(q_h) });
-    if q_resp.clicked() {
-        if app.np_open {
-            app.np_tab = if queue_open { NpTab::Art } else { NpTab::UpNext };
-        } else {
-            app.queue_open = !app.queue_open;
-            if app.queue_open {
-                app.lyrics_drawer = false;
+        // 4. Lyrics
+        let lyrics_on = if app.np_open { app.np_tab == NpTab::Lyrics && !app.no_lyrics() } else { app.lyrics_drawer && !app.queue_open };
+        let lyrics_label = format!("{} (⌘L)", t!("lyrics"));
+        let r_lyr = Rect::from_center_size(pos2(lyr_x, cy), Vec2::splat(28.0));
+        if r_alpha > 0.5 {
+            let lyr_resp = ui.interact(r_lyr, ui.scope_id().with(("bar-r", "lyrics")), Sense::click());
+            let lyr_resp = named(lyr_resp, &lyrics_label).on_hover_cursor(egui::CursorIcon::PointingHand);
+            let lyr_h = if lyr_resp.hovered() { 1.0 } else { 0.0 };
+            glyphs::draw(ui, r_lyr.center(), 18.0, if lyrics_on { glyphs::LYRICS } else { glyphs::LYRICS_OFF }, if lyrics_on { accent } else { r_ink(lyr_h) });
+            if lyr_resp.clicked() {
+                app.toggle_lyrics();
             }
+        } else {
+            glyphs::draw(ui, r_lyr.center(), 18.0, if lyrics_on { glyphs::LYRICS } else { glyphs::LYRICS_OFF }, if lyrics_on { accent } else { r_ink(0.0) });
+        }
+
+        // 5. Queue / Up Next
+        let queue_open = if app.np_open { app.np_tab == NpTab::UpNext } else { app.queue_open };
+        let r_q = Rect::from_center_size(pos2(q_x, cy), Vec2::splat(28.0));
+        if r_alpha > 0.5 {
+            let q_resp = ui.interact(r_q, ui.scope_id().with(("bar-r", "queue")), Sense::click());
+            let q_resp = named(q_resp, &t!("up_next")).on_hover_cursor(egui::CursorIcon::PointingHand);
+            let q_h = if q_resp.hovered() { 1.0 } else { 0.0 };
+            glyphs::draw(ui, r_q.center(), 18.0, glyphs::QUEUE, if queue_open { accent } else { r_ink(q_h) });
+            if q_resp.clicked() {
+                if app.np_open {
+                    app.np_tab = if queue_open { NpTab::Art } else { NpTab::UpNext };
+                } else {
+                    app.queue_open = !app.queue_open;
+                    if app.queue_open {
+                        app.lyrics_drawer = false;
+                    }
+                }
+            }
+        } else {
+            glyphs::draw(ui, r_q.center(), 18.0, glyphs::QUEUE, if queue_open { accent } else { r_ink(0.0) });
         }
     }
 }
