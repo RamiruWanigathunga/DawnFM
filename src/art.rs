@@ -25,27 +25,13 @@ pub fn process(bytes: &[u8]) -> anyhow::Result<Art> {
     let (accent, dominant) = palette(&small);
     let mut px: Vec<[f32; 3]> = small.pixels().map(|p| [p[0] as f32, p[1] as f32, p[2] as f32]).collect();
 
-    // Kawarp's tint pass: pull near-black regions toward the accent so dark covers
-    // still produce a coloured backdrop instead of a black one.
-    let tint = [accent.r() as f32, accent.g() as f32, accent.b() as f32];
-    for p in &mut px {
-        let luma = (0.299 * p[0] + 0.587 * p[1] + 0.114 * p[2]) / 255.0;
-        let dark = 1.0 - smoothstep(0.0, 0.5, luma);
-        for c in 0..3 {
-            p[c] += (tint[c] - p[c]) * dark * 0.45;
-        }
-    }
-    // Four wide box-blur passes produce an ultra-smooth, creamy Gaussian blur effect.
+    // Four wide box-blur passes produce an ultra-smooth, creamy Gaussian blur effect
+    // that faithfully preserves the artwork's authentic colors, deep blacks, and natural gradients.
     for _ in 0..4 {
         px = box_blur(&px, SIZE as usize, 8);
     }
     let rgba = px.iter().flat_map(|p| [p[0] as u8, p[1] as u8, p[2] as u8, 255]).collect();
     Ok(Art { rgba, accent, dominant })
-}
-
-fn smoothstep(a: f32, b: f32, x: f32) -> f32 {
-    let t = ((x - a) / (b - a)).clamp(0.0, 1.0);
-    t * t * (3.0 - 2.0 * t)
 }
 
 fn box_blur(src: &[[f32; 3]], n: usize, r: usize) -> Vec<[f32; 3]> {
@@ -117,16 +103,20 @@ fn palette(img: &image::RgbImage) -> (Color32, Color32) {
         }
     }
 
-    // Manage dominant color: don't make it too dark or too white, keeping the artwork's hue/tint
+    // Manage dominant color: don't make it too dark or too white, keeping the artwork's hue/tint.
+    // If it's chromatic (sat > 0.15) but very dark, moderately boost it, but do NOT boost neutral/grayscale darks or blacks into artificial hues.
     let (mut dom_r, mut dom_g, mut dom_b) = (most_used[0] / 255.0, most_used[1] / 255.0, most_used[2] / 255.0);
+    let max_c = dom_r.max(dom_g).max(dom_b);
+    let min_c = dom_r.min(dom_g).min(dom_b);
+    let sat = if max_c > 0.0 { (max_c - min_c) / max_c } else { 0.0 };
     let luma = 0.299 * dom_r + 0.587 * dom_g + 0.114 * dom_b;
     if luma > 0.82 {
         let factor = 0.82 / luma;
         dom_r *= factor;
         dom_g *= factor;
         dom_b *= factor;
-    } else if luma < 0.16 {
-        let factor = 0.18 / luma.max(0.01);
+    } else if luma < 0.16 && sat > 0.15 {
+        let factor = (0.18 / luma.max(0.01)).min(2.0);
         dom_r = (dom_r * factor).min(1.0);
         dom_g = (dom_g * factor).min(1.0);
         dom_b = (dom_b * factor).min(1.0);
