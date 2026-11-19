@@ -2069,9 +2069,7 @@ fn settings_window(app: &mut App, ui: &mut Ui) {
     settings_card(ui, |ui| {
         let api = crate::renderer::api_name();
         let title = format!("Draw with {api}");
-        let desc = format!(
-            "Use {api} (wgpu) instead of OpenGL. It isn't faster for this app and takes about three times the memory; try it if OpenGL draws wrong on this PC. If {api} won't start, the app goes back to OpenGL."
-        );
+        let desc = format!("Use {api} instead of OpenGL. Turn this on if graphics glitch or display incorrectly.");
         setting_row(ui, &title, Some(&desc), |ui| {
             if toggle(ui, &mut app.wgpu_renderer, &title).changed() {
                 use crate::renderer::Renderer;
