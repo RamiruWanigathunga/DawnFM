@@ -1760,7 +1760,7 @@ fn settings_account(app: &mut App, ui: &mut Ui) {
     });
     if busy {
         ui.add_space(6.0);
-        ui.label(RichText::new("Finish signing in in the window that opened.").font(theme::regular(12.5)).color(theme::text_dim()));
+        ui.label(RichText::new("Finish signing in in the window that opened.").font(theme::regular(11.0)).color(theme::text_dim()));
     }
     if sign_in {
         app.start_sign_in(ui.ctx());
@@ -1948,7 +1948,7 @@ fn settings_downloads(ui: &mut Ui) {
     section_label(ui, "Downloads", None);
     ui.label(
         RichText::new("Download songs from their menu. They're saved at the best quality your account gets, tagged with their cover art, and play from the file, even offline.")
-            .font(theme::regular(13.0))
+            .font(theme::regular(11.0))
             .color(theme::text_dim()),
     );
     ui.add_space(12.0);
@@ -2059,7 +2059,7 @@ fn settings_lyrics(app: &mut App, ui: &mut Ui) {
                     crate::lyrics::SyncKind::Unsynced => "plain",
                 };
                 row.label(egui::RichText::new(p.name()).font(theme::semibold(13.5)).color(if on { theme::text() } else { theme::text_dim() }));
-                row.label(egui::RichText::new(kind).font(theme::regular(12.0)).color(theme::text_dim()));
+                row.label(egui::RichText::new(kind).font(theme::regular(11.0)).color(theme::text_dim()));
                 row.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if ui.add_enabled(i + 1 < n, egui::Button::new("↓").min_size(vec2(28.0, 24.0))).on_hover_text("Lower").clicked() {
                         swap = Some((i, i + 1));
@@ -2472,8 +2472,8 @@ fn option_row(ui: &mut Ui, label: &str, selected: bool) -> egui::Response {
 /// Small heading above a settings card, with an optional value on the right.
 pub(super) fn section_label(ui: &mut Ui, title: &str, value: Option<&str>) {
     ui.add_space(30.0);
-    let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 20.0), Sense::hover());
-    ui.painter().text(pos2(rect.left() + 2.0, rect.center().y), Align2::LEFT_CENTER, title, theme::bold(17.0), theme::text());
+    let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 24.0), Sense::hover());
+    ui.painter().text(pos2(rect.left() + 2.0, rect.center().y), Align2::LEFT_CENTER, title, theme::bold(20.0), theme::text());
     if let Some(v) = value {
         ui.painter().text(pos2(rect.right() - 2.0, rect.center().y), Align2::RIGHT_CENTER, v, theme::semibold(13.0), theme::text_dim());
     }
@@ -2529,14 +2529,14 @@ fn fold_body(ui: &mut Ui, id: egui::Id, open: bool, body: impl FnOnce(&mut Ui)) 
 fn section_fold(ui: &mut Ui, title: &str) -> bool {
     let (id, mut open) = fold_state(ui, title);
     ui.add_space(30.0);
-    let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 22.0), Sense::click());
+    let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 24.0), Sense::click());
     let resp = named(resp, title).on_hover_cursor(egui::CursorIcon::PointingHand);
     if resp.clicked() {
         open = !open;
         ui.data_mut(|d| d.insert_persisted(id, open));
     }
     let h = if resp.hovered() { 1.0 } else { 0.0 };
-    ui.painter().text(pos2(rect.left() + 2.0, rect.center().y), Align2::LEFT_CENTER, title, theme::bold(17.0), theme::text());
+    ui.painter().text(pos2(rect.left() + 2.0, rect.center().y), Align2::LEFT_CENTER, title, theme::bold(20.0), theme::text());
     chevron(ui, pos2(rect.right() - 10.0, rect.center().y), id, open, theme::lerp_color(theme::text_dim(), theme::text(), h));
     ui.add_space(10.0);
     open
@@ -2572,8 +2572,8 @@ pub fn settings_card(ui: &mut Ui, body: impl FnOnce(&mut Ui)) {
 pub(super) fn setting_row(ui: &mut Ui, title: &str, desc: Option<&str>, control: impl FnOnce(&mut Ui)) {
     let w = ui.available_width();
     let text_w = (w - 230.0).max(200.0);
-    let title_g = widgets::galley(ui, title, theme::semibold(14.5), theme::text(), text_w);
-    let desc_g = desc.map(|d| widgets::galley_wrapped(ui, d, theme::regular(12.5), theme::text_dim(), text_w, 3));
+    let title_g = widgets::galley(ui, title, theme::semibold(15.5), theme::text(), text_w);
+    let desc_g = desc.map(|d| widgets::galley_wrapped(ui, d, theme::regular(11.0), theme::text_dim(), text_w, 3));
     let text_h = title_g.size().y + desc_g.as_ref().map_or(0.0, |g| g.size().y + 3.0);
     let h = (text_h + 26.0).max(58.0);
     let (rect, _) = ui.allocate_exact_size(vec2(w, h), Sense::hover());
