@@ -85,6 +85,12 @@ impl HttpImages {
         trim(&dir);
         Self { backend, cache: Default::default(), dir }
     }
+
+    /// Prunes ready raw byte entries from memory (already cached on disk or GPU).
+    pub fn prune_unseen(&self) {
+        let mut cache = self.cache.lock_unpoisoned();
+        cache.retain(|_, e| matches!(e.entry, Entry::Pending));
+    }
 }
 
 /// Prefetch thumbnail URLs in the background and cache them to disk so they are immediately available.
@@ -351,5 +357,34 @@ impl TextureLoader for Textures {
 
     fn byte_size(&self) -> usize {
         self.state.lock_unpoisoned().cache.values().map(|t| t.handle.byte_size()).sum()
+    }
+}
+
+impl Textures {
+    /// Prunes GPU textures that have not been drawn in recent passes.
+    pub fn prune_unseen(&self) {
+        let mut state = self.state.lock_unpoisoned();
+        let pass = state.pass;
+        state.cache.retain(|_, t| t.last_used + 2 >= pass);
+    }
+}
+
+static TEXTURES: std::sync::OnceLock<Arc<Textures>> = std::sync::OnceLock::new();
+static HTTP_IMAGES: std::sync::OnceLock<Arc<HttpImages>> = std::sync::OnceLock::new();
+
+pub fn register_textures(t: Arc<Textures>) {
+    let _ = TEXTURES.set(t);
+}
+
+pub fn register_http_images(h: Arc<HttpImages>) {
+    let _ = HTTP_IMAGES.set(h);
+}
+
+pub fn prune_image_caches() {
+    if let Some(t) = TEXTURES.get() {
+        t.prune_unseen();
+    }
+    if let Some(h) = HTTP_IMAGES.get() {
+        h.prune_unseen();
     }
 }

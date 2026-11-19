@@ -140,7 +140,9 @@ fn main() -> eframe::Result {
             let backend = backend::Backend::new(data_dir, resp_tx, audio.clone(), Arc::new(wake))?;
 
             egui_extras::install_image_loaders(&ctx);
-            ctx.add_bytes_loader(Arc::new(images::HttpImages::new(backend.clone())));
+            let http_images = Arc::new(images::HttpImages::new(backend.clone()));
+            images::register_http_images(http_images.clone());
+            ctx.add_bytes_loader(http_images);
 
             let (media_tx, media_rx) = unbounded();
             if let Some(h) = hwnd(cc) {

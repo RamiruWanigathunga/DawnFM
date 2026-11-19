@@ -34,3 +34,8 @@ impl<T: ?Sized> RwLockExt<T> for RwLock<T> {
         self.write().unwrap_or_else(|e| e.into_inner())
     }
 }
+
+/// Trims inactive image and texture caches when idle or navigating.
+pub fn trim_memory() {
+    crate::images::prune_image_caches();
+}

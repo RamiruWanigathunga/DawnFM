@@ -19,6 +19,19 @@ use crate::model::{self, Card, Target, Thumb, Track, sized};
 use crate::stream::{self, Shared};
 use crate::{hires, innertube, jsc, webmusic, ytdlp, ytm, ytmapi};
 
+#[derive(Clone, Default, Debug)]
+pub struct PlayExtra {
+    pub song_of: Option<Track>,
+    pub song: Option<Track>,
+    pub track: Option<Track>,
+}
+
+#[derive(Clone, Default, Debug)]
+pub struct PrefetchExtra {
+    pub song_of: Option<Track>,
+    pub track: Option<Track>,
+}
+
 pub enum Req {
     /// Home feed, optionally filtered by a mood chip's params.
     Home(Option<String>),
@@ -53,8 +66,8 @@ pub enum Req {
     ServerQueue,
     /// Save a song's audio to the downloads folder. `for_video`: the music video it's the
     /// song version of, which then plays it from the file (offline too).
-    Download { track: Track, for_video: Option<String> },
-    Lyrics(Track),
+    Download { track: Box<Track>, for_video: Option<String> },
+    Lyrics(Box<Track>),
     /// SponsorBlock's parts of a video to skip.
     Segments { video_id: String },
     /// Romanization and translation for the lyric lines of one source.
@@ -70,18 +83,14 @@ pub enum Req {
     ArtistSignature { key: String, endpoint: String, name: String },
     /// Radio seeded from a track (`seed`, its id); appended to the queue. `song_of`: the
     /// track, when it's a music video to play as its song: the song's radio is asked for.
-    Radio { seed: String, song_of: Option<Track> },
+    Radio { seed: String, song_of: Option<Box<Track>> },
     /// Fetch an album/playlist and play it from the start.
     PlayCollection { target: Target },
     /// `at`: start position (non-zero when resuming last session's song). `report`: tell
-    /// YouTube about the play (not when picking up a song already counted). `song_of`:
-    /// the track, when it's a music video to play as its song version if one is found.
-    /// `song`: the song version already playing for the music video `video_id` (picked up
-    /// mid-song): played without a lookup, and the video if it won't. `track`: the song as
-    /// the UI lists it, for a hi-res source's search.
-    Play { video_id: String, generation: u64, at: std::time::Duration, report: bool, song_of: Option<Track>, song: Option<Track>, track: Option<Track> },
+    /// YouTube about the play (not when picking up a song already counted).
+    Play { video_id: String, generation: u64, at: std::time::Duration, report: bool, extra: Box<PlayExtra> },
     /// Resolve and download a track ahead of time so skipping to it is instant.
-    Prefetch { video_id: String, song_of: Option<Track>, track: Option<Track> },
+    Prefetch { video_id: String, extra: Box<PrefetchExtra> },
     Like { video_id: String, like: bool },
     /// Several likes (or unlikes) one after another, for a selection.
     LikeMany { video_ids: Vec<String>, like: bool },
@@ -826,7 +835,7 @@ impl Backend {
                 Req::Radio { seed, song_of } => {
                     // A music video's radio is music videos; its song's is songs, as from the
                     // song itself. The lookup is shared with its play's (one per video).
-                    let song = self.song_version(&seed, song_of.as_ref(), PREFETCH_SONG_WAIT).await;
+                    let song = self.song_version(&seed, song_of.as_deref(), PREFETCH_SONG_WAIT).await;
                     let from = song.as_ref().map_or(&seed, |s| &s.id);
                     let mut tracks = ytm::radio(api, from, false, 50).await?;
                     // The radio starts with its seed, which is playing already.
@@ -846,11 +855,15 @@ impl Backend {
                     let path = self.download(&t, for_video).await?;
                     Resp::Downloaded { title: t.title, path }
                 }
-                Req::Play { video_id, generation, at, report, song_of, song, track } => match self.start_playback(&video_id, song_of.as_ref(), song, track.as_ref(), generation, at, report).await {
-                    Ok(()) => return Ok(None),
-                    Err(e) => Resp::PlayError { generation, msg: format!("{e:#}") },
-                },
-                Req::Prefetch { video_id, song_of, track } => {
+                Req::Play { video_id, generation, at, report, extra } => {
+                    let PlayExtra { song_of, song, track } = *extra;
+                    match self.start_playback(&video_id, song_of.as_ref(), song, track.as_ref(), generation, at, report).await {
+                        Ok(()) => return Ok(None),
+                        Err(e) => Resp::PlayError { generation, msg: format!("{e:#}") },
+                    }
+                }
+                Req::Prefetch { video_id, extra } => {
+                    let PrefetchExtra { song_of, track } = *extra;
                     self.prefetch(video_id, song_of, track).await?;
                     return Ok(None);
                 }
@@ -1190,7 +1203,7 @@ impl Backend {
                 Some((this, listed, report)) => {
                     log::warn!("{listed}'s song won't start ({e}); playing the music video");
                     let _ = tx.send(Resp::PlayingAs { generation, listed: listed.clone(), song: None });
-                    this.request(Req::Play { video_id: listed, generation, at, report, song_of: None, song: None, track: None });
+                    this.request(Req::Play { video_id: listed, generation, at, report, extra: Box::default() });
                     wake();
                 }
                 None => {

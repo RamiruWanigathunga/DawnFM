@@ -141,3 +141,13 @@ fn test_mimalloc_heap_recovery_post_spike() {
 
     drop(small_objects);
 }
+
+#[test]
+fn test_req_channel_message_envelope_bounded() {
+    let req_size = std::mem::size_of::<dawnfm::backend::Req>();
+    assert!(
+        req_size <= 224,
+        "Req channel message size must remain compact (<= 224 bytes, reduced from 625 bytes), was: {}",
+        req_size
+    );
+}

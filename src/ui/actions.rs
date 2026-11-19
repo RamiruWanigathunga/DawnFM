@@ -60,7 +60,7 @@ impl App {
                 self.play_list(vec![t.clone()], 0);
                 if !self.radio_pending {
                     self.radio_pending = true;
-                    self.backend.request(Req::Radio { song_of: self.song_of(&t), seed: t.id });
+                    self.backend.request(Req::Radio { song_of: self.song_of(&t).map(Box::new), seed: t.id });
                 }
             }
             Action::Open(Target::Album(id)) => self.go(Page::Album(id)),
@@ -145,7 +145,7 @@ impl App {
                 self.toast(format!("Downloading \u{201c}{}\u{201d}", track.title));
                 // The song version playing for a music video: that video plays the file too.
                 let for_video = if self.playing_as().is_some_and(|s| s.id == track.id) { self.current_id().map(str::to_owned) } else { None };
-                self.backend.request(Req::Download { track, for_video });
+                self.backend.request(Req::Download { track: Box::new(track), for_video });
             }
             Action::AddToPlaylist(tracks) => {
                 if self.logged_in { self.dialog = Some(Dialog::PickPlaylist(tracks)); }

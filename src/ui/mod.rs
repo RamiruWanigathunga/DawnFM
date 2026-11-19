@@ -565,6 +565,7 @@ pub struct App {
     exiting: bool,
     /// Minimized, or hidden: the window's geometry isn't worth saving.
     window_hidden: bool,
+    was_covered: bool,
     /// eframe's saved window geometry ("window") from the last time it was visible.
     good_window: Option<String>,
     /// The sidebar playlists' order (by id), and the ones hidden from it.
@@ -736,6 +737,7 @@ impl App {
             wgpu_renderer,
             exiting: false,
             window_hidden: false,
+            was_covered: false,
             good_window: get("window"),
             playlist_order: get("playlist_order").map(|v| v.lines().filter(|l| !l.is_empty()).map(str::to_owned).collect()).unwrap_or_default(),
             hidden_playlists: get("hidden_playlists").map(|v| v.lines().filter(|l| !l.is_empty()).map(str::to_owned).collect()).unwrap_or_default(),
@@ -925,6 +927,7 @@ impl App {
         self.back.push(prev);
         self.forward.clear();
         self.page_loaded();
+        crate::sync::trim_memory();
     }
 
     /// Show `q`'s results in the search dropdown (an empty query just focuses the box).
@@ -1383,7 +1386,14 @@ impl eframe::App for App {
         // smooth). Each egui frame re-lays-out the UI, so frame rate is the main CPU cost.
         let playing = self.playing();
         let (covered, focused) = ctx.input(|i| (i.viewport().occluded == Some(true), i.viewport().focused != Some(false)));
-        if self.window_hidden || covered {
+        let is_covered = self.window_hidden || covered;
+        if is_covered && !self.was_covered {
+            self.was_covered = true;
+            crate::sync::trim_memory();
+        } else if !is_covered && self.was_covered {
+            self.was_covered = false;
+        }
+        if is_covered {
             // In the tray, minimized or covered: nothing to draw, only the player
             // bookkeeping. Track changes and media keys wake the loop themselves.
             if playing || self.buffering {
@@ -1419,7 +1429,9 @@ impl eframe::App for App {
         theme::set_mode(&ctx, light);
         if self.chrome_applied.as_deref() != Some(look.id.as_str()) {
             if self.chrome_applied.is_none() {
-                ctx.add_texture_loader(Arc::new(crate::images::Textures::default()));
+                let textures = Arc::new(crate::images::Textures::default());
+                crate::images::register_textures(textures.clone());
+                ctx.add_texture_loader(textures);
             }
             theme::apply_chrome(&ctx, look);
             self.chrome_applied = Some(look.id.clone());

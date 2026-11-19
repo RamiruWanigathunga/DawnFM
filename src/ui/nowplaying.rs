@@ -677,7 +677,7 @@ fn lyrics_wait(app: &mut App, ui: &mut Ui, rect: Rect, now: f64) -> bool {
     let key = egui::Id::unique("lyrics-drawer-wait");
     let (since, mut asked) = ui.ctx().data(|d| d.get_temp::<(String, f64, bool)>(key)).filter(|(id, ..)| *id == shown.id).map_or((now, false), |(_, t, a)| (t, a));
     if !asked && now - since > 3.0 {
-        app.backend.request(crate::backend::Req::Lyrics(shown.clone()));
+        app.backend.request(crate::backend::Req::Lyrics(Box::new(shown.clone())));
         asked = true;
     }
     ui.ctx().data_mut(|d| d.insert_temp(key, (shown.id.clone(), since, asked)));
