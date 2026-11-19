@@ -14,7 +14,7 @@ use tao::event::{Event, WindowEvent};
 use tao::event_loop::{ControlFlow, EventLoopBuilder};
 use tao::platform::run_return::EventLoopExtRunReturn;
 use tao::window::WindowBuilder;
-use wry::{PageLoadEvent, WebContext, WebViewBuilder};
+use wry::{WebContext, WebViewBuilder};
 
 /// Which sign-in.
 #[derive(Clone, Copy)]
@@ -247,8 +247,8 @@ fn run(site: Site, profile_dir: PathBuf) -> anyhow::Result<Outcome> {
     // the way it does Firefox and Safari, and the copy lasts.
     let webview = crate::proxy::webview(builder, matches!(site, Site::Google))
         .with_url(site.start())
-        .with_on_page_load_handler(move |ev, url| {
-            if matches!(ev, PageLoadEvent::Finished) && url.starts_with(site.home()) {
+        .with_on_page_load_handler(move |_ev, url| {
+            if url.starts_with(site.home()) {
                 let _ = proxy.send_event(());
             }
         })
@@ -258,23 +258,28 @@ fn run(site: Site, profile_dir: PathBuf) -> anyhow::Result<Outcome> {
     event_loop.run_return(|event, _, flow| {
         *flow = ControlFlow::Wait;
         match event {
-            Event::UserEvent(()) => match cookies_for(&webview, site.home()) {
-                Ok(cookies) => {
-                    // Landing there while signed out also fires this; only a signed-in
-                    // session has the session cookie (SAPISID, sp_dc).
-                    if let Some(c) = cookies.iter().find(|c| c.name() == site.session_cookie()) {
-                        outcome = Outcome::Cookie(match site {
-                            Site::Spotify => c.value().to_owned(),
-                            Site::Google => cookies.iter().map(|c| format!("{}={}", c.name(), c.value())).collect::<Vec<_>>().join("; "),
-                        });
+            Event::UserEvent(()) => {
+                // Immediately hide the window once redirected to the home site so
+                // the user never sees the web interface loading inside the dialog.
+                window.set_visible(false);
+                match cookies_for(&webview, site.home()) {
+                    Ok(cookies) => {
+                        // Landing there while signed out also fires this; only a signed-in
+                        // session has the session cookie (SAPISID, sp_dc).
+                        if let Some(c) = cookies.iter().find(|c| c.name() == site.session_cookie()) {
+                            outcome = Outcome::Cookie(match site {
+                                Site::Spotify => c.value().to_owned(),
+                                Site::Google => cookies.iter().map(|c| format!("{}={}", c.name(), c.value())).collect::<Vec<_>>().join("; "),
+                            });
+                            *flow = ControlFlow::Exit;
+                        }
+                    }
+                    Err(e) => {
+                        outcome = Outcome::Failed(format!("could not read cookies: {e}"));
                         *flow = ControlFlow::Exit;
                     }
                 }
-                Err(e) => {
-                    outcome = Outcome::Failed(format!("could not read cookies: {e}"));
-                    *flow = ControlFlow::Exit;
-                }
-            },
+            }
             Event::WindowEvent { event: WindowEvent::CloseRequested, .. } => *flow = ControlFlow::Exit,
             _ => {}
         }
