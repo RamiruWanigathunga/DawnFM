@@ -325,8 +325,8 @@ pub fn sidebar(app: &mut App, ui: &mut Ui) {
             let lib = |tab: LibTab| p == Page::Library(tab);
             nav(ui, glyphs::LIBRARY, APPLE, &t!("playlists"), Page::Library(LibTab::Playlists), lib(LibTab::Playlists), &mut go_to);
             icon_row(ui, icon::CIRCLE_USER, &t!("artists"), Page::Library(LibTab::Artists), lib(LibTab::Artists), &mut go_to);
-            icon_row(ui, icon::MUSIC, &t!("songs"), Page::Library(LibTab::Songs), lib(LibTab::Songs), &mut go_to);
             icon_row(ui, icon::DISC_3, &t!("albums"), Page::Library(LibTab::Albums), lib(LibTab::Albums), &mut go_to);
+            icon_row(ui, icon::HEART, &t!("liked_songs"), Page::Library(LibTab::Songs), lib(LibTab::Songs), &mut go_to);
             icon_row(ui, icon::HISTORY, &t!("recently_played"), Page::Library(LibTab::History), lib(LibTab::History), &mut go_to);
             nav(ui, glyphs::DOWNLOAD, APPLE, &t!("downloads"), Page::Downloads, p == Page::Downloads, &mut go_to);
         }
