@@ -1384,13 +1384,35 @@ pub fn zoom_badge(ctx: &egui::Context, now: f64) {
         .interactable(false)
         .show(ctx, |ui| {
             ui.set_opacity(t);
+            let shadow_color = if theme::light() {
+                Color32::from_black_alpha(20)
+            } else {
+                Color32::from_black_alpha(60)
+            };
+            let stroke = if theme::light() {
+                egui::Stroke::new(0.5, Color32::from_black_alpha(25))
+            } else {
+                egui::Stroke::new(0.5, Color32::from_white_alpha(32))
+            };
             egui::Frame::new()
                 .fill(theme::menu_fill())
-                .corner_radius(8)
-                .inner_margin(egui::Margin::symmetric(12, 7))
-                .shadow(egui::epaint::Shadow { offset: [0, 6], blur: 18, spread: 0, color: theme::shade(0.35) })
+                .corner_radius(6)
+                .stroke(stroke)
+                .inner_margin(egui::Margin::symmetric(10, 5))
+                .shadow(egui::epaint::Shadow { offset: [0, 2], blur: 8, spread: 0, color: shadow_color })
                 .show(ui, |ui| {
-                    ui.label(egui::RichText::new(format!("{:.0}%", z * 100.0)).font(theme::semibold(13.0)).color(theme::text()));
+                    ui.set_min_width(44.0);
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
+                        ui.add(
+                            egui::Label::new(
+                                egui::RichText::new(format!("{:.0}%", z * 100.0))
+                                    .font(theme::semibold(12.5))
+                                    .color(theme::text()),
+                            )
+                            .wrap_mode(egui::TextWrapMode::Extend),
+                        );
+                    });
                 });
         });
     ctx.request_repaint();
@@ -1410,11 +1432,22 @@ pub fn toast(app: &mut App, ctx: &egui::Context, now: f64) {    let Some((msg, s
         .fixed_pos(Pos2::new(screen.center().x, if screen.height() < 200.0 { screen.center().y + 22.0 } else { screen.bottom() - 104.0 } + 14.0 * (1.0 - t)))
         .show(ctx, |ui| {
             ui.set_opacity(t);
+            let stroke = if theme::light() {
+                egui::Stroke::new(0.5, Color32::from_black_alpha(25))
+            } else {
+                egui::Stroke::new(0.5, Color32::from_white_alpha(32))
+            };
             egui::Frame::new()
                 .fill(theme::menu_fill())
-                .corner_radius(12)
-                .inner_margin(egui::Margin::symmetric(18, 12))
-                .shadow(egui::epaint::Shadow { offset: [0, 8], blur: 24, spread: 0, color: theme::shade(0.45) })
+                .corner_radius(10)
+                .stroke(stroke)
+                .inner_margin(egui::Margin::symmetric(16, 10))
+                .shadow(egui::epaint::Shadow {
+                    offset: [0, 4],
+                    blur: 14,
+                    spread: 0,
+                    color: if theme::light() { Color32::from_black_alpha(25) } else { Color32::from_black_alpha(70) },
+                })
                 .show(ui, |ui| {
                     ui.set_max_width(520.0);
                     ui.label(egui::RichText::new(msg.as_str()).font(theme::regular(14.0)).color(theme::text()));
