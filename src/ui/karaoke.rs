@@ -1117,11 +1117,23 @@ impl View {
                 let target = if hovered || on {
                     (1.0, 0.0)
                 } else {
-                    match first_active {
+                    let mut t = match first_active {
                         Some(a) if i < a && !user => css.past.map_or((1.0, 0.0), |p| (p[0], p[1])),
                         Some(a) if i > a => css.upcoming.map_or((1.0, 0.0), |p| (p[0], p[1])),
                         _ => (1.0, 0.0),
+                    };
+                    if let Some(a) = first_active {
+                        if i == a + 1 {
+                            // Show the upcoming 1 line after active lyrics clearly; don't immediately hide it.
+                            t.0 = t.0.max(0.70);
+                            t.1 = (t.1 * 0.2).min(1.0);
+                        } else if i + 1 == a {
+                            // Also keep the line right after it has been sung visible; don't immediately hide it.
+                            t.0 = t.0.max(0.45);
+                            t.1 = (t.1 * 0.4).min(2.0);
+                        }
                     }
+                    t
                 };
                 let line_ms = b.dur;
                 let (op_t, blur_t) = if hovered {
@@ -1145,6 +1157,10 @@ impl View {
                 let reveal = theme::anim_bool(&ctx, "lyr-reveal", user, 0.3);
                 let dim = if sung_now || rel == 0 {
                     cfg.inactive_alpha
+                } else if rel == 1 {
+                    (cfg.upcoming_alpha).max(0.70)
+                } else if rel == -1 {
+                    cfg.past_alpha.map_or(0.45, |p| p.max(0.45))
                 } else if past {
                     lerp(cfg.past_alpha.unwrap_or(upcoming), upcoming, reveal)
                 } else {
@@ -1156,7 +1172,15 @@ impl View {
                     BlurScope::Past => past,
                     BlurScope::Upcoming => !past || reveal > 0.0,
                 };
-                let target = if cfg.blur > 0.0 && blur_on && !sung_now && rel != 0 { (cfg.blur * (1.0 + 0.35 * (dist - 1.0).clamp(0.0, 3.0))).min(9.0) } else { 0.0 };
+                let target = if rel == 1 || rel == 0 || sung_now {
+                    0.0
+                } else if rel == -1 {
+                    if cfg.blur > 0.0 && blur_on { (cfg.blur * 0.4).min(2.0) } else { 0.0 }
+                } else if cfg.blur > 0.0 && blur_on {
+                    (cfg.blur * (1.0 + 0.35 * (dist - 1.0).clamp(0.0, 3.0))).min(9.0)
+                } else {
+                    0.0
+                };
                 let s = &mut self.states[i];
                 s.blur.set(target, f.now, 0.35, 0.0);
                 animating |= s.blur.moving(f.now);

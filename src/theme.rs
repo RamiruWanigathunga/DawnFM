@@ -63,9 +63,13 @@ pub fn bg() -> Color32 {
     if light() { BG_LIGHT } else { BG }
 }
 
-/// Menus and popups.
+/// Menus and popups: frosted glass blur style with translucent tint.
 pub fn menu_fill() -> Color32 {
-    if light() { Color32::from_rgb(244, 244, 246) } else { Color32::from_rgb(34, 34, 36) }
+    if light() {
+        Color32::from_rgba_premultiplied(246, 246, 248, 225)
+    } else {
+        Color32::from_rgba_premultiplied(30, 30, 34, 220)
+    }
 }
 
 /// Dialogs and cards that float over the page.
@@ -953,18 +957,18 @@ fn visuals() -> egui::Visuals {
     v.selection.bg_fill = p.accent(RED);
     v.hyperlink_color = text();
     v.interact_cursor = Some(egui::CursorIcon::PointingHand);
-    v.window_corner_radius = egui::CornerRadius::same(6);
-    // The built-in look's menus are shaped like the system's.
-    v.menu_corner_radius = egui::CornerRadius::same(6);
+    v.window_corner_radius = egui::CornerRadius::same(10);
+    // The built-in look's menus are shaped like the system's with frosted glass corners.
+    v.menu_corner_radius = egui::CornerRadius::same(10);
     v.window_stroke = if light() {
-        egui::Stroke::new(0.5, Color32::from_black_alpha(35))
+        egui::Stroke::new(1.0, Color32::from_black_alpha(35))
     } else {
-        egui::Stroke::new(0.5, Color32::from_white_alpha(36))
+        egui::Stroke::new(1.0, glass(0.14))
     };
     v.popup_shadow = if light() {
-        egui::epaint::Shadow { offset: [0, 8], blur: 24, spread: 0, color: Color32::from_black_alpha(45) }
+        egui::epaint::Shadow { offset: [0, 6], blur: 24, spread: 1, color: Color32::from_black_alpha(45) }
     } else {
-        egui::epaint::Shadow { offset: [0, 10], blur: 30, spread: 0, color: Color32::from_black_alpha(160) }
+        egui::epaint::Shadow { offset: [0, 8], blur: 30, spread: 1, color: Color32::from_black_alpha(160) }
     };
     let r = egui::CornerRadius::same(p.chrome.radius.clamp(2.0, 28.0) as u8);
     for (w, fill) in [

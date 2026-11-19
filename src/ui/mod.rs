@@ -321,6 +321,8 @@ pub struct App {
     page_changed: f64,
     /// A fresh launch starts each page at the top, not where the last run left it.
     scroll_top: bool,
+    /// Incremented on each page visit so scroll offset resets to the top instead of persisting.
+    page_visit: u64,
     /// The trackpad swipe in progress: horizontal points so far, when it last moved,
     /// and whether it has already turned the page.
     swipe: SwipeNav,
@@ -680,6 +682,7 @@ impl App {
             forward: Vec::new(),
             page_changed: 0.0,
             scroll_top: true,
+            page_visit: 0,
             swipe: SwipeNav::default(),
             loading: false,
             load_failed: false,
@@ -917,7 +920,9 @@ impl App {
         self.search_drop = None;
         self.search_synced.clear();
         if page == self.page {
-            // Clicking the page you're on refreshes it.
+            // Clicking the page you're on refreshes it and resets scroll to the top.
+            self.page_visit = self.page_visit.wrapping_add(1);
+            self.scroll_top = true;
             self.refresh();
             return;
         }
@@ -1036,6 +1041,8 @@ impl App {
     /// each visit (things change outside the app: likes, other devices, new releases),
     /// showing the cached copy meanwhile.
     fn page_loaded(&mut self) {
+        self.page_visit = self.page_visit.wrapping_add(1);
+        self.scroll_top = true;
         self.page_changed = -1.0; // stamped with the frame time on the next pass
         // The search box holds the query of the search page you're on, and is empty elsewhere.
         self.search_synced = match &self.page {

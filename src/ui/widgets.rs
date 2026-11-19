@@ -684,7 +684,7 @@ fn menu_row(ui: &mut Ui, label: &str, draw: Option<impl FnOnce(&Ui, Pos2, Color3
     let over = response.hovered();
     if over {
         let accent = ui.ctx().data(|d| d.get_temp::<Color32>(egui::Id::unique("accent"))).unwrap_or(theme::RED);
-        ui.painter().rect_filled(rect, 4.0, accent);
+        ui.painter().rect_filled(rect, 6.0, accent);
     }
     let color = if over {
         Color32::WHITE
@@ -1070,7 +1070,7 @@ pub fn track_row(ui: &mut Ui, t: &Track, o: &RowOpts, acts: &mut Vec<Action>) ->
         }
         x += 54.0;
     }
-    let right = rect.right() - 20.0;
+    let right = if o.draggable { rect.right() - 36.0 } else { rect.right() - 20.0 };
     let dur_w = 56.0;
     // Breathing room between the texts and the length at the row's end.
     let dur_gap = 18.0;
@@ -1103,6 +1103,14 @@ pub fn track_row(ui: &mut Ui, t: &Track, o: &RowOpts, acts: &mut Vec<Action>) ->
         }
         if let Some(d) = t.duration {
             ui.painter().text(pos2(right, cy), Align2::RIGHT_CENTER, super::fmt_time(d), theme::regular(13.0), theme::text_dim());
+        }
+        if o.draggable {
+            let handle_x = rect.right() - 16.0;
+            let handle_color = if h > 0.0 || o.is_dragged { theme::text() } else { theme::text_dim() };
+            let stroke = egui::Stroke::new(1.5, handle_color);
+            for dy in [-4.0, 0.0, 4.0] {
+                ui.painter().line_segment([pos2(handle_x - 6.0, cy + dy), pos2(handle_x + 6.0, cy + dy)], stroke);
+            }
         }
         egui::Popup::context_menu(&resp).show(|ui| song_menu(ui, t, o.liked, o.remove, o.remove_queue, acts));
         return resp;
@@ -1149,6 +1157,14 @@ pub fn track_row(ui: &mut Ui, t: &Track, o: &RowOpts, acts: &mut Vec<Action>) ->
     }
     if let Some(d) = t.duration {
         ui.painter().text(pos2(right, cy), Align2::RIGHT_CENTER, super::fmt_time(d), theme::regular(13.0), theme::text_dim());
+    }
+    if o.draggable {
+        let handle_x = rect.right() - 16.0;
+        let handle_color = if h > 0.0 || o.is_dragged { theme::text() } else { theme::text_dim() };
+        let stroke = egui::Stroke::new(1.5, handle_color);
+        for dy in [-4.0, 0.0, 4.0] {
+            ui.painter().line_segment([pos2(handle_x - 6.0, cy + dy), pos2(handle_x + 6.0, cy + dy)], stroke);
+        }
     }
     // Right-click anywhere on the row opens its menu.
     egui::Popup::context_menu(&resp).show(|ui| song_menu(ui, t, o.liked, o.remove, o.remove_queue, acts));

@@ -1357,6 +1357,51 @@ pub fn queue_list(app: &mut App, ui: &mut Ui, salt: &str) {
         }
     });
 
+    if let Some(from) = dragging
+        && down
+        && let Some(pos) = pointer
+        && let Some(t) = app.queue.tracks.get(from)
+    {
+        let t = t.clone();
+        egui::Area::new(egui::Id::unique("queue-drag-preview"))
+            .order(egui::Order::Tooltip)
+            .interactable(false)
+            .fixed_pos(pos + egui::vec2(14.0, 14.0))
+            .show(ui.ctx(), |ui| {
+                let stroke = egui::Stroke::new(1.0, theme::glass(0.18));
+                let shadow = if theme::light() {
+                    egui::epaint::Shadow { offset: [0, 6], blur: 20, spread: 0, color: Color32::from_black_alpha(45) }
+                } else {
+                    egui::epaint::Shadow { offset: [0, 8], blur: 24, spread: 0, color: Color32::from_black_alpha(150) }
+                };
+                egui::Frame::new()
+                    .fill(theme::menu_fill())
+                    .corner_radius(10)
+                    .stroke(stroke)
+                    .shadow(shadow)
+                    .inner_margin(egui::Margin::symmetric(10, 8))
+                    .show(ui, |ui| {
+                        let card_w = 230.0;
+                        let card_h = 36.0;
+                        let (rect, _) = ui.allocate_exact_size(vec2(card_w, card_h), Sense::hover());
+                        let cy = rect.center().y;
+                        let img_rect = Rect::from_center_size(pos2(rect.left() + 18.0, cy), Vec2::splat(32.0));
+                        widgets::paint_cover(ui, img_rect, &t.thumbs, theme::thumb_radius(), 1.0);
+
+                        let text_x = rect.left() + 40.0;
+                        let max_w = card_w - 60.0;
+                        widgets::text_at(ui, pos2(text_x, cy - 8.5), &t.title, theme::semibold(13.0), theme::text(), max_w);
+                        widgets::text_at(ui, pos2(text_x, cy + 4.5), &t.artist_line(), theme::regular(11.5), theme::text_dim(), max_w);
+
+                        let handle_x = rect.right() - 8.0;
+                        let handle_stroke = egui::Stroke::new(1.5, theme::text_dim());
+                        for dy in [-3.5, 0.0, 3.5] {
+                            ui.painter().line_segment([pos2(handle_x - 5.0, cy + dy), pos2(handle_x + 5.0, cy + dy)], handle_stroke);
+                        }
+                    });
+            });
+    }
+
     if let Some((from, to)) = reorder {
         app.actions.push(Action::QueueMove(from, to));
         ui.data_mut(|d| d.insert_temp(drag_key, to));
