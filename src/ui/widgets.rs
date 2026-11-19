@@ -676,13 +676,14 @@ pub fn menu_separator(ui: &mut Ui) {
 }
 
 /// A menu's row, with macOS menu measures: 21 points tall, 13-point text,
-/// and accent blue selection filling the row under the pointer with white text.
+/// and theme accent selection filling the row under the pointer with white text.
 fn menu_row(ui: &mut Ui, label: &str, draw: Option<impl FnOnce(&Ui, Pos2, Color32)>) -> bool {
     let (rect, response) = ui.allocate_exact_size(vec2(ui.available_width(), 21.0), Sense::click());
     let response = named(response, label);
     let over = response.hovered();
     if over {
-        ui.painter().rect_filled(rect, 4.0, Color32::from_rgb(0, 122, 255));
+        let accent = ui.ctx().data(|d| d.get_temp::<Color32>(egui::Id::unique("accent"))).unwrap_or(theme::RED);
+        ui.painter().rect_filled(rect, 4.0, accent);
     }
     let color = if over {
         Color32::WHITE

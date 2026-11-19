@@ -998,7 +998,8 @@ fn sleep_options(app: &mut App, ui: &mut Ui) {
     let resp = named(resp, &t!("sleep_timer")).on_hover_cursor(egui::CursorIcon::PointingHand);
     let over = resp.hovered();
     if over {
-        ui.painter().rect_filled(rect, 4.0, Color32::from_rgb(0, 122, 255));
+        let accent = ui.ctx().data(|d| d.get_temp::<Color32>(egui::Id::unique("accent"))).unwrap_or(theme::RED);
+        ui.painter().rect_filled(rect, 4.0, accent);
     }
     let color = if over {
         Color32::WHITE
@@ -1052,7 +1053,8 @@ fn sleep_row(ui: &mut Ui, label: &str, current: bool) -> bool {
     let resp = named(resp, label).on_hover_cursor(egui::CursorIcon::PointingHand);
     let over = resp.hovered();
     if over {
-        ui.painter().rect_filled(rect, 4.0, Color32::from_rgb(0, 122, 255));
+        let accent = ui.ctx().data(|d| d.get_temp::<Color32>(egui::Id::unique("accent"))).unwrap_or(theme::RED);
+        ui.painter().rect_filled(rect, 4.0, accent);
     }
     let color = if over {
         Color32::WHITE
@@ -1246,7 +1248,8 @@ fn source_row(ui: &mut Ui, name: &str, sync: SyncKind, current: bool) -> bool {
     let resp = named(resp, &format!("Lyrics source {name}")).on_hover_cursor(egui::CursorIcon::PointingHand);
     let over = resp.hovered();
     if over {
-        ui.painter().rect_filled(rect, 4.0, Color32::from_rgb(0, 122, 255));
+        let accent = ui.ctx().data(|d| d.get_temp::<Color32>(egui::Id::unique("accent"))).unwrap_or(theme::RED);
+        ui.painter().rect_filled(rect, 4.0, accent);
     }
     let fg = if over {
         Color32::WHITE
@@ -1273,9 +1276,10 @@ fn switch_row(ui: &mut Ui, label: &str, on: &mut bool) {
     if resp.clicked() {
         *on = !*on;
     }
+    let accent = ui.ctx().data(|d| d.get_temp::<Color32>(egui::Id::unique("accent"))).unwrap_or(theme::RED);
     let h = theme::anim_bool(ui.ctx(), resp.id.with("h"), resp.hovered(), 0.12);
     if h > 0.0 {
-        ui.painter().rect_filled(rect, 4.0, Color32::from_rgb(0, 122, 255));
+        ui.painter().rect_filled(rect, 4.0, accent);
     }
     let fg = if resp.hovered() {
         Color32::WHITE
@@ -1287,7 +1291,6 @@ fn switch_row(ui: &mut Ui, label: &str, on: &mut bool) {
     ui.painter().text(pos2(rect.left() + 10.0, rect.center().y), egui::Align2::LEFT_CENTER, label, theme::regular(13.0), fg);
     let t = theme::anim_bool(ui.ctx(), resp.id.with("t"), *on, 0.16);
     let track = Rect::from_center_size(pos2(rect.right() - 24.0, rect.center().y), vec2(30.0, 16.0));
-    let accent = ui.ctx().data(|d| d.get_temp::<Color32>(egui::Id::unique("accent"))).unwrap_or(Color32::from_rgb(0, 122, 255));
     ui.painter().rect_filled(track, 8.0, theme::lerp_color(theme::glass(0.16 + 0.06 * h), accent, t));
     let knob = pos2(egui::lerp(track.left() + 8.0..=track.right() - 8.0, t), track.center().y);
     ui.painter().circle_filled(knob, 6.5, Color32::WHITE);

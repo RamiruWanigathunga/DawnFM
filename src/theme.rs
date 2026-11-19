@@ -950,7 +950,7 @@ fn visuals() -> egui::Visuals {
     v.window_fill = menu_fill();
     v.extreme_bg_color = glass(0.08);
     v.override_text_color = Some(text());
-    v.selection.bg_fill = Color32::from_rgb(0, 122, 255);
+    v.selection.bg_fill = p.accent(RED);
     v.hyperlink_color = text();
     v.interact_cursor = Some(egui::CursorIcon::PointingHand);
     v.window_corner_radius = egui::CornerRadius::same(6);

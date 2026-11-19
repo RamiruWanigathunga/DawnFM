@@ -2338,13 +2338,13 @@ fn dropdown_button(ui: &mut Ui, value: &str, width: f32, name: &str) -> egui::Re
     resp
 }
 
-/// A dropdown option: macOS menu item style with blue hover and leading check.
+/// A dropdown option: macOS menu item style with theme accent hover and leading check.
 fn option_row(ui: &mut Ui, label: &str, selected: bool) -> egui::Response {
     let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 21.0), Sense::click());
     let resp = widgets::named(resp, label);
     let over = resp.hovered();
     if over {
-        ui.painter().rect_filled(rect, 4.0, Color32::from_rgb(0, 122, 255));
+        ui.painter().rect_filled(rect, 4.0, app_accent(ui));
     }
     let fg = if over {
         Color32::WHITE
