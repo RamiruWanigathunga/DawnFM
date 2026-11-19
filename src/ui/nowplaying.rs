@@ -24,7 +24,7 @@ pub fn overlay(app: &mut App, ctx: &egui::Context, now: f64, screen: Rect) {
     let look = app.look();
     let b = &look.background;
     egui::Area::new(egui::Id::unique("now-playing"))
-        .order(egui::Order::Middle)
+        .order(egui::Order::Foreground)
         .fixed_pos(rect.min)
         .show(ctx, |ui| {
             // Swallow input so the page underneath doesn't react.

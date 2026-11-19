@@ -1480,14 +1480,6 @@ impl eframe::App for App {
             let side = egui::Rect::from_min_max(egui::pos2(screen.left(), screen.top() + titlebar::HEIGHT), egui::pos2(screen.left() + side_w, screen.bottom()));
             titlebar::drag_strip(ui, side, "sidebar");
         }
-        if !self.fullscreen && covered {
-            // Now playing hides the pages: the player bar keeps its full-width place.
-            egui::Panel::bottom("player").resizable(false)
-                .exact_size(self.bar_height())
-                .frame(egui::Frame::new())
-                .show_separator_line(false)
-                .show(ui, |ui| shell::player_bar(self, ui, now, false));
-        }
         if !self.fullscreen && !covered {
             use crate::preset::SidebarStyle;
             let side_alpha = app_style.sidebar_alpha.clamp(0.0, 1.0);
@@ -1556,12 +1548,18 @@ impl eframe::App for App {
                 });
             // The player: a frosted strip over the bottom of the main section, above the
             // pages, so their last rows fade under it instead of stopping at a seam.
-            if self.page != Page::Settings {
-                let strip = egui::Rect::from_min_max(egui::pos2(section.left(), screen.bottom() - self.bar_height()), egui::pos2(main_right, screen.bottom()));
+            if self.page != Page::Settings && np < 0.99 {
+                let bar_reveal = (1.0 - np).clamp(0.0, 1.0);
+                let y_offset = np * 70.0;
+                let strip = egui::Rect::from_min_max(
+                    egui::pos2(section.left(), screen.bottom() - self.bar_height() + y_offset),
+                    egui::pos2(main_right, screen.bottom() + y_offset),
+                );
                 egui::Area::new(egui::Id::unique("player-bar"))
                     .fixed_pos(strip.min)
                     .order(egui::Order::Middle)
                     .show(&ctx, |ui| {
+                        ui.set_opacity(bar_reveal * bar_reveal);
                         ui.scope_builder(egui::UiBuilder::new().max_rect(strip).layout(egui::Layout::top_down(egui::Align::Min)), |ui| {
                             shell::player_bar(self, ui, now, true);
                         });
