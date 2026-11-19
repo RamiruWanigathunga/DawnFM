@@ -4,7 +4,7 @@
 
 use egui::{Color32, Rect, Sense, Ui, Vec2, pos2, vec2};
 
-use super::widgets::{self, icon_at, icon_button, named, text_at};
+use super::widgets::{self, icon_at, named, text_at};
 use super::{Action, App, NpTab, Repeat, karaoke};
 use crate::i18n::t;
 use crate::lyrics::{Lyrics, Sync, SyncKind};
@@ -73,6 +73,69 @@ pub fn overlay(app: &mut App, ctx: &egui::Context, now: f64, screen: Rect) {
         });
 }
 
+fn np_header_button(
+    ui: &mut Ui,
+    glyph: char,
+    size: f32,
+    name: &str,
+    active: bool,
+    bg_light: bool,
+    accent: Color32,
+) -> egui::Response {
+    let d = 34.0;
+    let (rect, resp) = ui.allocate_exact_size(Vec2::splat(d), Sense::click());
+    let resp = named(resp, name).on_hover_text(name).on_hover_cursor(egui::CursorIcon::PointingHand);
+    let h = theme::anim_bool(ui.ctx(), resp.id.with("h"), resp.hovered(), 0.15);
+    let p = if resp.is_pointer_button_down_on() { 0.92 } else { 1.0 };
+    np_header_button_paint(ui, rect, glyph, size * p, active, h, bg_light, accent);
+    resp
+}
+
+fn np_header_button_paint(
+    ui: &Ui,
+    rect: Rect,
+    glyph: char,
+    size: f32,
+    active: bool,
+    h: f32,
+    bg_light: bool,
+    accent: Color32,
+) {
+    let center = rect.center();
+    let shadow = if bg_light {
+        egui::epaint::Shadow { offset: [0, 2], blur: 8, spread: 0, color: Color32::from_black_alpha(25) }
+    } else {
+        egui::epaint::Shadow { offset: [0, 2], blur: 10, spread: 0, color: Color32::from_black_alpha(80) }
+    };
+    ui.painter().add(shadow.as_shape(rect, 17));
+
+    let fill = if bg_light {
+        Color32::from_rgba_premultiplied(240, 240, 244, (140.0 + 50.0 * h) as u8)
+    } else {
+        Color32::from_rgba_premultiplied(30, 30, 34, (140.0 + 50.0 * h) as u8)
+    };
+    let stroke_col = if bg_light {
+        Color32::from_black_alpha((35.0 + 25.0 * h) as u8)
+    } else {
+        Color32::from_white_alpha((35.0 + 25.0 * h) as u8)
+    };
+    ui.painter().circle_filled(center, 16.0, fill);
+    ui.painter().circle_stroke(center, 16.0, egui::Stroke::new(1.0, stroke_col));
+
+    let base_color = if bg_light {
+        Color32::from_rgb(0x18, 0x14, 0x1c)
+    } else {
+        Color32::WHITE
+    };
+    let color = if active {
+        accent
+    } else {
+        let alpha = if bg_light { 0.85 + 0.15 * h } else { 0.80 + 0.20 * h };
+        theme::with_alpha(base_color, alpha)
+    };
+    icon_at(ui, center, glyph, size, color);
+}
+
 fn body(app: &mut App, ui: &mut Ui, now: f64) {
     use crate::preset::{Layout, Side};
     // An Automix handoff keeps the outgoing song here until the next one is the louder
@@ -115,21 +178,23 @@ fn body(app: &mut App, ui: &mut Ui, now: f64) {
         let mut hui = ui.new_child(egui::UiBuilder::new().max_rect(header).layout(egui::Layout::left_to_right(egui::Align::Center)));
         hui.multiply_opacity(controls_alpha);
         let interactive = controls_alpha > 0.01;
+        let bg_light = app.bg_is_light();
+        let accent = app.accent_color();
         hui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             ui.add_space(super::titlebar::right_gap(ui.ctx(), ui.max_rect(), 0.0));
             // The player's own close (minimise back to the pages), top right: the macOS
             // window buttons have the top left.
             if interactive {
-                close = icon_button(ui, icon::CHEVRON_DOWN, 22.0, &t!("minimise_now_playing"), false).clicked();
+                close = np_header_button(ui, icon::CHEVRON_DOWN, 20.0, &t!("minimise_now_playing"), false, bg_light, accent).clicked();
             } else {
                 let (r, _) = ui.allocate_exact_size(vec2(34.0, 34.0), Sense::hover());
-                icon_at(ui, r.center(), icon::CHEVRON_DOWN, 22.0, theme::text_dim());
+                np_header_button_paint(ui, r, icon::CHEVRON_DOWN, 20.0, false, 0.0, bg_light, accent);
             }
 
             // Direct Queue toggle button in fullscreen header
             let queue_open = app.np_tab == NpTab::UpNext;
             if interactive {
-                if icon_button(ui, icon::LIST_MUSIC, 20.0, &t!("view_queue"), queue_open).clicked() {
+                if np_header_button(ui, icon::LIST_MUSIC, 19.0, &t!("view_queue"), queue_open, bg_light, accent).clicked() {
                     app.np_tab = if queue_open {
                         let prev = ui.ctx().data(|d| d.get_temp(egui::Id::unique("np-last-tab-prior"))).unwrap_or(if no_lyrics { NpTab::Art } else { NpTab::Lyrics });
                         if prev == NpTab::UpNext {
@@ -144,7 +209,7 @@ fn body(app: &mut App, ui: &mut Ui, now: f64) {
                 }
             } else {
                 let (r, _) = ui.allocate_exact_size(vec2(34.0, 34.0), Sense::hover());
-                icon_at(ui, r.center(), icon::LIST_MUSIC, 20.0, if queue_open { app.accent_color() } else { theme::text_dim() });
+                np_header_button_paint(ui, r, icon::LIST_MUSIC, 19.0, queue_open, 0.0, bg_light, accent);
             }
 
             // Its actions (like, download, share…) are for what's heard: a song version
@@ -387,24 +452,67 @@ fn sleeve(app: &mut App, ui: &mut Ui, x0: f32, w: f32, info_y: f32, track: &crat
         super::animate(ui.ctx());
     }
 
+    let bg_light = app.bg_is_light();
+    let hidden_alpha = 1.0 - expand_alpha;
+
     // The song title and artist lines ALWAYS remain visible (even when controls are minimized)
     let text_w = w - 76.0;
-    text_at(ui, pos2(x0, info_y), &track.title, theme::semibold(17.0), Color32::WHITE, text_w);
-    // Each artist opens their own page (features included); the album follows the
-    // artist behind an em dash, as the reference writes the line.
     let mut line = track.artist_line();
     if let Some(album) = &track.album
         && !album.name.is_empty()
     {
         line = format!("{line} — {}", album.name);
     }
+
+    // When other controls are hidden, add the frosted glass blur card behind artist name and song name
+    if hidden_alpha > 0.005 {
+        let title_g = ui.painter().layout_no_wrap(track.title.clone(), theme::semibold(17.0), Color32::WHITE);
+        let line_g = ui.painter().layout_no_wrap(line.clone(), theme::regular(15.0), Color32::WHITE);
+        let max_text_w = title_g.size().x.max(line_g.size().x).min(text_w);
+        let card_rect = Rect::from_min_max(
+            pos2(x0 - 12.0, info_y - 7.0),
+            pos2(x0 + max_text_w + 14.0, info_y + 45.0),
+        );
+        let shadow = if theme::light() || bg_light {
+            egui::epaint::Shadow { offset: [0, 4], blur: 16, spread: 0, color: Color32::from_black_alpha((35.0 * hidden_alpha) as u8) }
+        } else {
+            egui::epaint::Shadow { offset: [0, 6], blur: 20, spread: 0, color: Color32::from_black_alpha((120.0 * hidden_alpha) as u8) }
+        };
+        ui.painter().add(shadow.as_shape(card_rect, 10));
+
+        let fill = if bg_light {
+            Color32::from_rgba_premultiplied(246, 246, 248, (215.0 * hidden_alpha) as u8)
+        } else {
+            Color32::from_rgba_premultiplied(30, 30, 34, (215.0 * hidden_alpha) as u8)
+        };
+        let stroke_color = if bg_light {
+            Color32::from_black_alpha((35.0 * hidden_alpha) as u8)
+        } else {
+            Color32::from_white_alpha((40.0 * hidden_alpha) as u8)
+        };
+        ui.painter().rect_filled(card_rect, 10.0, fill);
+        ui.painter().rect_stroke(card_rect, 10.0, egui::Stroke::new(1.0, stroke_color), egui::StrokeKind::Inside);
+    }
+
+    let title_color = if bg_light {
+        Color32::from_rgb(0x18, 0x14, 0x1c)
+    } else {
+        Color32::WHITE
+    };
+    let artist_color = if bg_light {
+        Color32::from_black_alpha(175)
+    } else {
+        theme::text_dim()
+    };
+
+    text_at(ui, pos2(x0, info_y), &track.title, theme::semibold(17.0), title_color, text_w);
     let line_w = text_w;
-    let line_rect = widgets::linked_text(ui, pos2(x0, info_y + 21.0), &line, &track.artists, theme::regular(15.0), theme::text_dim(), line_w, &mut app.actions);
+    let line_rect = widgets::linked_text(ui, pos2(x0, info_y + 21.0), &line, &track.artists, theme::regular(15.0), artist_color, line_w, &mut app.actions);
     // The album after the em dash opens its page too, underlined like the artists.
     if let Some(album) = track.album.as_ref().filter(|a| !a.name.is_empty())
         && let Some(id) = album.id.clone()
     {
-        let g = widgets::galley(ui, &line, theme::regular(15.0), theme::text_dim(), line_w);
+        let g = widgets::galley(ui, &line, theme::regular(15.0), artist_color, line_w);
         if let Some(at) = g.job.text.rfind(album.name.as_str()) {
             let c0 = g.job.text[..at].chars().count();
             let c1 = c0 + album.name.chars().count();
@@ -415,7 +523,7 @@ fn sleeve(app: &mut App, ui: &mut Ui, x0: f32, w: f32, info_y: f32, track: &crat
                 let resp = ui.interact(r, ui.scope_id().with(("album-link", &album.name)), Sense::click());
                 let resp = named(resp, &album.name).on_hover_cursor(egui::CursorIcon::PointingHand);
                 if resp.hovered() {
-                    let hover_color = if theme::light() { Color32::BLACK } else { Color32::WHITE };
+                    let hover_color = if bg_light { Color32::BLACK } else { Color32::WHITE };
                     let hg = widgets::galley(ui, &album.name, theme::regular(15.0), hover_color, line_w);
                     ui.painter().galley(r.min, hg, hover_color);
                 }
@@ -447,10 +555,16 @@ fn sleeve(app: &mut App, ui: &mut Ui, x0: f32, w: f32, info_y: f32, track: &crat
     // The same translucent disc as the ⋯ beside it, a little brighter once liked.
     let disc = (0.09 + 0.07 * sh + 0.05 * pop).min(0.30);
     if disc > 0.0 {
-        ui.painter().circle_filled(star.center(), 15.0, theme::glass(disc));
+        let star_fill = if bg_light {
+            Color32::from_rgba_premultiplied(240, 240, 244, (120.0 + 50.0 * sh) as u8)
+        } else {
+            theme::glass(disc)
+        };
+        ui.painter().circle_filled(star.center(), 15.0, star_fill);
     }
+    let base_star = if bg_light { Color32::from_rgb(0x18, 0x14, 0x1c) } else { Color32::WHITE };
     let dim = 0.85 + 0.15 * sh;
-    let tint = theme::lerp_color(theme::with_alpha(Color32::WHITE, dim), app.accent_color(), pop);
+    let tint = theme::lerp_color(theme::with_alpha(base_star, dim), app.accent_color(), pop);
     // It swells a quarter on the way, as the mini player's does.
     let size = 19.0 * (1.0 + 0.25 * (pop * std::f32::consts::PI).sin());
     super::glyphs::draw(ui, star.center(), size, super::glyphs::STAR, tint);
@@ -501,7 +615,8 @@ fn sleeve(app: &mut App, ui: &mut Ui, x0: f32, w: f32, info_y: f32, track: &crat
     let focus = theme::anim_bool(ui.ctx(), "np-seek-h", total > 0.0 && !held && interactive && (sresp.hovered() || sresp.dragged()), 0.18);
     let thick = 4.0 + 4.0 * focus;
     let bar = Rect::from_min_max(pos2(x0, hit.center().y - thick / 2.0), pos2(x0 + w, hit.center().y + thick / 2.0));
-    ui.painter().rect_filled(bar, thick / 2.0, Color32::from_white_alpha(38));
+    let seek_bg = if bg_light { Color32::from_black_alpha(35) } else { Color32::from_white_alpha(38) };
+    ui.painter().rect_filled(bar, thick / 2.0, seek_bg);
     // Automix: the handoff window tints to the song's colour with its start ticked, so
     // the blend has a place it visibly begins at.
     if mix > 0.5 {
@@ -513,11 +628,15 @@ fn sleeve(app: &mut App, ui: &mut Ui, x0: f32, w: f32, info_y: f32, track: &crat
     }
     let frac = if total > 0.0 { (pos / total).clamp(0.0, 1.0) } else { 0.0 };
     if frac > 0.0 {
-        let fill = theme::lerp_color(Color32::from_white_alpha(163), Color32::from_white_alpha(240), focus);
+        let fill = if bg_light {
+            theme::lerp_color(Color32::from_black_alpha(170), Color32::from_rgb(0x18, 0x14, 0x1c), focus)
+        } else {
+            theme::lerp_color(Color32::from_white_alpha(163), Color32::from_white_alpha(240), focus)
+        };
         ui.painter().rect_filled(Rect::from_min_size(bar.min, vec2(bar.width() * frac, thick)), thick / 2.0, fill);
     }
     let at = |p: egui::Pos2| (((p.x - x0) / w.max(1.0)).clamp(0.0, 1.0) * total).max(0.0);
-    let tc = theme::with_alpha(Color32::WHITE, 0.62);
+    let tc = if bg_light { Color32::from_black_alpha(160) } else { theme::with_alpha(Color32::WHITE, 0.62) };
     let g = widgets::galley(ui, &super::fmt_time(pos as u32), theme::semibold(11.0), tc, 80.0);
     ui.painter().galley(pos2(x0, hit.bottom() + 2.0), g, tc);
     let left = super::fmt_time((total - pos).max(0.0) as u32);
@@ -562,7 +681,10 @@ fn sleeve(app: &mut App, ui: &mut Ui, x0: f32, w: f32, info_y: f32, track: &crat
     }
     // The marks are primary white, an off shuffle or repeat tertiary; a pressed button
     // shrinks to 90%, as the reference's does.
-    let ink = |h: f32, base: f32, on: f32| theme::with_alpha(theme::lerp_color(theme::with_alpha(Color32::WHITE, base), Color32::WHITE, h), on);
+    let ink = |h: f32, base: f32, on: f32| {
+        let col = if bg_light { Color32::from_rgb(0x18, 0x14, 0x1c) } else { Color32::WHITE };
+        theme::with_alpha(theme::lerp_color(theme::with_alpha(col, base), col, h), on)
+    };
     let enabled = app.current().is_some();
     let dim = if enabled { 1.0 } else { 0.4 };
     let btn = |ui: &mut Ui, i: usize, key: &str, name: &str, live: bool| -> (egui::Response, f32, f32) {
@@ -574,7 +696,8 @@ fn sleeve(app: &mut App, ui: &mut Ui, x0: f32, w: f32, info_y: f32, track: &crat
         let h = theme::anim_bool(ui.ctx(), resp.id.with("h"), live && resp.hovered(), 0.1);
         let p = theme::anim_bool(ui.ctx(), resp.id.with("p"), live && resp.is_pointer_button_down_on(), 0.1);
         if h > 0.0 {
-            ui.painter().circle_filled(pos2(xs[i], ty), sizes[i] / 2.0 * (1.0 - 0.1 * p), Color32::from_white_alpha((0.1 * h * 255.0) as u8));
+            let halo = if bg_light { Color32::from_black_alpha((0.1 * h * 255.0) as u8) } else { Color32::from_white_alpha((0.1 * h * 255.0) as u8) };
+            ui.painter().circle_filled(pos2(xs[i], ty), sizes[i] / 2.0 * (1.0 - 0.1 * p), halo);
         }
         (resp, h, p)
     };
@@ -899,7 +1022,27 @@ pub(crate) fn options_menu(app: &mut App, ui: &mut Ui, rect: Rect, track: &crate
     let resp = named(resp, &t!("options")).on_hover_cursor(egui::CursorIcon::PointingHand);
     let open = egui::Popup::is_id_open(ui.ctx(), egui::Popup::default_response_id(&resp));
     let h = theme::anim_bool(ui.ctx(), resp.id.with("h"), resp.hovered() || open, 0.12);
-    let dot_col = if theme::light() { Color32::BLACK } else { Color32::WHITE };
+    let bg_light = app.bg_is_light();
+    let shadow = if bg_light {
+        egui::epaint::Shadow { offset: [0, 2], blur: 8, spread: 0, color: Color32::from_black_alpha(25) }
+    } else {
+        egui::epaint::Shadow { offset: [0, 2], blur: 10, spread: 0, color: Color32::from_black_alpha(80) }
+    };
+    ui.painter().add(shadow.as_shape(rect, 17));
+    let fill = if bg_light {
+        Color32::from_rgba_premultiplied(240, 240, 244, (140.0 + 50.0 * h) as u8)
+    } else {
+        Color32::from_rgba_premultiplied(30, 30, 34, (140.0 + 50.0 * h) as u8)
+    };
+    let stroke_col = if bg_light {
+        Color32::from_black_alpha((35.0 + 25.0 * h) as u8)
+    } else {
+        Color32::from_white_alpha((35.0 + 25.0 * h) as u8)
+    };
+    ui.painter().circle_filled(rect.center(), 16.0, fill);
+    ui.painter().circle_stroke(rect.center(), 16.0, egui::Stroke::new(1.0, stroke_col));
+
+    let dot_col = if bg_light { Color32::from_rgb(0x18, 0x14, 0x1c) } else { Color32::WHITE };
     for dx in [-5.0, 0.0, 5.0] {
         ui.painter().circle_filled(rect.center() + vec2(dx, 0.0), 1.8, theme::with_alpha(dot_col, 0.75 + 0.25 * h));
     }
