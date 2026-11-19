@@ -1668,8 +1668,7 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
     settings_window(app, ui);
     settings_connections(app, ui);
     super::transfer::settings_section(app, ui);
-    section_label(ui, "Network", None);
-    settings_card(ui, |ui| network(app, ui));
+    settings_network(app, ui);
     settings_shortcuts(ui);
     settings_updates(app, ui);
 }
@@ -2165,6 +2164,12 @@ fn settings_shortcuts(ui: &mut Ui) {
             }
         }
     }));
+}
+
+/// Settings › Network: collapsible section for proxy configuration and connection testing.
+fn settings_network(app: &mut App, ui: &mut Ui) {
+    let open = section_fold(ui, "Network");
+    fold_body(ui, fold_state(ui, "Network").0, open, |ui| settings_card(ui, |ui| network(app, ui)));
 }
 
 /// Settings › Network: the proxy everything goes through, a connection test, and a
