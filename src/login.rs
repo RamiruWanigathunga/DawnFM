@@ -193,38 +193,10 @@ fn store_id(profile_dir: &std::path::Path) -> [u8; 16] {
 fn run(site: Site, profile_dir: PathBuf) -> anyhow::Result<Outcome> {
     let mut event_loop = EventLoopBuilder::<()>::with_user_event().build();
 
-    #[cfg(target_os = "macos")]
-    let builder = {
-        use tao::platform::macos::WindowBuilderExtMacOS;
-        WindowBuilder::new()
-            .with_title(site.title())
-            .with_inner_size(tao::dpi::LogicalSize::new(460.0, 650.0))
-            .with_resizable(false)
-            .with_titlebar_transparent(true)
-            .with_fullsize_content_view(true)
-            .with_title_hidden(true)
-            .with_movable_by_window_background(true)
-            .with_traffic_light_inset(tao::dpi::LogicalPosition::new(14.0, 16.0))
-            .with_has_shadow(true)
-    };
-    #[cfg(not(target_os = "macos"))]
-    let builder = WindowBuilder::new()
+    let window = WindowBuilder::new()
         .with_title(site.title())
-        .with_inner_size(tao::dpi::LogicalSize::new(460.0, 650.0))
-        .with_resizable(false);
-
-    let window = builder.build(&event_loop)?;
-
-    // Center the dialog over the primary/current monitor
-    if let Some(monitor) = window.primary_monitor().or_else(|| window.current_monitor()) {
-        let screen_size = monitor.size();
-        let scale = monitor.scale_factor();
-        let win_w = (460.0 * scale) as i32;
-        let win_h = (650.0 * scale) as i32;
-        let x = (screen_size.width as i32 - win_w) / 2;
-        let y = (screen_size.height as i32 - win_h) / 2;
-        window.set_outer_position(tao::dpi::PhysicalPosition::new(x.max(0), y.max(0)));
-    }
+        .with_inner_size(tao::dpi::LogicalSize::new(480.0, 720.0))
+        .build(&event_loop)?;
 
     let proxy = event_loop.create_proxy();
     let proxy_nav = event_loop.create_proxy();
@@ -232,9 +204,7 @@ fn run(site: Site, profile_dir: PathBuf) -> anyhow::Result<Outcome> {
     #[cfg(target_os = "macos")]
     let store = store_id(&profile_dir);
     let mut context = WebContext::new(Some(profile_dir));
-    let builder = WebViewBuilder::new_with_web_context(&mut context)
-        .with_transparent(true)
-        .with_background_color((18, 18, 18, 255));
+    let builder = WebViewBuilder::new_with_web_context(&mut context);
     #[cfg(target_os = "macos")]
     let builder = {
         use wry::WebViewBuilderExtDarwin;
