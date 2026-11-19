@@ -905,9 +905,9 @@ pub(crate) fn options_menu(app: &mut App, ui: &mut Ui, rect: Rect, track: &crate
         ui.painter().circle_filled(rect.center() + vec2(dx, 0.0), 1.8, theme::with_alpha(dot_col, 0.75 + 0.25 * h));
     }
     egui::Popup::menu(&resp).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui| {
-        ui.set_width(270.0);
+        ui.set_width(240.0);
         ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
-        ui.add_space(4.0);
+        ui.add_space(2.0);
         // Lyrics first: the source, translation and timing are what the menu is for
         // while the lyrics are up.
         let liked = app.liked.contains(&track.id);
@@ -967,9 +967,9 @@ fn lyric_options(app: &mut App, ui: &mut Ui) {
     switch_row(ui, &t!("romanization"), &mut app.show_roman);
     // This song's timing for the shown source: ‹ +0.0s ›
     let off = app.lyric_prefs.song_offset(&id, shown);
-    let (row, _) = ui.allocate_exact_size(vec2(ui.available_width(), 40.0), Sense::hover());
-    ui.painter().text(pos2(row.left() + 12.0, row.center().y), egui::Align2::LEFT_CENTER, t!("timing"), theme::regular(14.0), theme::text());
-    let mut sub = ui.new_child(egui::UiBuilder::new().max_rect(row.shrink2(vec2(8.0, 0.0))).layout(egui::Layout::right_to_left(egui::Align::Center)));
+    let (row, _) = ui.allocate_exact_size(vec2(ui.available_width(), 24.0), Sense::hover());
+    ui.painter().text(pos2(row.left() + 10.0, row.center().y), egui::Align2::LEFT_CENTER, t!("timing"), theme::regular(13.0), theme::text());
+    let mut sub = ui.new_child(egui::UiBuilder::new().max_rect(row.shrink2(vec2(6.0, 0.0))).layout(egui::Layout::right_to_left(egui::Align::Center)));
     sub.spacing_mut().item_spacing.x = 2.0;
     if mini_icon(&mut sub, icon::CHEVRON_RIGHT, "Lyrics later (+0.1 s)", true).clicked() {
         app.lyric_prefs.set_song_offset(&id, shown, off + 0.1);
@@ -995,17 +995,24 @@ fn sleep_options(app: &mut App, ui: &mut Ui) {
     let now = std::time::Instant::now();
     let open_id = egui::Id::unique("np-sleep-open");
     let mut open = ui.data(|d| d.get_temp::<bool>(open_id).unwrap_or(false));
-    let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 34.0), Sense::click());
+    let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 22.0), Sense::click());
     let resp = named(resp, &t!("sleep_timer")).on_hover_cursor(egui::CursorIcon::PointingHand);
-    if resp.hovered() {
-        ui.painter().rect_filled(rect, 7.0, theme::glass(0.12));
+    let over = resp.hovered();
+    if over {
+        ui.painter().rect_filled(rect, 4.0, Color32::from_rgb(0, 122, 255));
     }
-    let color = if resp.hovered() { theme::text() } else { theme::text_dim() };
-    widgets::icon_at(ui, pos2(rect.right() - 19.0, rect.center().y), if open { icon::CHEVRON_UP } else { icon::CHEVRON_DOWN }, 16.0, color);
-    ui.painter().text(pos2(rect.left() + 12.0, rect.center().y), egui::Align2::LEFT_CENTER, t!("sleep_timer"), theme::regular(14.0), theme::text());
+    let color = if over {
+        Color32::WHITE
+    } else if theme::light() {
+        Color32::from_rgb(32, 32, 32)
+    } else {
+        Color32::from_rgb(235, 235, 235)
+    };
+    widgets::icon_at(ui, pos2(rect.right() - 15.0, rect.center().y), if open { icon::CHEVRON_UP } else { icon::CHEVRON_DOWN }, 14.0, if over { Color32::WHITE } else { theme::text_dim() });
+    ui.painter().text(pos2(rect.left() + 10.0, rect.center().y), egui::Align2::LEFT_CENTER, t!("sleep_timer"), theme::regular(13.0), color);
     let on = app.sleep.active();
-    let value = if on { theme::text() } else { theme::text_faint() };
-    ui.painter().text(pos2(rect.right() - 36.0, rect.center().y), egui::Align2::RIGHT_CENTER, app.sleep.label(now), theme::semibold(12.5), value);
+    let value = if over { Color32::WHITE } else if on { theme::text() } else { theme::text_faint() };
+    ui.painter().text(pos2(rect.right() - 32.0, rect.center().y), egui::Align2::RIGHT_CENTER, app.sleep.label(now), theme::semibold(12.0), value);
     if matches!(app.sleep, Sleep::At(_)) {
         // The time left counts down while the menu is up.
         ui.ctx().request_repaint_after(std::time::Duration::from_millis(250));
@@ -1042,14 +1049,22 @@ fn sleep_options(app: &mut App, ui: &mut Ui) {
 
 /// One of the sleep timer's choices, indented under its row; picking it closes the menu.
 fn sleep_row(ui: &mut Ui, label: &str, current: bool) -> bool {
-    let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 30.0), Sense::click());
+    let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 21.0), Sense::click());
     let resp = named(resp, label).on_hover_cursor(egui::CursorIcon::PointingHand);
-    if resp.hovered() {
-        ui.painter().rect_filled(rect, 7.0, theme::glass(0.12));
+    let over = resp.hovered();
+    if over {
+        ui.painter().rect_filled(rect, 4.0, Color32::from_rgb(0, 122, 255));
     }
-    ui.painter().text(pos2(rect.left() + 24.0, rect.center().y), egui::Align2::LEFT_CENTER, label, theme::regular(13.5), theme::text_dim());
+    let color = if over {
+        Color32::WHITE
+    } else if theme::light() {
+        Color32::from_rgb(32, 32, 32)
+    } else {
+        Color32::from_rgb(235, 235, 235)
+    };
+    ui.painter().text(pos2(rect.left() + 20.0, rect.center().y), egui::Align2::LEFT_CENTER, label, theme::regular(13.0), color);
     if current {
-        widgets::icon_at(ui, pos2(rect.right() - 19.0, rect.center().y), icon::CHECK, 15.0, theme::text());
+        widgets::icon_at(ui, pos2(rect.right() - 15.0, rect.center().y), icon::CHECK, 13.0, color);
     }
     if resp.clicked() {
         ui.close();
@@ -1058,15 +1073,12 @@ fn sleep_row(ui: &mut Ui, label: &str, current: bool) -> bool {
 }
 
 fn menu_caption(ui: &mut Ui, text: &str) {
-    let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 26.0), Sense::hover());
-    ui.painter().text(pos2(r.left() + 12.0, r.center().y + 2.0), egui::Align2::LEFT_CENTER, text, theme::semibold(11.0), theme::text_faint());
+    let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 20.0), Sense::hover());
+    ui.painter().text(pos2(r.left() + 10.0, r.center().y), egui::Align2::LEFT_CENTER, text, theme::semibold(10.5), theme::text_faint());
 }
 
 fn menu_divider(ui: &mut Ui) {
-    ui.add_space(5.0);
-    let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 1.0), Sense::hover());
-    ui.painter().rect_filled(r.shrink2(vec2(8.0, 0.0)), 0.0, theme::glass(0.08));
-    ui.add_space(5.0);
+    widgets::menu_separator(ui);
 }
 
 // ------------------------------------------------------------------ audio quality
@@ -1231,40 +1243,55 @@ fn size_text(bytes: u64) -> String {
 
 /// A lyrics source: its sync type's dot, name and sync type, with a check on the one shown.
 fn source_row(ui: &mut Ui, name: &str, sync: SyncKind, current: bool) -> bool {
-    let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 44.0), Sense::click());
+    let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 26.0), Sense::click());
     let resp = named(resp, &format!("Lyrics source {name}")).on_hover_cursor(egui::CursorIcon::PointingHand);
-    let h = theme::anim_bool(ui.ctx(), resp.id.with("h"), resp.hovered(), 0.12);
-    if h > 0.0 || current {
-        ui.painter().rect_filled(rect, 8.0, theme::glass(0.05 * current as u8 as f32 + 0.08 * h));
+    let over = resp.hovered();
+    if over {
+        ui.painter().rect_filled(rect, 4.0, Color32::from_rgb(0, 122, 255));
     }
-    ui.painter().circle_filled(pos2(rect.left() + 19.0, rect.center().y), 3.5, sync_color(sync));
-    let x = rect.left() + 40.0;
-    text_at(ui, pos2(x, rect.top() + 6.0), name, theme::semibold(13.5), theme::text(), rect.right() - x - 34.0);
-    text_at(ui, pos2(x, rect.top() + 24.0), sync_label(sync), theme::regular(12.0), theme::text_dim(), rect.right() - x - 34.0);
+    let fg = if over {
+        Color32::WHITE
+    } else if theme::light() {
+        Color32::from_rgb(32, 32, 32)
+    } else {
+        Color32::from_rgb(235, 235, 235)
+    };
+    ui.painter().circle_filled(pos2(rect.left() + 14.0, rect.center().y), 3.0, if over { Color32::WHITE } else { sync_color(sync) });
+    let x = rect.left() + 26.0;
+    text_at(ui, pos2(x, rect.center().y - 8.5), name, theme::semibold(13.0), fg, rect.right() - x - 70.0);
+    let sub_fg = if over { Color32::from_white_alpha(200) } else { theme::text_dim() };
+    text_at(ui, pos2(rect.right() - 65.0, rect.center().y - 8.0), sync_label(sync), theme::regular(11.0), sub_fg, 40.0);
     if current {
-        widgets::icon_at(ui, pos2(rect.right() - 18.0, rect.center().y), icon::CHECK, 16.0, theme::text());
+        widgets::icon_at(ui, pos2(rect.right() - 15.0, rect.center().y), icon::CHECK, 13.0, fg);
     }
     resp.clicked()
 }
 
 /// A label with an on/off switch; the whole row toggles.
 fn switch_row(ui: &mut Ui, label: &str, on: &mut bool) {
-    let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 40.0), Sense::click());
+    let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 24.0), Sense::click());
     let resp = named(resp, label).on_hover_cursor(egui::CursorIcon::PointingHand);
     if resp.clicked() {
         *on = !*on;
     }
     let h = theme::anim_bool(ui.ctx(), resp.id.with("h"), resp.hovered(), 0.12);
     if h > 0.0 {
-        ui.painter().rect_filled(rect, 8.0, theme::glass(0.08 * h));
+        ui.painter().rect_filled(rect, 4.0, Color32::from_rgb(0, 122, 255));
     }
-    ui.painter().text(pos2(rect.left() + 12.0, rect.center().y), egui::Align2::LEFT_CENTER, label, theme::regular(14.0), theme::text());
+    let fg = if resp.hovered() {
+        Color32::WHITE
+    } else if theme::light() {
+        Color32::from_rgb(32, 32, 32)
+    } else {
+        Color32::from_rgb(235, 235, 235)
+    };
+    ui.painter().text(pos2(rect.left() + 10.0, rect.center().y), egui::Align2::LEFT_CENTER, label, theme::regular(13.0), fg);
     let t = theme::anim_bool(ui.ctx(), resp.id.with("t"), *on, 0.16);
-    let track = Rect::from_center_size(pos2(rect.right() - 30.0, rect.center().y), vec2(36.0, 20.0));
-    let accent = ui.ctx().data(|d| d.get_temp::<Color32>(egui::Id::unique("accent"))).unwrap_or(theme::RED);
-    ui.painter().rect_filled(track, 10.0, theme::lerp_color(theme::glass(0.16 + 0.06 * h), accent, t));
-    let knob = pos2(egui::lerp(track.left() + 10.0..=track.right() - 10.0, t), track.center().y);
-    ui.painter().circle_filled(knob, 8.0, Color32::WHITE);
+    let track = Rect::from_center_size(pos2(rect.right() - 24.0, rect.center().y), vec2(30.0, 16.0));
+    let accent = ui.ctx().data(|d| d.get_temp::<Color32>(egui::Id::unique("accent"))).unwrap_or(Color32::from_rgb(0, 122, 255));
+    ui.painter().rect_filled(track, 8.0, theme::lerp_color(theme::glass(0.16 + 0.06 * h), accent, t));
+    let knob = pos2(egui::lerp(track.left() + 8.0..=track.right() - 8.0, t), track.center().y);
+    ui.painter().circle_filled(knob, 6.5, Color32::WHITE);
 }
 
 /// A small icon button (24 × 24).

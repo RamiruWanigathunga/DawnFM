@@ -65,7 +65,7 @@ pub fn bg() -> Color32 {
 
 /// Menus and popups.
 pub fn menu_fill() -> Color32 {
-    if light() { Color32::WHITE } else { Color32::from_rgb(32, 32, 34) }
+    if light() { Color32::from_rgb(244, 244, 246) } else { Color32::from_rgb(34, 34, 36) }
 }
 
 /// Dialogs and cards that float over the page.
@@ -927,6 +927,7 @@ pub fn install_style(ctx: &egui::Context) {
     ctx.global_style_mut(|s| {
         s.spacing.item_spacing = egui::vec2(8.0, 6.0);
         s.spacing.button_padding = egui::vec2(14.0, 7.0);
+        s.spacing.menu_margin = egui::Margin::symmetric(4, 5);
         s.spacing.scroll = egui::style::ScrollStyle::floating();
         // A very small give at the ends of every scroller (vendor/egui sets how small:
         // 5% of the view, a light pull), then a quick spring back. Coasting stays.
@@ -946,20 +947,25 @@ fn visuals() -> egui::Visuals {
     let p = crate::preset::active();
     let mut v = if light() { egui::Visuals::light() } else { egui::Visuals::dark() };
     v.panel_fill = bg();
-    // The built-in look's dark menus use a solid, consistent neutral dark grey.
-    let mac_dark = p.id == crate::preset::DEFAULT_ID && !light();
-    v.window_fill = if mac_dark { Color32::from_rgb(32, 32, 34) } else { surface_fill() };
+    v.window_fill = menu_fill();
     v.extreme_bg_color = glass(0.08);
     v.override_text_color = Some(text());
-    v.selection.bg_fill = if light() { Color32::from_black_alpha(20) } else { Color32::from_white_alpha(32) };
+    v.selection.bg_fill = Color32::from_rgb(0, 122, 255);
     v.hyperlink_color = text();
     v.interact_cursor = Some(egui::CursorIcon::PointingHand);
-    let pr = egui::CornerRadius::same(p.app.panel_radius.clamp(0.0, 32.0) as u8);
-    v.window_corner_radius = if mac_dark { egui::CornerRadius::same(8) } else { pr };
+    v.window_corner_radius = egui::CornerRadius::same(6);
     // The built-in look's menus are shaped like the system's.
-    v.menu_corner_radius = if p.id == crate::preset::DEFAULT_ID { egui::CornerRadius::same(6) } else { pr };
-    v.window_stroke = if mac_dark { egui::Stroke::new(0.5, Color32::from_white_alpha(40)) } else { egui::Stroke::new(1.0, glass(0.08)) };
-    v.popup_shadow = egui::epaint::Shadow { offset: [0, 8], blur: 28, spread: 0, color: shade(if light() { 0.16 } else { 0.5 }) };
+    v.menu_corner_radius = egui::CornerRadius::same(6);
+    v.window_stroke = if light() {
+        egui::Stroke::new(0.5, Color32::from_black_alpha(35))
+    } else {
+        egui::Stroke::new(0.5, Color32::from_white_alpha(36))
+    };
+    v.popup_shadow = if light() {
+        egui::epaint::Shadow { offset: [0, 8], blur: 24, spread: 0, color: Color32::from_black_alpha(45) }
+    } else {
+        egui::epaint::Shadow { offset: [0, 10], blur: 30, spread: 0, color: Color32::from_black_alpha(160) }
+    };
     let r = egui::CornerRadius::same(p.chrome.radius.clamp(2.0, 28.0) as u8);
     for (w, fill) in [
         (&mut v.widgets.inactive, glass(0.08)),

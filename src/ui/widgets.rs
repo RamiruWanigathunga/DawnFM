@@ -616,8 +616,8 @@ fn card_menu_contents(ui: &mut Ui, c: &Card, liked: bool, acts: &mut Vec<Action>
     match &c.target {
         Target::Song(t) => song_menu(ui, t, liked, None, acts),
         t => {
-            ui.set_width(226.0);
-            ui.add_space(3.0);
+            ui.set_width(210.0);
+            ui.add_space(2.0);
             if menu_action(ui, Some(icon::PLAY), "Play") {
                 acts.push(Action::PlayCollection(t.clone(), false));
             }
@@ -627,59 +627,78 @@ fn card_menu_contents(ui: &mut Ui, c: &Card, liked: bool, acts: &mut Vec<Action>
             if menu_action(ui, None, "Open") {
                 acts.push(Action::Open(t.clone()));
             }
-            ui.separator();
+            menu_separator(ui);
             if menu_action(ui, None, "Copy link") {
                 acts.push(Action::Share(t.clone()));
             }
-            ui.add_space(3.0);
+            ui.add_space(2.0);
         }
     }
 }
 
-/// A menu's row, with a macOS menu's measures: 24 points tall, 13-point text after a
-/// leading mark, and the accent filling the row under the pointer, its text white.
-fn menu_row(ui: &mut Ui, label: &str, draw: impl FnOnce(&Ui, Pos2, Color32)) -> bool {
-    let (rect, response) = ui.allocate_exact_size(vec2(ui.available_width(), 24.0), Sense::click());
+/// A menu separator matching native macOS: thin inset horizontal line with balanced spacing.
+pub fn menu_separator(ui: &mut Ui) {
+    ui.add_space(3.0);
+    let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 1.0), Sense::hover());
+    let sep_color = if theme::light() {
+        Color32::from_black_alpha(24)
+    } else {
+        Color32::from_white_alpha(28)
+    };
+    ui.painter().rect_filled(r.shrink2(vec2(6.0, 0.0)), 0.0, sep_color);
+    ui.add_space(3.0);
+}
+
+/// A menu's row, with macOS menu measures: 21 points tall, 13-point text,
+/// and accent blue selection filling the row under the pointer with white text.
+fn menu_row(ui: &mut Ui, label: &str, draw: Option<impl FnOnce(&Ui, Pos2, Color32)>) -> bool {
+    let (rect, response) = ui.allocate_exact_size(vec2(ui.available_width(), 21.0), Sense::click());
     let response = named(response, label);
     let over = response.hovered();
     if over {
-        let hover_bg = if theme::light() { Color32::from_black_alpha(18) } else { Color32::from_white_alpha(32) };
-        ui.painter().rect_filled(rect, 5.0, hover_bg);
+        ui.painter().rect_filled(rect, 4.0, Color32::from_rgb(0, 122, 255));
     }
     let color = if over {
-        if theme::light() { Color32::BLACK } else { Color32::WHITE }
+        Color32::WHITE
+    } else if theme::light() {
+        Color32::from_rgb(32, 32, 32)
     } else {
-        theme::text()
+        Color32::from_rgb(235, 235, 235)
     };
-    draw(ui, pos2(rect.left() + 15.0, rect.center().y), if over { color } else { theme::text_dim() });
-    ui.painter().text(pos2(rect.left() + 32.0, rect.center().y), Align2::LEFT_CENTER, label, theme::regular(13.0), color);
+    if let Some(draw_fn) = draw {
+        draw_fn(ui, pos2(rect.left() + 12.0, rect.center().y), if over { color } else { theme::text_dim() });
+        ui.painter().text(pos2(rect.left() + 25.0, rect.center().y), Align2::LEFT_CENTER, label, theme::regular(13.0), color);
+    } else {
+        ui.painter().text(pos2(rect.left() + 10.0, rect.center().y), Align2::LEFT_CENTER, label, theme::regular(13.0), color);
+    }
     if response.clicked() { ui.close(); }
     response.clicked()
 }
 
 pub fn menu_action(ui: &mut Ui, glyph: Option<char>, label: &str) -> bool {
-    menu_row(ui, label, |ui, at, color| match glyph {
-        Some(glyph) => icon_at(ui, at, glyph, 14.0, color),
-        None => {
-            ui.painter().text(at, Align2::CENTER_CENTER, "↗", theme::semibold(14.0), color);
-        }
-    })
+    if let Some(glyph) = glyph {
+        menu_row(ui, label, Some(|ui: &Ui, at: Pos2, color: Color32| {
+            icon_at(ui, at, glyph, 13.0, color);
+        }))
+    } else {
+        menu_row(ui, label, None::<fn(&Ui, Pos2, Color32)>)
+    }
 }
 
 /// A menu row marked with the app's own star, filled once the song is liked.
 fn menu_action_star(ui: &mut Ui, liked: bool, label: &str) -> bool {
-    menu_row(ui, label, |ui, at, color| {
+    menu_row(ui, label, Some(|ui: &Ui, at: Pos2, color: Color32| {
         let glyph = if liked { super::glyphs::STAR_FILLED } else { super::glyphs::STAR };
-        super::glyphs::draw(ui, at, 15.0, glyph, color);
-    })
+        super::glyphs::draw(ui, at, 13.5, glyph, color);
+    }))
 }
 
 /// `remove`: the song's row in the open playlist, when it's yours and the song can come out.
 pub fn song_menu(ui: &mut Ui, t: &Track, liked: bool, remove: Option<usize>, acts: &mut Vec<Action>) {
-    ui.set_width(226.0);
-    ui.add_space(3.0);
+    ui.set_width(210.0);
+    ui.add_space(2.0);
     song_actions(ui, t, liked, remove, acts);
-    ui.separator();
+    menu_separator(ui);
     if menu_action(ui, Some(icon::LIST_PLUS), "Play next") {
         acts.push(Action::PlayNext(t.clone()));
     }
@@ -692,7 +711,7 @@ pub fn song_menu(ui: &mut Ui, t: &Track, liked: bool, remove: Option<usize>, act
     if menu_action(ui, Some(icon::RADIO), "Start radio") {
         acts.push(Action::Radio(t.clone()));
     }
-    ui.add_space(3.0);
+    ui.add_space(2.0);
 }
 
 /// The song menu's items, for menus that add their own (now playing's options).
@@ -703,7 +722,7 @@ pub fn song_actions(ui: &mut Ui, t: &Track, liked: bool, remove: Option<usize>, 
     if menu_action(ui, Some(icon::THUMBS_DOWN), "Dislike") {
         acts.push(Action::Dislike(t.clone()));
     }
-    ui.separator();
+    menu_separator(ui);
     if menu_action(ui, Some(icon::LIST_PLUS), "Add to playlist") {
         acts.push(Action::AddToPlaylist(vec![t.clone()]));
     }

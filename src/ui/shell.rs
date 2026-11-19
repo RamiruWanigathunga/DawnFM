@@ -417,10 +417,9 @@ pub fn sidebar(app: &mut App, ui: &mut Ui) {
                     let fg = theme::label();
                     text_at(ui, pos2(rect.left() + 44.0, rect.center().y - 8.5), &c.title, theme::regular(13.0), fg, w);
                     egui::Popup::context_menu(&resp).show(|ui| {
-                        ui.set_min_width(190.0);
-                        if ui.button(t!("hide_from_sidebar")).clicked() {
+                        ui.set_min_width(170.0);
+                        if widgets::menu_action(ui, None, &t!("hide_from_sidebar")) {
                             hide = Some(id.clone());
-                            ui.close();
                         }
                     });
                     if resp.clicked() && !is_dragged {

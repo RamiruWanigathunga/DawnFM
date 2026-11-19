@@ -801,10 +801,9 @@ fn recent_searches(ui: &mut Ui, app: &mut App) {
         widgets::text_at(ui, pos2(x, rect.center().y - 17.0), &r.title, theme::semibold(15.0), theme::text(), rect.right() - x - 12.0);
         widgets::text_at(ui, pos2(x, rect.center().y + 4.0), &r.subtitle, theme::regular(13.0), theme::text_dim(), rect.right() - x - 12.0);
         egui::Popup::context_menu(&resp).show(|ui| {
-            ui.set_min_width(200.0);
-            if ui.button("Remove from Recently Searched").clicked() {
+            ui.set_min_width(190.0);
+            if widgets::menu_action(ui, None, "Remove from Recently Searched") {
                 remove = Some(i);
-                ui.close();
             }
         });
         if resp.clicked() {
@@ -982,8 +981,8 @@ pub fn collection(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
                     ui.spacing_mut().item_spacing = vec2(12.0, 0.0);
                     let more = circle_action(ui, CircleGlyph::More, "More", false);
                     egui::Popup::menu(&more).show(|ui| {
-                        ui.set_width(226.0);
-                        ui.add_space(3.0);
+                        ui.set_width(200.0);
+                        ui.add_space(2.0);
                         let mut any = false;
                         if app.logged_in && !auto && !tracks.is_empty()
                             && widgets::menu_action(ui, Some(icon::LIST_CHECKS), if selecting { "Done selecting" } else { "Select" })
@@ -995,7 +994,7 @@ pub fn collection(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
                         }
                         if owned {
                             if any {
-                                ui.separator();
+                                widgets::menu_separator(ui);
                             }
                             any = true;
                             if widgets::menu_action(ui, Some(icon::MUSIC), "Edit playlist") {
@@ -1009,7 +1008,7 @@ pub fn collection(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
                             }
                         }
                         if any {
-                            ui.separator();
+                            widgets::menu_separator(ui);
                         }
                         if widgets::menu_action(ui, Some(icon::LINK), "Share") {
                             acts.push(Action::Share(target.clone()));
@@ -2447,25 +2446,25 @@ fn dropdown_button(ui: &mut Ui, value: &str, width: f32, name: &str) -> egui::Re
     resp
 }
 
-/// A dropdown option: hover glass, and a check on the chosen one.
+/// A dropdown option: macOS menu item style with blue hover and leading check.
 fn option_row(ui: &mut Ui, label: &str, selected: bool) -> egui::Response {
-    // As a macOS menu draws a choice: its tick leading, the accent under the pointer.
-    let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 24.0), Sense::click());
+    let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 21.0), Sense::click());
     let resp = widgets::named(resp, label);
     let over = resp.hovered();
     if over {
-        let hover_bg = if theme::light() { Color32::from_black_alpha(18) } else { Color32::from_white_alpha(32) };
-        ui.painter().rect_filled(rect, 5.0, hover_bg);
+        ui.painter().rect_filled(rect, 4.0, Color32::from_rgb(0, 122, 255));
     }
     let fg = if over {
-        if theme::light() { Color32::BLACK } else { Color32::WHITE }
+        Color32::WHITE
+    } else if theme::light() {
+        Color32::from_rgb(32, 32, 32)
     } else {
-        theme::text()
+        Color32::from_rgb(235, 235, 235)
     };
     if selected {
-        widgets::icon_at(ui, pos2(rect.left() + 15.0, rect.center().y), theme::icon::CHECK, 13.0, fg);
+        widgets::icon_at(ui, pos2(rect.left() + 12.0, rect.center().y), theme::icon::CHECK, 12.5, fg);
     }
-    widgets::text_at(ui, pos2(rect.left() + 28.0, rect.center().y - 8.5), label, theme::regular(13.0), fg, rect.width() - 36.0);
+    widgets::text_at(ui, pos2(rect.left() + 25.0, rect.center().y - 8.5), label, theme::regular(13.0), fg, rect.width() - 32.0);
     resp
 }
 
