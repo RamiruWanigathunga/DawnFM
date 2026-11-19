@@ -227,6 +227,8 @@ fn run(site: Site, profile_dir: PathBuf) -> anyhow::Result<Outcome> {
     }
 
     let proxy = event_loop.create_proxy();
+    let proxy_nav = event_loop.create_proxy();
+    let proxy_retry = event_loop.create_proxy();
     #[cfg(target_os = "macos")]
     let store = store_id(&profile_dir);
     let mut context = WebContext::new(Some(profile_dir));
@@ -247,6 +249,12 @@ fn run(site: Site, profile_dir: PathBuf) -> anyhow::Result<Outcome> {
     // the way it does Firefox and Safari, and the copy lasts.
     let webview = crate::proxy::webview(builder, matches!(site, Site::Google))
         .with_url(site.start())
+        .with_navigation_handler(move |url| {
+            if url.starts_with(site.home()) {
+                let _ = proxy_nav.send_event(());
+            }
+            true
+        })
         .with_on_page_load_handler(move |_ev, url| {
             if url.starts_with(site.home()) {
                 let _ = proxy.send_event(());
@@ -272,6 +280,13 @@ fn run(site: Site, profile_dir: PathBuf) -> anyhow::Result<Outcome> {
                                 Site::Google => cookies.iter().map(|c| format!("{}={}", c.name(), c.value())).collect::<Vec<_>>().join("; "),
                             });
                             *flow = ControlFlow::Exit;
+                        } else {
+                            // If cookies are still synchronizing from the redirect, retry in a brief moment
+                            let retry = proxy_retry.clone();
+                            std::thread::spawn(move || {
+                                std::thread::sleep(std::time::Duration::from_millis(150));
+                                let _ = retry.send_event(());
+                            });
                         }
                     }
                     Err(e) => {
