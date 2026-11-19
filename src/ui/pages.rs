@@ -1443,13 +1443,25 @@ fn artist_top_songs_section(ui: &mut Ui, a: &crate::backend::ArtistPage, acts: &
 
     // Header row: "Top Songs" + clickable chevron ">", and on the right the carousel arrows.
     ui.horizontal(|ui| {
-        let title_label = ui.label(RichText::new("Top Songs").font(theme::bold(22.0)).color(theme::text()));
         if let Some(pl) = &a.top_playlist {
-            let chevron_resp = named(ui.add(egui::Label::new(RichText::new("›").font(theme::bold(22.0)).color(theme::text_dim())).sense(Sense::click())), "Show all top songs")
-                .on_hover_cursor(egui::CursorIcon::PointingHand);
-            if chevron_resp.clicked() || title_label.clicked() {
+            let title_g = widgets::galley(ui, "Top Songs", theme::bold(22.0), theme::text(), 400.0);
+            let chev_g = widgets::galley(ui, "›", theme::bold(22.0), theme::text_dim(), 40.0);
+            let gap = 6.0;
+            let title_size = title_g.size();
+            let chev_size = chev_g.size();
+            let total_w = title_size.x + gap + chev_size.x;
+            let total_h = title_size.y.max(chev_size.y);
+            let (r, resp) = ui.allocate_exact_size(vec2(total_w, total_h), Sense::click());
+            let resp = named(resp, "Show all top songs").on_hover_cursor(egui::CursorIcon::PointingHand);
+            let h = resp.hovered();
+            let chev_color = if h { theme::text() } else { theme::text_dim() };
+            ui.painter().galley(pos2(r.min.x, r.center().y - title_size.y / 2.0), title_g, theme::text());
+            ui.painter().galley(pos2(r.min.x + title_size.x + gap, r.center().y - chev_size.y / 2.0), chev_g, chev_color);
+            if resp.clicked() {
                 acts.push(Action::Open(Target::Playlist(pl.clone())));
             }
+        } else {
+            ui.label(RichText::new("Top Songs").font(theme::bold(22.0)).color(theme::text()));
         }
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             ui.spacing_mut().item_spacing = vec2(8.0, 0.0);
