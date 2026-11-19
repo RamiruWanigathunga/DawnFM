@@ -1189,8 +1189,7 @@ pub fn h_scroll<R>(ui: &mut Ui, id: &str, nudge: i32, count: usize, item_width: 
     let state_id = ui.make_persistent_id(egui::IdSalt::new(sid));
     let current = egui::scroll_area::State::load(ui.ctx(), state_id).map_or(0.0, |s| s.clamped_offset().x);
     let target_id = sid.with("target");
-    let viewport_id = sid.with("viewport");
-    let viewport = ui.ctx().data(|d| d.get_temp::<f32>(viewport_id)).unwrap_or_else(|| ui.available_width());
+    let viewport = ui.available_width().max(100.0);
     let step = item_width + gap;
     let visible = ((viewport + gap) / step).floor().max(1.0) as usize;
     let starts = shelf_page_starts(count, visible);
@@ -1219,7 +1218,6 @@ pub fn h_scroll<R>(ui: &mut Ui, id: &str, nudge: i32, count: usize, item_width: 
         ui.set_min_width(content_width);
         add(ui)
     }).inner);
-    ui.ctx().data_mut(|d| d.insert_temp(viewport_id, out.inner_rect.width()));
     // Which ends it is at, for the arrows in the header above (drawn before this).
     let offset = out.state.clamped_offset().x;
     let edges = (offset <= 0.5, offset + out.inner_rect.width() >= out.content_size.x - 0.5);

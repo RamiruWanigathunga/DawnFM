@@ -17,6 +17,7 @@ pub fn vgradient(painter: &egui::Painter, rect: Rect, top: Color32, bottom: Colo
 }
 
 /// Vertical gradient over a rounded rectangle, fading smoothly with ease-in.
+#[allow(dead_code)]
 pub fn rounded_vgradient(painter: &egui::Painter, rect: Rect, radius: f32, top: Color32, bottom: Color32) {
     if radius <= 0.0 {
         vgradient(painter, rect, top, bottom);
@@ -839,7 +840,7 @@ pub fn docked(app: &App) -> bool {
     app.look().chrome.player_bar == crate::preset::PlayerBar::Docked
 }
 
-pub fn player_bar(app: &mut App, ui: &mut Ui, now: f64, frosted: bool) {
+pub fn player_bar(app: &mut App, ui: &mut Ui, now: f64, _frosted: bool) {
     let full = ui.max_rect();
     // A docked strip is opaque and takes clicks across its whole width.
     if docked(app) {
@@ -854,78 +855,20 @@ pub fn player_bar(app: &mut App, ui: &mut Ui, now: f64, frosted: bool) {
         ui.painter().rect_filled(cap, 0.0, base);
         cap.shrink2(vec2(12.0, 0.0))
     } else {
-        if frosted {
-            // Subtle fade at the bottom edge so page content scrolling under doesn't abruptly cut off.
-            let fade_h = 32.0;
-            let fade_rect = Rect::from_min_max(pos2(full.left(), full.bottom() - fade_h), full.max);
-            vgradient(ui.painter(), fade_rect, theme::panel(0.0), theme::panel(0.35));
-        }
         const H: f32 = 56.0;
-        let radius = 22.0;
+        let radius = 8.0;
         let max_w = 840.0;
-        let w = (full.width() - 32.0).clamp(520.0, max_w).min(full.width() - 16.0);
+        let w = (full.width() - 32.0).clamp(420.0, max_w).min(full.width() - 16.0);
         let cap = Rect::from_min_size(pos2(full.center().x - w / 2.0, full.bottom() - 14.0 - H), vec2(w, H));
         ui.interact(cap, ui.scope_id().with("player-strip"), Sense::hover());
 
-        let is_liquid = theme::is_macos_above_15();
-
-        if is_liquid {
-            // macOS > 15: Liquid Glass effect
-            // Deep specular shadow
-            widgets::soft_shadow(ui, cap, radius, 32.0, if theme::light() { 0.22 } else { 0.48 });
-            if theme::light() {
-                let under_glow = theme::with_alpha(app.accent_color(), 0.06);
-                ui.painter().rect_filled(cap.expand(1.5), radius + 1.5, under_glow);
-            }
-
-            // Translucent liquid body: pure neutral black with low opacity in dark mode
-            let liquid_fill = if theme::light() {
-                Color32::from_rgba_premultiplied(250, 249, 253, 218)
-            } else {
-                Color32::from_rgba_unmultiplied(10, 10, 12, 205)
-            };
-            ui.painter().rect_filled(cap, radius, liquid_fill);
-
-            // Liquid vertical refraction gradient
-            let top_liquid = theme::glass(if theme::light() { 0.15 } else { 0.08 });
-            let bot_liquid = theme::glass(if theme::light() { 0.04 } else { 0.02 });
-            rounded_vgradient(ui.painter(), cap, radius, top_liquid, bot_liquid);
-
-            // Specular meniscus top reflection
-            let sheen_h = H * 0.42;
-            let sheen_rect = Rect::from_min_size(cap.min, vec2(cap.width(), sheen_h));
-            let sheen_top = theme::glass(if theme::light() { 0.24 } else { 0.14 });
-            rounded_vgradient(ui.painter(), sheen_rect, radius, sheen_top, Color32::TRANSPARENT);
-
-            // Double refractive edge strokes: outer highlight rim and inner hairline
-            ui.painter().rect_stroke(cap, radius, egui::Stroke::new(1.0, theme::glass(if theme::light() { 0.24 } else { 0.12 })), egui::StrokeKind::Inside);
-            ui.painter().rect_stroke(cap.shrink(1.0), (radius - 1.0).max(0.0), egui::Stroke::new(0.5, theme::glass(if theme::light() { 0.10 } else { 0.05 })), egui::StrokeKind::Inside);
-            ui.painter().hline(cap.x_range().shrink(radius + 2.0), cap.top() + 1.0, egui::Stroke::new(1.0, theme::glass(if theme::light() { 0.32 } else { 0.18 })));
-            ui.painter().hline(cap.x_range().shrink(radius + 6.0), cap.bottom() - 1.5, egui::Stroke::new(0.5, theme::glass(if theme::light() { 0.12 } else { 0.06 })));
+        let fill = if theme::light() {
+            Color32::from_rgba_premultiplied(248, 247, 252, 235)
         } else {
-            // macOS <= 15: Frosted blur effect
-            // Multi-tier soft ambient and drop shadows
-            widgets::soft_shadow(ui, cap, radius, 26.0, if theme::light() { 0.18 } else { 0.42 });
-            widgets::soft_shadow(ui, cap, radius, 8.0, if theme::light() { 0.08 } else { 0.18 });
-
-            // Frosted glass body: pure neutral black with low opacity in dark mode
-            let frosted_fill = if theme::light() {
-                Color32::from_rgba_premultiplied(246, 245, 249, 230)
-            } else {
-                Color32::from_rgba_unmultiplied(10, 10, 12, 205)
-            };
-            ui.painter().rect_filled(cap, radius, frosted_fill);
-
-            // Diffused specular top sheen
-            let sheen_h = H * 0.45;
-            let sheen_rect = Rect::from_min_size(cap.min, vec2(cap.width(), sheen_h));
-            let sheen_top = theme::glass(if theme::light() { 0.08 } else { 0.06 });
-            rounded_vgradient(ui.painter(), sheen_rect, radius, sheen_top, Color32::TRANSPARENT);
-
-            // Frosted glass perimeter stroke with top-edge light catch
-            ui.painter().rect_stroke(cap, radius, egui::Stroke::new(1.0, theme::glass(if theme::light() { 0.15 } else { 0.10 })), egui::StrokeKind::Inside);
-            ui.painter().hline(cap.x_range().shrink(radius + 4.0), cap.top() + 1.0, egui::Stroke::new(1.0, theme::glass(if theme::light() { 0.24 } else { 0.15 })));
-        }
+            Color32::from_rgba_unmultiplied(12, 12, 16, 220)
+        };
+        ui.painter().rect_filled(cap, radius, fill);
+        ui.painter().rect_stroke(cap, radius, egui::Stroke::new(1.0, theme::glass(if theme::light() { 0.08 } else { 0.10 })), egui::StrokeKind::Inside);
 
         cap
     };
@@ -981,9 +924,10 @@ pub fn player_bar(app: &mut App, ui: &mut Ui, now: f64, frosted: bool) {
         }
     }
 
+    let narrow = cap.width() < 580.0;
     let text_l = cover.right() + 10.0;
-    let text_r = (mid - 86.0).min(text_l + 260.0).max(text_l + 80.0);
-    let text_w = text_r - text_l;
+    let text_r = (if narrow { mid - 56.0 } else { mid - 86.0 }).min(text_l + 260.0).max(text_l + 40.0);
+    let text_w = (text_r - text_l).max(10.0);
 
     // Row 1: Title (bold) + Artist (dimmed) on the same line
     let row1_y = cy - 8.5;
@@ -1117,16 +1061,19 @@ pub fn player_bar(app: &mut App, ui: &mut Ui, now: f64, frosted: bool) {
         named(resp, name).on_hover_text(name).on_hover_cursor(egui::CursorIcon::PointingHand)
     };
 
-    // Shuffle
-    let r_shuf = tbtn(ui, mid - 68.0, "shuffle", &t!("shuffle_up_next"));
-    let h = if r_shuf.hovered() { 1.0 } else { 0.0 };
-    glyphs::draw(ui, r_shuf.rect.center(), 22.0, glyphs::SHUFFLE, ink(h));
-    if r_shuf.clicked() {
-        app.shuffle_upcoming();
+    // Shuffle (hidden on narrow screens to prevent overlap)
+    if !narrow {
+        let r_shuf = tbtn(ui, mid - 68.0, "shuffle", &t!("shuffle_up_next"));
+        let h = if r_shuf.hovered() { 1.0 } else { 0.0 };
+        glyphs::draw(ui, r_shuf.rect.center(), 22.0, glyphs::SHUFFLE, ink(h));
+        if r_shuf.clicked() {
+            app.shuffle_upcoming();
+        }
     }
 
     // Previous
-    let r_prev = tbtn(ui, mid - 34.0, "prev", &t!("previous"));
+    let prev_x = if narrow { mid - 30.0 } else { mid - 34.0 };
+    let r_prev = tbtn(ui, prev_x, "prev", &t!("previous"));
     let h = if r_prev.hovered() { 1.0 } else { 0.0 };
     glyphs::draw(ui, r_prev.rect.center(), 22.0, glyphs::PREVIOUS, ink(h));
     if r_prev.clicked() && enabled {
@@ -1158,34 +1105,37 @@ pub fn player_bar(app: &mut App, ui: &mut Ui, now: f64, frosted: bool) {
     }
 
     // Next
-    let r_next = tbtn(ui, mid + 34.0, "next", &t!("next"));
+    let next_x = if narrow { mid + 30.0 } else { mid + 34.0 };
+    let r_next = tbtn(ui, next_x, "next", &t!("next"));
     let h = if r_next.hovered() { 1.0 } else { 0.0 };
     glyphs::draw(ui, r_next.rect.center(), 22.0, glyphs::NEXT, ink(h));
     if r_next.clicked() && enabled {
         app.next();
     }
 
-    // Repeat
-    let (glyph, on) = match app.queue.repeat {
-        Repeat::Off => (glyphs::REPEAT, false),
-        Repeat::All => (glyphs::REPEAT, true),
-        Repeat::One => (glyphs::REPEAT_ONE, true),
-    };
-    let r_rep = tbtn(ui, mid + 68.0, "repeat", &t!("repeat"));
-    let h = if r_rep.hovered() { 1.0 } else { 0.0 };
-    glyphs::draw(ui, r_rep.rect.center(), 22.0, glyph, if on { accent } else { ink(h) });
-    if r_rep.clicked() {
-        app.queue.repeat = match app.queue.repeat {
-            Repeat::Off => Repeat::All,
-            Repeat::All => Repeat::One,
-            Repeat::One => Repeat::Off,
+    // Repeat (hidden on narrow screens to prevent overlap)
+    if !narrow {
+        let (glyph, on) = match app.queue.repeat {
+            Repeat::Off => (glyphs::REPEAT, false),
+            Repeat::All => (glyphs::REPEAT, true),
+            Repeat::One => (glyphs::REPEAT_ONE, true),
         };
+        let r_rep = tbtn(ui, mid + 68.0, "repeat", &t!("repeat"));
+        let h = if r_rep.hovered() { 1.0 } else { 0.0 };
+        glyphs::draw(ui, r_rep.rect.center(), 22.0, glyph, if on { accent } else { ink(h) });
+        if r_rep.clicked() {
+            app.queue.repeat = match app.queue.repeat {
+                Repeat::Off => Repeat::All,
+                Repeat::All => Repeat::One,
+                Repeat::One => Repeat::Off,
+            };
+        }
     }
 
     // ------------------------------------------------------------------ Right Zone: Options, Star, Volume, Lyrics, Queue
     let r_pad = if dock { 16.0 } else { 20.0 };
     let r_base = cap.right() - r_pad - 14.0;
-    let r_spacing = 30.0;
+    let r_spacing = if narrow { 26.0 } else { 30.0 };
     let q_x = r_base;
     let lyr_x = r_base - r_spacing;
     let vol_x = r_base - 2.0 * r_spacing;
@@ -1265,9 +1215,8 @@ pub fn player_bar(app: &mut App, ui: &mut Ui, now: f64, frosted: bool) {
         } else {
             Color32::from_rgba_unmultiplied(16, 16, 20, (235.0 * v_reveal) as u8)
         };
-        widgets::soft_shadow(ui, popup_rect, 12.0, 10.0, 0.25 * v_reveal);
-        ui.painter().rect_filled(popup_rect, 12.0, p_bg);
-        ui.painter().rect_stroke(popup_rect, 12.0, egui::Stroke::new(1.0, theme::glass(0.16 * v_reveal)), egui::StrokeKind::Inside);
+        ui.painter().rect_filled(popup_rect, 8.0, p_bg);
+        ui.painter().rect_stroke(popup_rect, 8.0, egui::Stroke::new(1.0, theme::glass(0.10 * v_reveal)), egui::StrokeKind::Inside);
         let slider_track = Rect::from_center_size(popup_rect.center(), vec2(76.0, 14.0));
         volume_slider(app, ui, slider_track, "bar-vol-popup");
     }
