@@ -1539,13 +1539,13 @@ fn library(app: &mut App, ui: &mut Ui, tab: LibTab, now: f64) {
             } else {
                 grid(ui, followed, &mut app.actions);
             }
-            // The artists behind the songs in History, newest first.
+            // The artists behind the songs in History, newest first (limited to latest 6).
             let played = app.history.as_deref().map(played_artists).unwrap_or_default();
             if !played.is_empty() {
                 section_label(ui, "From your history", None);
                 ui.horizontal_wrapped(|ui| {
                     ui.spacing_mut().item_spacing = vec2(8.0, 8.0);
-                    for a in &played {
+                    for a in played.iter().take(6) {
                         if pill(ui, &a.name, None, false).clicked() {
                             if let Some(id) = &a.id {
                                 app.actions.push(Action::Open(Target::Artist(id.clone())));
