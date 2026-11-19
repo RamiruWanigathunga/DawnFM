@@ -914,7 +914,7 @@ pub(crate) fn options_menu(app: &mut App, ui: &mut Ui, rect: Rect, track: &crate
             lyric_options(app, ui);
             menu_divider(ui);
         }
-        widgets::song_actions(ui, track, liked, None, &mut app.actions);
+        widgets::song_actions(ui, track, liked, None, None, &mut app.actions);
         menu_divider(ui);
         if widgets::menu_action(ui, Some(icon::LIST_PLUS), "Play next") {
             app.actions.push(Action::PlayNext(track.clone()));

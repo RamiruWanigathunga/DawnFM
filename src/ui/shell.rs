@@ -1302,6 +1302,12 @@ pub fn queue_drawer(app: &mut App, ui: &mut Ui) {
 /// Current track plus everything after it. Shared by the drawer and now playing.
 pub fn queue_list(app: &mut App, ui: &mut Ui, salt: &str) {
     let rows = super::pages::Rows::new(app, ui.input(|i| i.time));
+    let drag_key = egui::Id::unique(("queue-drag", salt));
+    let dragging: Option<usize> = ui.data(|d| d.get_temp(drag_key));
+    let mut reorder: Option<(usize, usize)> = None;
+    let down = ui.input(|i| i.pointer.any_down());
+    let pointer = ui.input(|i| i.pointer.interact_pos());
+
     egui::ScrollArea::vertical().id_salt(("queue", salt)).auto_shrink(false).show(ui, |ui| {
         if app.queue.tracks.is_empty() {
             ui.label(egui::RichText::new("Nothing queued yet").color(theme::text_dim()));
@@ -1310,51 +1316,50 @@ pub fn queue_list(app: &mut App, ui: &mut Ui, salt: &str) {
         let start = app.queue.index.unwrap_or(0);
         ui.checkbox(&mut app.autoplay, egui::RichText::new("Autoplay similar songs").color(theme::text_dim())).on_hover_cursor(egui::CursorIcon::PointingHand);
         ui.add_space(6.0);
+        let accent = app.accent_color();
         let (queue, liked, acts, has_current, by) = (&app.queue.tracks, &app.liked, &mut app.actions, app.queue.index.is_some(), &app.jam.by);
         widgets::visible_rows(ui, queue.len() - start, |ui, k| {
             let i = start + k;
             let t = &queue[i];
             // The first row is the current song.
             let current = k == 0 && has_current;
-            let o = widgets::RowOpts { current, added_by: by.get(&t.id).cloned(), ..rows.opts(liked, t, None, false) };
+            let can_drag = !current;
+            let is_dragged = dragging == Some(i);
+            let o = widgets::RowOpts {
+                current,
+                draggable: can_drag,
+                is_dragged,
+                remove_queue: (!current).then_some(i),
+                added_by: by.get(&t.id).cloned(),
+                ..rows.opts(liked, t, None, false)
+            };
             let resp = widgets::track_row(ui, t, &o, acts);
-            if resp.clicked() {
+            if can_drag && resp.drag_started() {
+                ui.data_mut(|d| d.insert_temp(drag_key, i));
+            }
+            if let Some(from) = dragging {
+                if can_drag && from != i && down && pointer.is_some_and(|p| resp.rect.contains(p)) {
+                    reorder = Some((from, i));
+                }
+                if can_drag && from != i && pointer.is_some_and(|p| resp.rect.contains(p)) {
+                    let line_y = if from < i { resp.rect.bottom() } else { resp.rect.top() };
+                    ui.painter().hline(resp.rect.x_range(), line_y, egui::Stroke::new(2.0, accent));
+                }
+            }
+            if resp.clicked() && dragging.is_none() {
                 // The playing row pauses/resumes instead of doing nothing.
                 acts.push(if current { Action::TogglePlay } else { Action::QueueJump(i) });
             }
-            if !current && ui.rect_contains_pointer(Rect::from_min_max(resp.rect.min, pos2(resp.rect.right() + 42.0, resp.rect.bottom()))) {
-                // Reorder controls: move up / move down
-                let can_move_up = if has_current { i > start + 1 } else { i > 0 };
-                let can_move_down = i + 1 < queue.len();
-                if can_move_up {
-                    let u = Rect::from_center_size(resp.rect.right_center() - vec2(78.0, 0.0), Vec2::splat(24.0));
-                    let ur = named(ui.interact(u, resp.id.with("mv-up"), Sense::click()), &t!("move_up")).on_hover_cursor(egui::CursorIcon::PointingHand);
-                    ui.painter().circle_filled(u.center(), 12.0, theme::panel(0.6));
-                    icon_at(ui, u.center(), icon::CHEVRON_UP, 14.0, theme::text());
-                    if ur.clicked() {
-                        acts.push(Action::QueueMove(i, i - 1));
-                    }
-                }
-                if can_move_down {
-                    let d = Rect::from_center_size(resp.rect.right_center() - vec2(52.0, 0.0), Vec2::splat(24.0));
-                    let dr = named(ui.interact(d, resp.id.with("mv-dn"), Sense::click()), &t!("move_down")).on_hover_cursor(egui::CursorIcon::PointingHand);
-                    ui.painter().circle_filled(d.center(), 12.0, theme::panel(0.6));
-                    icon_at(ui, d.center(), icon::CHEVRON_DOWN, 14.0, theme::text());
-                    if dr.clicked() {
-                        acts.push(Action::QueueMove(i, i + 1));
-                    }
-                }
-                // Remove button over the duration column.
-                let x = Rect::from_center_size(resp.rect.right_center() - vec2(26.0, 0.0), Vec2::splat(28.0));
-                let xr = named(ui.interact(x, resp.id.with("rm"), Sense::click()), &t!("remove_from_queue")).on_hover_cursor(egui::CursorIcon::PointingHand);
-                ui.painter().circle_filled(x.center(), 14.0, theme::panel(0.6));
-                icon_at(ui, x.center(), icon::X, 14.0, theme::text());
-                if xr.clicked() {
-                    acts.push(Action::QueueRemove(i));
-                }
-            }
         });
+        if ui.input(|i| i.pointer.any_released()) {
+            ui.data_mut(|d| d.remove_temp::<usize>(drag_key));
+        }
     });
+
+    if let Some((from, to)) = reorder {
+        app.actions.push(Action::QueueMove(from, to));
+        ui.data_mut(|d| d.insert_temp(drag_key, to));
+    }
 }
 
 // ------------------------------------------------------------------ toast

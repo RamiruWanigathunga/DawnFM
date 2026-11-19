@@ -142,6 +142,9 @@ impl Rows {
             pick: false,
             selected: None,
             remove: None,
+            remove_queue: None,
+            is_dragged: false,
+            draggable: false,
         }
     }
 }
@@ -1267,7 +1270,7 @@ fn artist_top_songs_section(ui: &mut Ui, a: &crate::backend::ArtistPage, acts: &
                                     acts.push(Action::Play(top.clone(), global_idx));
                                 }
                                 egui::Popup::context_menu(&resp).show(|ui| {
-                                    widgets::song_menu(ui, t, liked.contains(&t.id), None, acts);
+                                    widgets::song_menu(ui, t, liked.contains(&t.id), None, None, acts);
                                 });
                             } else {
                                 ui.allocate_space(vec2(col_w, tile_h));

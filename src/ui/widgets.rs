@@ -5,6 +5,7 @@ use egui::{Align2, Color32, CornerRadius, Pos2, Rect, Response, Sense, Ui, Vec2,
 
 use super::Action;
 use crate::model::{Card, Link, Target, Thumb, Track, pick_thumb, sized};
+use crate::t;
 use crate::theme::{self, icon};
 
 pub fn named(resp: Response, name: &str) -> Response {
@@ -640,7 +641,7 @@ pub fn card_subtitle(s: &str) -> String {
 
 fn card_menu_contents(ui: &mut Ui, c: &Card, liked: bool, acts: &mut Vec<Action>) {
     match &c.target {
-        Target::Song(t) => song_menu(ui, t, liked, None, acts),
+        Target::Song(t) => song_menu(ui, t, liked, None, None, acts),
         t => {
             ui.set_width(210.0);
             ui.add_space(2.0);
@@ -721,10 +722,10 @@ fn menu_action_star(ui: &mut Ui, liked: bool, label: &str) -> bool {
 }
 
 /// `remove`: the song's row in the open playlist, when it's yours and the song can come out.
-pub fn song_menu(ui: &mut Ui, t: &Track, liked: bool, remove: Option<usize>, acts: &mut Vec<Action>) {
+pub fn song_menu(ui: &mut Ui, t: &Track, liked: bool, remove: Option<usize>, remove_queue: Option<usize>, acts: &mut Vec<Action>) {
     ui.set_width(210.0);
     ui.add_space(2.0);
-    song_actions(ui, t, liked, remove, acts);
+    song_actions(ui, t, liked, remove, remove_queue, acts);
     menu_separator(ui);
     if menu_action(ui, Some(icon::LIST_PLUS), "Play next") {
         acts.push(Action::PlayNext(t.clone()));
@@ -742,7 +743,7 @@ pub fn song_menu(ui: &mut Ui, t: &Track, liked: bool, remove: Option<usize>, act
 }
 
 /// The song menu's items, for menus that add their own (now playing's options).
-pub fn song_actions(ui: &mut Ui, t: &Track, liked: bool, remove: Option<usize>, acts: &mut Vec<Action>) {
+pub fn song_actions(ui: &mut Ui, t: &Track, liked: bool, remove: Option<usize>, remove_queue: Option<usize>, acts: &mut Vec<Action>) {
     if menu_action_star(ui, liked, if liked { "Remove like" } else { "Like song" }) {
         acts.push(Action::Like(t.clone(), !liked));
     }
@@ -757,6 +758,11 @@ pub fn song_actions(ui: &mut Ui, t: &Track, liked: bool, remove: Option<usize>, 
         && menu_action(ui, Some(icon::LIST_MINUS), "Remove from playlist")
     {
         acts.push(Action::RemoveFromPlaylist(vec![i]));
+    }
+    if let Some(i) = remove_queue
+        && menu_action(ui, Some(icon::LIST_MINUS), &t!("remove_from_queue"))
+    {
+        acts.push(Action::QueueRemove(i));
     }
     match crate::downloads::path(&t.id) {
         Some(path) => {
@@ -882,6 +888,12 @@ pub struct RowOpts {
     pub selected: Option<bool>,
     /// The row's index in your own open playlist, so its menu can take it out.
     pub remove: Option<usize>,
+    /// The row's index in the queue, so its menu can take it out.
+    pub remove_queue: Option<usize>,
+    /// Whether this row is currently being dragged.
+    pub is_dragged: bool,
+    /// Whether this row can be dragged.
+    pub draggable: bool,
 }
 
 const ROW_H: f32 = 56.0;
@@ -990,14 +1002,25 @@ pub fn track_row(ui: &mut Ui, t: &Track, o: &RowOpts, acts: &mut Vec<Action>) ->
     // Picking: the cover (left 54 px) plays, the rest of the row picks.
     let hit_left = if o.pick && o.number.is_none() { rect.left() + 54.0 } else { rect.left() };
     let hit_rect = Rect::from_min_max(pos2(hit_left, rect.top()), rect.max);
-    let resp = named(ui.interact(hit_rect, base.id.with("play"), Sense::click()), &t.title).on_hover_cursor(egui::CursorIcon::PointingHand);
+    let sense = if o.draggable { Sense::click_and_drag() } else { Sense::click() };
+    let cursor = if o.is_dragged {
+        egui::CursorIcon::Grabbing
+    } else if o.draggable {
+        egui::CursorIcon::Grab
+    } else {
+        egui::CursorIcon::PointingHand
+    };
+    let resp = named(ui.interact(hit_rect, base.id.with("play"), sense), &t.title).on_hover_cursor(cursor);
     let h = if base.contains_pointer() { 1.0 } else { 0.0 };
     if o.number.is_some_and(|n| n % 2 == 1) {
         ui.painter().rect_filled(rect, 8.0, theme::glass(0.025));
     }
-    if h > 0.0 || o.current {
-        let a = if o.current { 0.07 + 0.05 * h } else { 0.07 * h };
+    if h > 0.0 || o.current || o.is_dragged {
+        let a = if o.is_dragged { 0.12 } else if o.current { 0.07 + 0.05 * h } else { 0.07 * h };
         ui.painter().rect_filled(rect, 8.0, theme::glass(a));
+        if o.is_dragged {
+            ui.painter().rect_stroke(rect, 8.0, egui::Stroke::new(1.5, theme::with_alpha(o.accent, 0.7)), egui::StrokeKind::Inside);
+        }
     }
     // While selecting, the cover only shows the song (clicks pick) and picked rows are tinted.
     let h = if o.selected.is_some() { 0.0 } else { h };
@@ -1079,7 +1102,7 @@ pub fn track_row(ui: &mut Ui, t: &Track, o: &RowOpts, acts: &mut Vec<Action>) ->
         if let Some(d) = t.duration {
             ui.painter().text(pos2(right, cy), Align2::RIGHT_CENTER, super::fmt_time(d), theme::regular(13.0), theme::text_dim());
         }
-        egui::Popup::context_menu(&resp).show(|ui| song_menu(ui, t, o.liked, o.remove, acts));
+        egui::Popup::context_menu(&resp).show(|ui| song_menu(ui, t, o.liked, o.remove, o.remove_queue, acts));
         return resp;
     }
     // Other rows: title + artists, then album, then plays when there's room.
@@ -1126,7 +1149,7 @@ pub fn track_row(ui: &mut Ui, t: &Track, o: &RowOpts, acts: &mut Vec<Action>) ->
         ui.painter().text(pos2(right, cy), Align2::RIGHT_CENTER, super::fmt_time(d), theme::regular(13.0), theme::text_dim());
     }
     // Right-click anywhere on the row opens its menu.
-    egui::Popup::context_menu(&resp).show(|ui| song_menu(ui, t, o.liked, o.remove, acts));
+    egui::Popup::context_menu(&resp).show(|ui| song_menu(ui, t, o.liked, o.remove, o.remove_queue, acts));
     resp
 }
 
