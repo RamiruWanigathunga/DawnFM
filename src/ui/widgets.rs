@@ -1383,6 +1383,7 @@ pub fn skeleton_rows(ui: &mut Ui, time: f64, rows: usize) {
             (Rect::from_min_size(pos2(r.left() + 10.0, cy - 20.0), Vec2::splat(40.0)), theme::thumb_radius()),
             (Rect::from_min_size(pos2(r.left() + 64.0, cy - 13.0), vec2((r.width() * 0.3).min(260.0), 11.0)), 4.0),
             (Rect::from_min_size(pos2(r.left() + 64.0, cy + 4.0), vec2((r.width() * 0.18).min(160.0), 9.0)), 4.0),
+            (Rect::from_min_size(pos2(r.right() - 56.0, cy - 5.0), vec2(36.0, 10.0)), 4.0),
         ] {
             ui.painter().rect_filled(b, radius, theme::glass(0.06));
             shimmer_band(ui, b, radius, time);
@@ -1413,6 +1414,28 @@ pub fn skeleton(ui: &mut Ui, time: f64, rows: usize, card: f32) {
         });
     }
     // The shimmer needs frames only while it's on screen, and 15 fps is plenty.
+    if ui.is_rect_visible(Rect::from_x_y_ranges(ui.max_rect().x_range(), top..=ui.cursor().top())) {
+        ui.ctx().request_repaint_after(std::time::Duration::from_millis(66));
+    }
+}
+
+/// Shimmering card grid (wrapped) for Library pages (Playlists, Albums, Artists).
+pub fn skeleton_grid(ui: &mut Ui, time: f64, card: f32, circle: bool, count: usize) {
+    let shimmer = |ui: &Ui, r: Rect, radius: f32| {
+        ui.painter().rect_filled(r, radius, theme::glass(0.06));
+        shimmer_band(ui, r, radius, time);
+    };
+    let radius = if circle { card / 2.0 } else { theme::card_radius() };
+    let top = ui.cursor().top();
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing = vec2(20.0, 22.0);
+        for _ in 0..count {
+            let (r, _) = ui.allocate_exact_size(vec2(card, card + 48.0), Sense::hover());
+            shimmer(ui, Rect::from_min_size(r.min, Vec2::splat(card)), radius);
+            shimmer(ui, Rect::from_min_size(r.min + vec2(0.0, card + 10.0), vec2(card * 0.75, 12.0)), 4.0);
+            shimmer(ui, Rect::from_min_size(r.min + vec2(0.0, card + 28.0), vec2(card * 0.45, 10.0)), 4.0);
+        }
+    });
     if ui.is_rect_visible(Rect::from_x_y_ranges(ui.max_rect().x_range(), top..=ui.cursor().top())) {
         ui.ctx().request_repaint_after(std::time::Duration::from_millis(66));
     }
