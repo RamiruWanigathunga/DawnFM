@@ -236,6 +236,32 @@ pub fn pill(ui: &mut Ui, label: &str, glyph: Option<char>, primary: bool) -> Res
     resp
 }
 
+/// Rounded destructive pill button. On hover, background turns red with white text.
+pub fn pill_destructive(ui: &mut Ui, label: &str, glyph: Option<char>) -> Response {
+    let text = ui.painter().layout_no_wrap(label.to_owned(), theme::semibold(14.0), Color32::PLACEHOLDER);
+    let icon_w = if glyph.is_some() { 24.0 } else { 0.0 };
+    let (rect, resp) = ui.allocate_exact_size(vec2(text.size().x + icon_w + 36.0, 38.0), Sense::click());
+    let resp = named(resp, label).on_hover_cursor(egui::CursorIcon::PointingHand);
+    let h = theme::anim_bool(ui.ctx(), resp.id.with("h"), resp.hovered(), 0.15);
+    let fill = if resp.is_pointer_button_down_on() && resp.hovered() {
+        Color32::from_rgb(0xD8, 0x24, 0x3B)
+    } else {
+        theme::lerp_color(theme::glass(0.10), theme::RED, h)
+    };
+    let fg = theme::lerp_color(theme::text(), Color32::WHITE, h);
+    let accented = crate::preset::active().app.chip == crate::preset::ChipStyle::Accent;
+    let radius = if accented { (crate::preset::active().chrome.radius * 0.8).clamp(6.0, 19.0) } else { 19.0 };
+    let r = rect.shrink(if resp.is_pointer_button_down_on() { 1.0 } else { 0.0 });
+    ui.painter().rect_filled(r, radius, fill);
+    let mut x = r.left() + 18.0;
+    if let Some(g) = glyph {
+        icon_at(ui, pos2(x + 8.0, r.center().y), g, 17.0, fg);
+        x += icon_w;
+    }
+    ui.painter().galley(pos2(x, r.center().y - text.size().y / 2.0), text, fg);
+    resp
+}
+
 /// Selectable chip (home moods, library tabs).
 pub fn chip(ui: &mut Ui, label: &str, selected: bool) -> Response {
     let text = ui.painter().layout_no_wrap(label.to_owned(), theme::semibold(13.5), Color32::PLACEHOLDER);

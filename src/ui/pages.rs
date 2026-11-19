@@ -6,7 +6,7 @@ use std::sync::atomic::Ordering;
 
 use egui::{Align2, Color32, Rect, RichText, Sense, Ui, Vec2, pos2, vec2};
 
-use super::widgets::{self, RowOpts, card, chip, h_scroll, named, paint_cover, pill, shelf_header, track_row};
+use super::widgets::{self, RowOpts, card, chip, h_scroll, named, paint_cover, pill, pill_destructive, shelf_header, track_row};
 use super::{Action, App, LibTab, Page, Selection};
 #[allow(unused_imports)]
 use crate::backend::compact;
@@ -1736,7 +1736,7 @@ fn settings_account(app: &mut App, ui: &mut Ui) {
         if app.logged_in {
             let name = app.account_name.clone().unwrap_or_else(|| "YouTube Music".to_owned());
             setting_row(ui, &name, Some("Signed in with Google. Your home feed, library and likes come from this account. Saved in your macOS Keychain."), |ui| {
-                sign_out = pill(ui, "Sign out", Some(icon::LOG_OUT), false).clicked();
+                sign_out = pill_destructive(ui, "Sign out", Some(icon::LOG_OUT)).clicked();
             });
             // Also with one, when the one in use isn't it (a brand channel since deleted).
             if app.channels.as_ref().is_some_and(|c| c.list.len() > 1 || !c.list.iter().any(|l| l.page_id == c.current)) {
