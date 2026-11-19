@@ -307,11 +307,15 @@ pub fn sidebar(app: &mut App, ui: &mut Ui) {
     let mut hide: Option<String> = None;
 
     let transferring = super::transfer::sidebar_visible(app, ui.input(|i| i.time));
+    let ready = app.updater.as_ref().and_then(|u| match u.state() {
+        crate::update::State::Ready { version, .. } => Some(version),
+        _ => None,
+    });
     // Room under the list: Settings, the app's sign-off, and the transfer card.
-    let bottom_h = if transferring { 106.0 } else { 42.0 };
-    let list_h = (ui.available_height() - bottom_h).max(0.0);
+    let bottom_h = (if transferring { 106.0 } else { 42.0 }) + if ready.is_some() { 58.0 } else { 0.0 };
 
     if search_active {
+        let list_h = (ui.available_height() - bottom_h).max(0.0);
         ui.allocate_ui(vec2(ui.available_width(), list_h), |ui| {
             sidebar_search_content(app, ui);
         });
@@ -345,7 +349,8 @@ pub fn sidebar(app: &mut App, ui: &mut Ui) {
             }
         }
 
-        ui.allocate_ui(vec2(ui.available_width(), list_h), |ui| {
+        let pl_h = (ui.available_height() - bottom_h).max(0.0);
+        ui.allocate_ui(vec2(ui.available_width(), pl_h), |ui| {
             if !app.logged_in {
                 ui.label(egui::RichText::new(t!("sign_in_to_see_playlists")).color(theme::text_dim()));
                 ui.add_space(8.0);
@@ -357,7 +362,11 @@ pub fn sidebar(app: &mut App, ui: &mut Ui) {
             if !playlists_open {
                 return;
             }
-            egui::ScrollArea::vertical().id_salt("sidebar-pl").auto_shrink(false).show(ui, |ui| {
+            egui::ScrollArea::vertical()
+                .id_salt("sidebar-pl")
+                .auto_shrink([false, false])
+                .max_height(pl_h)
+                .show(ui, |ui| {
                 // Last launch's list until the library arrives.
                 let Some(playlists) = app.library.as_ref().map(|l| &l.playlists).or(app.sidebar_cache.as_ref()) else {
                     // The spinner animates every frame: give up on a request that never answered.
@@ -442,10 +451,6 @@ pub fn sidebar(app: &mut App, ui: &mut Ui) {
         let id = app.playlist_order.remove(from);
         app.playlist_order.insert(to.min(app.playlist_order.len()), id);
     }
-    let ready = app.updater.as_ref().and_then(|u| match u.state() {
-        crate::update::State::Ready { version, .. } => Some(version),
-        _ => None,
-    });
     let mut restart = false;
     ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
         nav(ui, glyphs::SETTINGS, LUCIDE, &t!("settings"), Page::Settings, p == Page::Settings, &mut go_to);
