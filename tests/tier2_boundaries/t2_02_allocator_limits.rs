@@ -46,9 +46,21 @@ fn test_mimalloc_excessive_allocation_rejection() {
     );
 
     // 3. 1 Petabyte (unreachable virtual address space on desktop OS)
+    // Prevent LLVM from eliding the allocation in release builds by observing the buffer pointer
     let petabyte = 1024usize * 1024 * 1024 * 1024 * 1024;
     let res_peta = v.try_reserve(petabyte);
-    assert!(res_peta.is_err());
+    std::hint::black_box(v.as_ptr());
+    assert!(
+        res_peta.is_err(),
+        "try_reserve(1PB) must fail gracefully with AllocError"
+    );
+
+    // 4. Raw allocator rejection for excessive layout
+    let layout = Layout::from_size_align(petabyte, 1).expect("Valid 1PB layout");
+    unsafe {
+        let ptr = std::hint::black_box(alloc(layout));
+        assert!(ptr.is_null(), "alloc(1PB) must return null pointer");
+    }
 }
 
 #[test]
