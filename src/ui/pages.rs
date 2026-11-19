@@ -2559,12 +2559,9 @@ fn fold_row(ui: &mut Ui, title: &str, desc: &str) -> bool {
     open
 }
 
-pub(super) fn settings_card(ui: &mut Ui, body: impl FnOnce(&mut Ui)) {
+pub fn settings_card(ui: &mut Ui, body: impl FnOnce(&mut Ui)) {
     egui::Frame::new()
-        .fill(theme::glass(0.06))
-        .stroke(egui::Stroke::new(1.0, theme::glass(0.05)))
-        .corner_radius(theme::panel_radius())
-        .inner_margin(egui::Margin::symmetric(20, 6))
+        .inner_margin(egui::Margin::symmetric(2, 4))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
             body(ui);

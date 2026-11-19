@@ -110,3 +110,33 @@ fn test_theme_token_nan_inf_protection() {
         }
     }
 }
+
+#[test]
+fn test_settings_card_tiles_eliminated_in_light_and_dark_mode() {
+    use crate::common::{extract_rect_shapes, HeadlessRunner};
+
+    for &is_light in &[false, true] {
+        let mut runner = HeadlessRunner::new().with_size(920.0, 600.0);
+        let (_, full_output) = runner.run_ui(|ui| {
+            theme::set_mode(ui.ctx(), is_light);
+            dawnfm::ui::pages::settings_card(ui, |ui| {
+                ui.label("Sample Setting Row");
+            });
+        });
+
+        let rects = extract_rect_shapes(&full_output.shapes);
+        // Previously, settings_card drew a container rect covering available_width (>800px)
+        // with theme::glass(0.06). Verify zero filled container background shapes exist.
+        let container_fills: Vec<_> = rects
+            .iter()
+            .filter(|r| r.rect.width() >= 500.0 && r.fill != Color32::TRANSPARENT)
+            .collect();
+
+        assert!(
+            container_fills.is_empty(),
+            "Settings card container tile must be removed in {} mode, but found: {:?}",
+            if is_light { "light" } else { "dark" },
+            container_fills
+        );
+    }
+}
