@@ -1536,22 +1536,21 @@ impl eframe::App for App {
             if look.id == crate::preset::DEFAULT_ID {
                 ui.painter().rect_filled(section, 0.0, if theme::light() { theme::bg() } else { look.solid() });
             }
+            const DRAWER_W: f32 = 340.0;
             let q = theme::anim_bool(&ctx, "queue-drawer", self.queue_open && !self.np_open, 0.25);
             if q > 0.01 {
                 let r = egui::Panel::right("queue").resizable(false)
-                    .exact_size(340.0 * q)
+                    .exact_size(DRAWER_W * q)
                     .frame(egui::Frame::new().fill(theme::panel(0.42)).inner_margin(egui::Margin::symmetric(14, 16)))
                     .show_separator_line(false)
                     .show(ui, |ui| shell::queue_drawer(self, ui));
                 self.scroll_panes.push(r.response.rect);
             }
             // Lyrics beside the pages; Up next takes the place when it's open.
-            // It leaves the pages at least 480 points, and stays shut when that leaves it too narrow.
-            let lyrics_w = (ui.available_rect_before_wrap().width() - 480.0).min(380.0);
-            let l = theme::anim_bool(&ctx, "lyrics-drawer", self.lyrics_drawer && !self.queue_open && !self.np_open && lyrics_w >= 260.0, 0.25);
+            let l = theme::anim_bool(&ctx, "lyrics-drawer", self.lyrics_drawer && !self.queue_open && !self.np_open, 0.25);
             if l > 0.01 {
                 let r = egui::Panel::right("lyrics-drawer").resizable(false)
-                    .exact_size(lyrics_w.max(260.0) * l)
+                    .exact_size(DRAWER_W * l)
                     .frame(egui::Frame::new().fill(theme::panel(0.5)).inner_margin(egui::Margin { left: 20, right: 16, top: 16, bottom: 16 }))
                     .show_separator_line(false)
                     .show(ui, |ui| nowplaying::lyrics_drawer(self, ui, now));
