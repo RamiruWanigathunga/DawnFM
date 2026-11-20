@@ -216,7 +216,7 @@ fn body(app: &mut App, ui: &mut Ui, now: f64) {
             if cover_hidden {
                 let (r, _) = ui.allocate_exact_size(vec2(34.0, 34.0), Sense::hover());
                 if interactive {
-                    options_menu(app, ui, r, &heard, app.np_tab == NpTab::Lyrics && !no_lyrics);
+                    options_menu(app, ui, r, &heard, app.np_tab == NpTab::Lyrics && !no_lyrics, None);
                 }
             }
         });
@@ -539,7 +539,7 @@ fn sleeve(app: &mut App, ui: &mut Ui, x0: f32, w: f32, info_y: f32, track: &crat
     // The song's options, beside the star.
     let options = Rect::from_center_size(pos2((x0 + w) - 15.0, info_y + 14.0), Vec2::splat(34.0));
     if interactive {
-        options_menu(app, ui, options, &heard, app.np_tab == NpTab::Lyrics && !no_lyrics);
+        options_menu(app, ui, options, &heard, app.np_tab == NpTab::Lyrics && !no_lyrics, None);
     }
 
     // Seek: a 4 px line that grows under the pointer, its times below.
@@ -979,28 +979,28 @@ fn sync_label(k: SyncKind) -> &'static str {
 
 /// The ⋯ menu: the song's actions, and with lyrics showing, the source picker,
 /// translation and romanization toggles, and this song's timing offset above them.
-pub(crate) fn options_menu(app: &mut App, ui: &mut Ui, rect: Rect, track: &crate::model::Track, lyrics: bool) {
+pub(crate) fn options_menu(
+    app: &mut App,
+    ui: &mut Ui,
+    rect: Rect,
+    track: &crate::model::Track,
+    lyrics: bool,
+    tint: Option<&dyn Fn(f32) -> Color32>,
+) {
     let resp = ui.interact(rect, ui.scope_id().with("np-options"), Sense::click());
     let resp = named(resp, &t!("options")).on_hover_cursor(egui::CursorIcon::PointingHand);
     let open = egui::Popup::is_id_open(ui.ctx(), egui::Popup::default_response_id(&resp));
     let h = theme::anim_bool(ui.ctx(), resp.id.with("h"), resp.hovered() || open, 0.12);
-    let bg_light = app.bg_is_light();
-    let fill = if bg_light {
-        Color32::from_rgba_premultiplied(240, 240, 244, (140.0 + 50.0 * h) as u8)
-    } else {
-        Color32::from_rgba_premultiplied(30, 30, 34, (140.0 + 50.0 * h) as u8)
-    };
-    let stroke_col = if bg_light {
-        Color32::from_black_alpha((35.0 + 25.0 * h) as u8)
-    } else {
-        Color32::from_white_alpha((35.0 + 25.0 * h) as u8)
-    };
-    ui.painter().circle_filled(rect.center(), 16.0, fill);
-    ui.painter().circle_stroke(rect.center(), 16.0, egui::Stroke::new(1.0, stroke_col));
 
-    let dot_col = if bg_light { Color32::from_rgb(0x18, 0x14, 0x1c) } else { Color32::WHITE };
+    let dot_col = if let Some(tint_fn) = tint {
+        tint_fn(h)
+    } else {
+        let bg_light = app.bg_is_light();
+        let base = if bg_light { Color32::from_rgb(0x18, 0x14, 0x1c) } else { Color32::WHITE };
+        theme::with_alpha(base, 0.75 + 0.25 * h)
+    };
     for dx in [-5.0, 0.0, 5.0] {
-        ui.painter().circle_filled(rect.center() + vec2(dx, 0.0), 1.8, theme::with_alpha(dot_col, 0.75 + 0.25 * h));
+        ui.painter().circle_filled(rect.center() + vec2(dx, 0.0), 1.8, dot_col);
     }
     egui::Popup::menu(&resp).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui| {
         ui.set_width(240.0);

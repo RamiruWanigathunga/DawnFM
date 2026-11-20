@@ -1127,7 +1127,7 @@ pub fn player_bar(app: &mut App, ui: &mut Ui, now: f64, _frosted: bool) {
     // 1. Options (...)
     let r_opt = Rect::from_center_size(pos2(opt_x, cy), Vec2::splat(28.0));
     if let Some(t) = &track {
-        super::nowplaying::options_menu(app, ui, r_opt, t, false);
+        super::nowplaying::options_menu(app, ui, r_opt, t, false, Some(&ink));
     } else {
         let resp = ui.interact(r_opt, ui.scope_id().with("bar-opt-disabled"), Sense::hover());
         let _ = named(resp, &t!("options"));
