@@ -107,7 +107,7 @@ fn np_header_button_paint(
     let fill = if bg_light {
         Color32::from_rgba_premultiplied(240, 240, 244, (140.0 + 50.0 * h) as u8)
     } else {
-        Color32::from_rgba_premultiplied(30, 30, 34, (140.0 + 50.0 * h) as u8)
+        Color32::from_rgba_premultiplied(0x1E, 0x1F, 0x20, (140.0 + 50.0 * h) as u8)
     };
     let stroke_col = if bg_light {
         Color32::from_black_alpha((35.0 + 25.0 * h) as u8)

@@ -828,7 +828,7 @@ pub fn player_bar(app: &mut App, ui: &mut Ui, now: f64, _frosted: bool) {
         let fill = if theme::light() {
             Color32::from_rgba_premultiplied(248, 248, 250, 245)
         } else {
-            Color32::from_rgba_unmultiplied(26, 26, 26, 252)
+            Color32::from_rgba_unmultiplied(0x1E, 0x1F, 0x20, 252)
         };
         let stroke_col = if theme::light() {
             Color32::from_rgba_unmultiplied(0, 0, 0, 22)
