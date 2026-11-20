@@ -1087,7 +1087,7 @@ impl App {
                 if self.history.is_none() {
                     self.backend.request(Req::History);
                 } else if let Some(h) = &self.history {
-                    for a in pages::played_artists(h).into_iter().take(6) {
+                    for a in pages::played_artists(h).into_iter().take(pages::HISTORY_ARTISTS_LIMIT) {
                         if let Some(id) = a.id {
                             if !self.artist_photos.contains_key(&id) {
                                 self.artist_photos.insert(id.clone(), Vec::new());

@@ -1756,6 +1756,8 @@ pub fn artist(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
 
 // ------------------------------------------------------------------ library
 
+pub(crate) const HISTORY_ARTISTS_LIMIT: usize = 10;
+
 /// The artists behind the songs in recently played, newest first, each once.
 pub(crate) fn played_artists(history: &[Track]) -> Vec<crate::model::Link> {
     let mut seen = HashSet::new();
@@ -1830,13 +1832,13 @@ fn library(app: &mut App, ui: &mut Ui, tab: LibTab, now: f64) {
             } else {
                 grid(ui, followed, &mut app.actions);
             }
-            // The artists behind the songs in History, newest first (limited to latest 6).
+            // The artists behind the songs in History, newest first (limited to latest 10).
             let played = app.history.as_deref().map(played_artists).unwrap_or_default();
             if !played.is_empty() {
                 section_label(ui, "From your history", None);
                 let played_cards: Vec<Card> = played
                     .into_iter()
-                    .take(6)
+                    .take(HISTORY_ARTISTS_LIMIT)
                     .filter_map(|a| {
                         let id = a.id?;
                         let thumbs = app.artist_photos.get(&id).cloned().filter(|t| !t.is_empty())

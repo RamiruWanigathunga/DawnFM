@@ -318,7 +318,7 @@ impl App {
             }
             Resp::History(h) => {
                 if matches!(self.page, Page::Library(LibTab::Artists)) {
-                    for a in super::pages::played_artists(&h).into_iter().take(6) {
+                    for a in super::pages::played_artists(&h).into_iter().take(super::pages::HISTORY_ARTISTS_LIMIT) {
                         if let Some(id) = a.id {
                             if !self.artist_photos.contains_key(&id) {
                                 self.artist_photos.insert(id.clone(), Vec::new());
