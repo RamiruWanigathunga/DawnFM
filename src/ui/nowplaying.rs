@@ -70,7 +70,7 @@ pub fn overlay(app: &mut App, ctx: &egui::Context, now: f64, screen: Rect) {
             } else {
                 super::shell::vgradient(ui.painter(), rect, theme::shade((0.06 * k).min(0.5)), theme::shade((0.16 * k).min(0.5)));
             }
-            let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect.shrink2(vec2(32.0, 20.0))));
+            let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect));
             body(app, &mut child, now);
         });
 }
@@ -150,8 +150,8 @@ fn body(app: &mut App, ui: &mut Ui, now: f64) {
     // 860 points, and below that the cover gives way to the panel.
     let narrow = area.width() - 64.0 < 860.0;
     // Header: on the window buttons' line, when the app draws them.
-    let lift = 20.0 - f32::from(super::titlebar::top_margin(20, 44.0));
-    let header = Rect::from_min_size(area.min - vec2(0.0, if app.fullscreen { 0.0 } else { lift }), vec2(area.width(), 44.0));
+    let header_top = area.top() + if app.fullscreen { 16.0 } else { 12.0 };
+    let header = Rect::from_min_size(pos2(area.left() + 20.0, header_top), vec2(area.width() - 40.0, 44.0));
 
     // Fullscreen auto-hide after 3.5s of mouse inactivity
     let controls_rect: Rect = ui.ctx().data(|d| d.get_temp(egui::Id::unique("np-controls-rect"))).unwrap_or(Rect::NOTHING);
@@ -228,7 +228,7 @@ fn body(app: &mut App, ui: &mut Ui, now: f64) {
         }
     }
 
-    let content = Rect::from_min_max(pos2(area.left(), header.bottom() + 12.0), area.max);
+    let content = Rect::from_min_max(pos2(area.left() + 32.0, header.bottom() + 12.0), pos2(area.right() - 32.0, area.bottom() - 24.0));
     // The side panel (lyrics / up next) slides in and out when its chip is toggled.
     // A song without lyrics shows just the artwork, with no transition.
     let last_id = egui::Id::unique("np-last-panel");
@@ -277,9 +277,9 @@ fn body(app: &mut App, ui: &mut Ui, now: f64) {
         if beside_cover && art_vis < 0.999 {
             // The sharp cover itself, filling the window's height from its top left and
             // melting into the blurred backdrop before the lyrics (reCover, and the app's
-            // own look). `area` is the window less the overlay's 32 × 20 margins.
-            let side = area.height() + 40.0;
-            let art = Rect::from_min_size(pos2(area.left() - 32.0, area.top() - 20.0), Vec2::splat(side));
+            // own look).
+            let side = area.height();
+            let art = Rect::from_min_size(area.left_top(), Vec2::splat(side));
             let lyrics_left = content.left() + content.width() * 0.46;
             let fade_to = lyrics_left.min(art.right());
             let fade_from = (fade_to - art.left()).max(0.0) / side * 0.72;
@@ -289,7 +289,7 @@ fn body(app: &mut App, ui: &mut Ui, now: f64) {
             widgets::paint_cover_fade(&cui, egui::Id::unique("np-art-fade"), art, &track.thumbs, (side * ppp) as u32, fade_from, tint);
             // A soft shade under the sleeve, so the song's white text stays legible on
             // any cover: dark at the bottom left, gone toward the top and the lyrics.
-            let scrim = Rect::from_min_max(pos2(art.left(), content.bottom() - 260.0), pos2((lyrics_left + 24.0).min(art.right()), content.bottom()));
+            let scrim = Rect::from_min_max(pos2(art.left(), area.bottom() - 280.0), pos2((lyrics_left + 24.0).min(art.right()), area.bottom()));
             let mut shade = egui::Mesh::default();
             let white = egui::epaint::WHITE_UV;
             shade.vertices.push(egui::epaint::Vertex { pos: scrim.left_bottom(), uv: white, color: Color32::from_black_alpha(130) });
