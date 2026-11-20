@@ -248,7 +248,7 @@ impl Cfg {
             scale: 0.95,
             active_scale: s.active_scale.max(1.0),
             padding: rem * 2.0 * (s.line_gap / 0.6).clamp(0.2, 3.0),
-            target_ratio: s.anchor.clamp(0.1, 0.7),
+            target_ratio: s.anchor.clamp(0.1, 0.7).min(0.28),
             centered,
             fill: s.fill,
             wave_crest: crest,
@@ -991,7 +991,12 @@ impl View {
             top = top.max(pos(lastl) + h(lastl) - view_h);
             top = top.min(pos(lastl)).min(pos(first));
             top = top.max(pos(anchor) + h(anchor) - view_h);
-            top = top.min(pos(anchor));
+            if anchor > 0 {
+                // Ensure the last played lyrics line (anchor - 1) remains visible above the active line.
+                top = top.min(pos(anchor - 1) - layout.pad_top.min(24.0));
+            } else {
+                top = top.min(pos(anchor));
+            }
             if let Some(y) = sung_y(anchor) {
                 // Keep the row being sung, and the one after it, in view.
                 top = top.max(pos(anchor) + y + line_h * 2.0 - view_h);
@@ -1128,9 +1133,13 @@ impl View {
                             t.0 = t.0.max(0.70);
                             t.1 = (t.1 * 0.2).min(1.0);
                         } else if i + 1 == a {
-                            // Also keep the line right after it has been sung visible; don't immediately hide it.
-                            t.0 = t.0.max(0.45);
-                            t.1 = (t.1 * 0.4).min(2.0);
+                            // Keep the line right after it has been sung clearly visible without blur.
+                            t.0 = t.0.max(0.65);
+                            t.1 = 0.0;
+                        } else if i + 2 == a {
+                            // Subtly show two lines ago as well.
+                            t.0 = t.0.max(0.35);
+                            t.1 = (t.1 * 0.3).min(1.5);
                         }
                     }
                     t
@@ -1160,7 +1169,9 @@ impl View {
                 } else if rel == 1 {
                     (cfg.upcoming_alpha).max(0.70)
                 } else if rel == -1 {
-                    cfg.past_alpha.map_or(0.45, |p| p.max(0.45))
+                    cfg.past_alpha.map_or(0.65, |p| p.max(0.65))
+                } else if rel == -2 {
+                    cfg.past_alpha.map_or(0.35, |p| p.max(0.35))
                 } else if past {
                     lerp(cfg.past_alpha.unwrap_or(upcoming), upcoming, reveal)
                 } else {
@@ -1172,10 +1183,10 @@ impl View {
                     BlurScope::Past => past,
                     BlurScope::Upcoming => !past || reveal > 0.0,
                 };
-                let target = if rel == 1 || rel == 0 || sung_now {
+                let target = if rel == 1 || rel == 0 || sung_now || rel == -1 {
                     0.0
-                } else if rel == -1 {
-                    if cfg.blur > 0.0 && blur_on { (cfg.blur * 0.4).min(2.0) } else { 0.0 }
+                } else if rel == -2 {
+                    if cfg.blur > 0.0 && blur_on { (cfg.blur * 0.3).min(1.5) } else { 0.0 }
                 } else if cfg.blur > 0.0 && blur_on {
                     (cfg.blur * (1.0 + 0.35 * (dist - 1.0).clamp(0.0, 3.0))).min(9.0)
                 } else {
@@ -1348,8 +1359,7 @@ impl View {
         }
         let view_h = rect.height();
         // `computeScrollPadding`
-        let first_h = blocks.first().map_or(0.0, |b| b.height);
-        let pad_top = (view_h * cfg.target_ratio - first_h / 2.0).max(0.0);
+        let pad_top = (view_h * 0.08).clamp(24.0, 48.0);
         let last_centre = blocks.iter().rev().find(|b| b.line.is_some()).map(|b| b.top + b.height / 2.0);
         let last_h = blocks.iter().rev().find(|b| b.line.is_some()).map_or(0.0, |b| b.height);
         let content = y;
