@@ -104,13 +104,6 @@ fn np_header_button_paint(
     accent: Color32,
 ) {
     let center = rect.center();
-    let shadow = if bg_light {
-        egui::epaint::Shadow { offset: [0, 2], blur: 8, spread: 0, color: Color32::from_black_alpha(25) }
-    } else {
-        egui::epaint::Shadow { offset: [0, 2], blur: 10, spread: 0, color: Color32::from_black_alpha(80) }
-    };
-    ui.painter().add(shadow.as_shape(rect, 17));
-
     let fill = if bg_light {
         Color32::from_rgba_premultiplied(240, 240, 244, (140.0 + 50.0 * h) as u8)
     } else {
@@ -992,12 +985,6 @@ pub(crate) fn options_menu(app: &mut App, ui: &mut Ui, rect: Rect, track: &crate
     let open = egui::Popup::is_id_open(ui.ctx(), egui::Popup::default_response_id(&resp));
     let h = theme::anim_bool(ui.ctx(), resp.id.with("h"), resp.hovered() || open, 0.12);
     let bg_light = app.bg_is_light();
-    let shadow = if bg_light {
-        egui::epaint::Shadow { offset: [0, 2], blur: 8, spread: 0, color: Color32::from_black_alpha(25) }
-    } else {
-        egui::epaint::Shadow { offset: [0, 2], blur: 10, spread: 0, color: Color32::from_black_alpha(80) }
-    };
-    ui.painter().add(shadow.as_shape(rect, 17));
     let fill = if bg_light {
         Color32::from_rgba_premultiplied(240, 240, 244, (140.0 + 50.0 * h) as u8)
     } else {
