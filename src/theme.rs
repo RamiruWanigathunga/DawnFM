@@ -8,7 +8,7 @@ use egui::{Color32, FontData, FontDefinitions, FontFamily, FontId};
 // ------------------------------------------------------------------ colours
 
 /// Base surface under the animated background (seen while it fades in).
-const BG: Color32 = Color32::from_rgb(0x1E, 0x1F, 0x20);
+const BG: Color32 = Color32::from_rgb(0x11, 0x11, 0x11);
 const TEXT: Color32 = Color32::from_rgb(242, 240, 245);
 const TEXT_DIM: Color32 = Color32::from_rgb(178, 172, 186);
 const TEXT_FAINT: Color32 = Color32::from_rgb(130, 124, 140);
@@ -68,13 +68,13 @@ pub fn menu_fill() -> Color32 {
     if light() {
         Color32::from_rgba_premultiplied(246, 246, 248, 225)
     } else {
-        Color32::from_rgba_premultiplied(0x1E, 0x1F, 0x20, 220)
+        Color32::from_rgba_premultiplied(0x11, 0x11, 0x11, 220)
     }
 }
 
 /// Dialogs and cards that float over the page.
 pub fn surface_fill() -> Color32 {
-    if light() { Color32::from_rgb(252, 251, 253) } else { Color32::from_rgb(0x1E, 0x1F, 0x20) }
+    if light() { Color32::from_rgb(252, 251, 253) } else { Color32::from_rgb(0x11, 0x11, 0x11) }
 }
 
 /// Theme preset multiplier for every glass surface (f32 bits; 1.0 by default).

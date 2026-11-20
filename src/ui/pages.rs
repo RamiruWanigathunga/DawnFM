@@ -237,7 +237,7 @@ fn placeholder_artist(app: &mut App, ui: &mut Ui, now: f64) {
     let hero_h = hero_height(w);
     let (hero, _) = ui.allocate_exact_size(vec2(w, hero_h), Sense::hover());
     shimmer(ui, hero, 0.0);
-    paint_hero_gradient_dissolve(ui.painter(), hero, theme::bg());
+    paint_hero_gradient_dissolve(ui.painter(), hero, super::shell::base_color(app));
 
     let base_x = hero.left() + 28.0;
     let btn_y = hero.bottom() - 36.0;
@@ -586,7 +586,7 @@ pub fn collection_genre(c: &crate::backend::Collection) -> &'static str {
 pub fn paint_ambient_glow(painter: &egui::Painter, rect: Rect, color: Color32) {
     let center = pos2(rect.left() + rect.width() * 0.35, rect.top() + rect.height() * 0.32);
     let radius = rect.width().max(rect.height()) * 0.65;
-    let dark_bg = Color32::from_rgb(0x1E, 0x1F, 0x20);
+    let dark_bg = Color32::from_rgb(0x11, 0x11, 0x11);
     let mut mesh = egui::Mesh::default();
     let c_center = theme::with_alpha(color, 0.45);
     let c_edge = Color32::TRANSPARENT;
@@ -1707,6 +1707,7 @@ pub fn artist(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
         }
     }
     let signature = app.signature_texture(ui.ctx(), &name);
+    let page_bg = super::shell::base_color(app);
     let Some(a) = &app.artist else { return };
     let acts = &mut app.actions;
     let top = &a.top;
@@ -1765,11 +1766,11 @@ pub fn artist(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
     // 3. Dynamic frosted veil on scroll (creates the diffused frosted glass look in Image 2)
     if scroll_t > 0.0 {
         let veil_alpha = (scroll_t * 0.38).min(0.38);
-        ui.painter().rect_filled(bg_rect, 0.0, theme::with_alpha(theme::bg(), veil_alpha));
+        ui.painter().rect_filled(bg_rect, 0.0, theme::with_alpha(page_bg, veil_alpha));
     }
 
     // 4. Smooth multi-stop downward vertical gradient dissolve into page background
-    paint_hero_gradient_dissolve(ui.painter(), bg_rect, theme::bg());
+    paint_hero_gradient_dissolve(ui.painter(), bg_rect, page_bg);
 
     let base_x = hero.left() + 28.0;
     let btn_y = hero.bottom() - 36.0;

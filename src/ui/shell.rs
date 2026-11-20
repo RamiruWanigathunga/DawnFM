@@ -97,7 +97,7 @@ pub fn pages_bg_moves(look: &crate::preset::Preset) -> bool {
 /// `only`: paint just this part (the rest is covered by now playing).
 /// The background's flat colour, under its art and gradients.
 pub fn base_color(app: &App) -> Color32 {
-    app.look().solid()
+    app.page_target_color()
 }
 
 pub fn background(app: &mut App, ui: &mut Ui, screen: Rect, now: f64, only: Option<Rect>) {
@@ -125,7 +125,7 @@ pub fn background(app: &mut App, ui: &mut Ui, screen: Rect, now: f64, only: Opti
     } else {
         0.0
     };
-    painter.rect_filled(screen, win_r, base_color(app));
+    painter.rect_filled(screen, win_r, app.page_color(ui.ctx()));
     let art = matches!(mode, BgMode::Kawarp | BgMode::CoverStatic | BgMode::CoverFullbleed);
     if let Some(bg) = app.bg.as_ref().filter(|_| art) {
         let blend = theme::ease_in_out(((now - app.art_changed) / 1.4) as f32);
@@ -814,7 +814,7 @@ pub fn player_bar(app: &mut App, ui: &mut Ui, now: f64, _frosted: bool) {
         // Docked: the app's own background, opaque, so rows scrolling under the controls
         // don't show through.
         let cap = Rect::from_min_max(pos2(full.left(), full.bottom() - DOCKED_H), full.max);
-        let base = if theme::light() { theme::bg() } else { app.look().solid() };
+        let base = if theme::light() { theme::bg() } else { app.page_color(&ctx) };
         ui.painter().rect_filled(cap, 0.0, base);
         cap.shrink2(vec2(12.0, 0.0))
     } else {
@@ -828,12 +828,13 @@ pub fn player_bar(app: &mut App, ui: &mut Ui, now: f64, _frosted: bool) {
         let fill = if theme::light() {
             Color32::from_rgba_premultiplied(248, 248, 250, 245)
         } else {
-            Color32::from_rgba_unmultiplied(0x1E, 0x1F, 0x20, 252)
+            let p_col = app.page_color(&ctx);
+            theme::lerp_color(p_col, Color32::WHITE, 0.08)
         };
         let stroke_col = if theme::light() {
             Color32::from_rgba_unmultiplied(0, 0, 0, 22)
         } else {
-            Color32::from_rgb(44, 44, 44)
+            theme::lerp_color(app.page_color(&ctx), Color32::WHITE, 0.18)
         };
         ui.painter().rect_filled(cap, radius, fill);
         ui.painter().rect_stroke(cap, radius, egui::Stroke::new(1.0, stroke_col), egui::StrokeKind::Inside);

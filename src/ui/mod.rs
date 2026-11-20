@@ -1239,6 +1239,60 @@ impl App {
         self.dominant
     }
 
+    /// Target page background color: in dark mode, starts from the #111111 main dark base,
+    /// and when an album or song is active, slightly adjusts to a subtle ambient tint of its artwork/dominant color.
+    pub fn page_target_color(&self) -> Color32 {
+        if theme::light() {
+            return theme::bg();
+        }
+        let base_dark = Color32::from_rgb(0x11, 0x11, 0x11);
+        if self.look().id != crate::preset::DEFAULT_ID {
+            return self.look().solid();
+        }
+        if self.shown().is_some() || self.current().is_some() {
+            let dom = self.dominant;
+            let (r, g, b) = (dom.r() as f32, dom.g() as f32, dom.b() as f32);
+            let max_c = r.max(g).max(b);
+            let min_c = r.min(g).min(b);
+            let sat = if max_c > 0.0 { (max_c - min_c) / max_c } else { 0.0 };
+            if sat < 0.08 {
+                base_dark
+            } else {
+                let scale = (130.0 / max_c).clamp(0.5, 2.0);
+                let norm_r = (r * scale).min(255.0);
+                let norm_g = (g * scale).min(255.0);
+                let norm_b = (b * scale).min(255.0);
+                let blend = (0.24 * (sat * 1.5).min(1.0)).clamp(0.0, 0.40);
+                let t_r = (17.0 * (1.0 - blend) + norm_r * blend).round() as u8;
+                let t_g = (17.0 * (1.0 - blend) + norm_g * blend).round() as u8;
+                let t_b = (17.0 * (1.0 - blend) + norm_b * blend).round() as u8;
+                Color32::from_rgb(t_r, t_g, t_b)
+            }
+        } else {
+            base_dark
+        }
+    }
+
+    /// The page background color animated smoothly across transitions.
+    pub fn page_color(&self, ctx: &egui::Context) -> Color32 {
+        if theme::light() || self.look().id != crate::preset::DEFAULT_ID {
+            return self.page_target_color();
+        }
+        let target = self.page_target_color();
+        let ch = |i: usize, val: u8| theme::anim(ctx, ("page-ambient-ch", i), f32::from(val), 0.8).round() as u8;
+        Color32::from_rgb(ch(0, target.r()), ch(1, target.g()), ch(2, target.b()))
+    }
+
+    /// Background fill for the side lyrics panel and queue drawer, matching the ambient
+    /// page tint with a subtle glassy lift.
+    pub fn lyrics_panel_fill(&self, ctx: &egui::Context) -> Color32 {
+        if theme::light() {
+            theme::panel(0.42)
+        } else {
+            theme::lerp_color(self.page_color(ctx), Color32::WHITE, 0.035)
+        }
+    }
+
     pub fn bg_is_light(&self) -> bool {
         let d = self.dominant;
         (0.299 * d.r() as f32 + 0.587 * d.g() as f32 + 0.114 * d.b() as f32) / 255.0 > 0.52
@@ -1534,14 +1588,14 @@ impl eframe::App for App {
             // The built-in look keeps its colour to the sidebar: the pages beside it are
             // plain, the same flat light or dark as the player bar under them.
             if look.id == crate::preset::DEFAULT_ID {
-                ui.painter().rect_filled(section, 0.0, if theme::light() { theme::bg() } else { look.solid() });
+                ui.painter().rect_filled(section, 0.0, if theme::light() { theme::bg() } else { self.page_color(&ctx) });
             }
             const DRAWER_W: f32 = 340.0;
             let q = theme::anim_bool(&ctx, "queue-drawer", self.queue_open && !self.np_open, 0.25);
             if q > 0.01 {
                 let r = egui::Panel::right("queue").resizable(false)
                     .exact_size(DRAWER_W * q)
-                    .frame(egui::Frame::new().fill(theme::panel(0.42)).inner_margin(egui::Margin::symmetric(14, 16)))
+                    .frame(egui::Frame::new().fill(self.lyrics_panel_fill(&ctx)).inner_margin(egui::Margin::symmetric(14, 16)))
                     .show_separator_line(false)
                     .show(ui, |ui| shell::queue_drawer(self, ui));
                 self.scroll_panes.push(r.response.rect);
@@ -1551,7 +1605,7 @@ impl eframe::App for App {
             if l > 0.01 {
                 let r = egui::Panel::right("lyrics-drawer").resizable(false)
                     .exact_size(DRAWER_W * l)
-                    .frame(egui::Frame::new().fill(theme::panel(0.5)).inner_margin(egui::Margin { left: 20, right: 16, top: 16, bottom: 16 }))
+                    .frame(egui::Frame::new().fill(self.lyrics_panel_fill(&ctx)).inner_margin(egui::Margin { left: 20, right: 16, top: 16, bottom: 16 }))
                     .show_separator_line(false)
                     .show(ui, |ui| nowplaying::lyrics_drawer(self, ui, now));
                 self.scroll_panes.push(r.response.rect);
