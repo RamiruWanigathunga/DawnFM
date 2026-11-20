@@ -1757,7 +1757,7 @@ pub fn artist(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
 // ------------------------------------------------------------------ library
 
 /// The artists behind the songs in recently played, newest first, each once.
-fn played_artists(history: &[Track]) -> Vec<crate::model::Link> {
+pub(crate) fn played_artists(history: &[Track]) -> Vec<crate::model::Link> {
     let mut seen = HashSet::new();
     let mut out = Vec::new();
     for t in history {
@@ -1819,6 +1819,7 @@ fn library(app: &mut App, ui: &mut Ui, tab: LibTab, now: f64) {
             list(ui, &rows, &app.liked, h, true, plain, ListCtx { sel: &mut app.selection, page: &app.page, own: false, plays: false }, &mut app.actions);
         }
         LibTab::Artists => {
+            section_label(ui, "Subscribed artists", None);
             if app.library_artists.is_none() {
                 placeholder_grid(app, ui, now, CARD, true, 12, false);
                 return;
@@ -1833,16 +1834,31 @@ fn library(app: &mut App, ui: &mut Ui, tab: LibTab, now: f64) {
             let played = app.history.as_deref().map(played_artists).unwrap_or_default();
             if !played.is_empty() {
                 section_label(ui, "From your history", None);
-                ui.horizontal_wrapped(|ui| {
-                    ui.spacing_mut().item_spacing = vec2(8.0, 8.0);
-                    for a in played.iter().take(6) {
-                        if pill(ui, &a.name, None, false).clicked() {
-                            if let Some(id) = &a.id {
-                                app.actions.push(Action::Open(Target::Artist(id.clone())));
-                            }
+                let played_cards: Vec<Card> = played
+                    .into_iter()
+                    .take(6)
+                    .filter_map(|a| {
+                        let id = a.id?;
+                        let thumbs = app.artist_photos.get(&id).cloned().filter(|t| !t.is_empty())
+                            .or_else(|| followed.iter().find(|c| matches!(&c.target, Target::Artist(cid) if cid == &id)).map(|c| c.thumbs.clone()))
+                            .or_else(|| app.artists_cache.get(&id).map(|(a, _)| if a.photo.is_empty() { a.banner.clone() } else { a.photo.clone() }))
+                            .or_else(|| app.artist.as_ref().filter(|a| a.id == id).map(|a| if a.photo.is_empty() { a.banner.clone() } else { a.photo.clone() }))
+                            .unwrap_or_default();
+                        if thumbs.is_empty() && !app.artist_photos.contains_key(&id) {
+                            app.artist_photos.insert(id.clone(), Vec::new());
+                            app.backend.request(crate::backend::Req::ArtistPhoto(id.clone()));
                         }
-                    }
-                });
+                        Some(Card {
+                            title: a.name,
+                            subtitle: String::new(),
+                            thumbs,
+                            target: Target::Artist(id),
+                            round: true,
+                            links: Vec::new(),
+                        })
+                    })
+                    .collect();
+                grid(ui, &played_cards, &mut app.actions);
                 ui.add_space(10.0);
             }
         }

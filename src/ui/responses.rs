@@ -317,6 +317,16 @@ impl App {
                 self.loading = false;
             }
             Resp::History(h) => {
+                if matches!(self.page, Page::Library(LibTab::Artists)) {
+                    for a in super::pages::played_artists(&h).into_iter().take(6) {
+                        if let Some(id) = a.id {
+                            if !self.artist_photos.contains_key(&id) {
+                                self.artist_photos.insert(id.clone(), Vec::new());
+                                self.backend.request(Req::ArtistPhoto(id));
+                            }
+                        }
+                    }
+                }
                 self.history = Some(h);
                 self.loading = false;
             }

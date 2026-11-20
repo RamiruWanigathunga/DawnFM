@@ -1086,6 +1086,15 @@ impl App {
                 // The "From your history" rows need History too.
                 if self.history.is_none() {
                     self.backend.request(Req::History);
+                } else if let Some(h) = &self.history {
+                    for a in pages::played_artists(h).into_iter().take(6) {
+                        if let Some(id) = a.id {
+                            if !self.artist_photos.contains_key(&id) {
+                                self.artist_photos.insert(id.clone(), Vec::new());
+                                self.backend.request(Req::ArtistPhoto(id));
+                            }
+                        }
+                    }
                 }
                 Some(Req::Artists)
             }
