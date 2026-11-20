@@ -432,8 +432,7 @@ fn cover_column(app: &mut App, ui: &mut Ui, col: Rect, track: &crate::model::Tra
 /// The sleeve's information under the art (title, artists, star, ⋯), the seek line
 /// with its times and quality mark, then the transport, in a column `w` wide from `x0`,
 /// starting at `info_y`. About 175 points tall. Shared by the cover column and the
-/// card over a full-bleed cover. `controls`: the opacity of everything but the title
-/// and artist lines, which is all the card shows while folded.
+/// card over a full-bleed cover. `controls`: fullscreen opacity multiplier.
 #[allow(clippy::too_many_arguments)]
 fn sleeve(app: &mut App, ui: &mut Ui, x0: f32, w: f32, info_y: f32, track: &crate::model::Track, no_lyrics: bool, now: f64, controls: f32) {
     let hold = app.mix_hold().map(|h| (h.total, h.mix, app.mix_hold_pos(h)));
@@ -443,57 +442,33 @@ fn sleeve(app: &mut App, ui: &mut Ui, x0: f32, w: f32, info_y: f32, track: &crat
     let controls_rect = Rect::from_min_size(pos2(x0, info_y), vec2(w, 196.0));
     ui.ctx().data_mut(|d| d.insert_temp(egui::Id::unique("np-controls-rect"), controls_rect));
 
-    // When a song is playing, minimize controls to only artist name and song name; on hover, expand.
-    // When paused, dragging seek, or popup menu open, keep controls expanded.
+    // When a song is playing, auto-hide controls along with song and artist; on hover, paused, or busy, expand.
     let playing = app.playing() || app.buffering;
     let hovered = ui.rect_contains_pointer(controls_rect.expand(16.0));
     let busy = app.seek_drag.is_some() || egui::Popup::is_any_open(ui.ctx());
-    let expanded = !playing || hovered || busy;
+    let expanded = !playing || hovered || busy || (app.fullscreen && controls > 0.01);
     let expand_alpha = theme::anim_bool(ui.ctx(), "np-sleeve-expand", expanded, 0.25);
     if expand_alpha > 0.0 && expand_alpha < 1.0 {
         super::animate(ui.ctx());
     }
 
-    let bg_light = app.bg_is_light();
-    let hidden_alpha = 1.0 - expand_alpha;
+    let effective_alpha = expand_alpha * controls;
+    if effective_alpha <= 0.001 {
+        return;
+    }
+    let mut cui = ui.new_child(egui::UiBuilder::new().id_salt("np-controls").max_rect(ui.max_rect()));
+    cui.multiply_opacity(effective_alpha);
+    let ui = &mut cui;
+    let interactive = effective_alpha > 0.5;
 
-    // The song title and artist lines ALWAYS remain visible (even when controls are minimized)
+    let bg_light = app.bg_is_light();
+
     let text_w = w - 76.0;
     let mut line = track.artist_line();
     if let Some(album) = &track.album
         && !album.name.is_empty()
     {
         line = format!("{line} — {}", album.name);
-    }
-
-    // When other controls are hidden, add the frosted glass blur card behind artist name and song name
-    if hidden_alpha > 0.005 {
-        let title_g = ui.painter().layout_no_wrap(track.title.clone(), theme::semibold(17.0), Color32::WHITE);
-        let line_g = ui.painter().layout_no_wrap(line.clone(), theme::regular(15.0), Color32::WHITE);
-        let max_text_w = title_g.size().x.max(line_g.size().x).min(text_w);
-        let card_rect = Rect::from_min_max(
-            pos2(x0 - 12.0, info_y - 7.0),
-            pos2(x0 + max_text_w + 14.0, info_y + 45.0),
-        );
-        let shadow = if theme::light() || bg_light {
-            egui::epaint::Shadow { offset: [0, 4], blur: 16, spread: 0, color: Color32::from_black_alpha((35.0 * hidden_alpha) as u8) }
-        } else {
-            egui::epaint::Shadow { offset: [0, 6], blur: 20, spread: 0, color: Color32::from_black_alpha((120.0 * hidden_alpha) as u8) }
-        };
-        ui.painter().add(shadow.as_shape(card_rect, 10));
-
-        let fill = if bg_light {
-            Color32::from_rgba_premultiplied(246, 246, 248, (215.0 * hidden_alpha) as u8)
-        } else {
-            Color32::from_rgba_premultiplied(30, 30, 34, (215.0 * hidden_alpha) as u8)
-        };
-        let stroke_color = if bg_light {
-            Color32::from_black_alpha((35.0 * hidden_alpha) as u8)
-        } else {
-            Color32::from_white_alpha((40.0 * hidden_alpha) as u8)
-        };
-        ui.painter().rect_filled(card_rect, 10.0, fill);
-        ui.painter().rect_stroke(card_rect, 10.0, egui::Stroke::new(1.0, stroke_color), egui::StrokeKind::Inside);
     }
 
     let title_color = if bg_light {
@@ -522,28 +497,20 @@ fn sleeve(app: &mut App, ui: &mut Ui, x0: f32, w: f32, info_y: f32, track: &crat
             let a1 = g.pos_from_cursor(egui::text::CCursor::new(c1)).min.x;
             if a1 - a0 >= 2.0 {
                 let r = Rect::from_min_max(pos2(line_rect.left() + a0, line_rect.top()), pos2(line_rect.left() + a1, line_rect.bottom()));
-                let resp = ui.interact(r, ui.scope_id().with(("album-link", &album.name)), Sense::click());
-                let resp = named(resp, &album.name).on_hover_cursor(egui::CursorIcon::PointingHand);
+                let resp = ui.interact(r, ui.scope_id().with(("album-link", &album.name)), if interactive { Sense::click() } else { Sense::hover() });
+                let resp = named(resp, &album.name);
+                let resp = if interactive { resp.on_hover_cursor(egui::CursorIcon::PointingHand) } else { resp };
                 if resp.hovered() {
                     let hover_color = if bg_light { Color32::BLACK } else { Color32::WHITE };
                     let hg = widgets::galley(ui, &album.name, theme::regular(15.0), hover_color, line_w);
                     ui.painter().galley(r.min, hg, hover_color);
                 }
-                if resp.clicked() {
+                if interactive && resp.clicked() {
                     app.actions.push(Action::Open(super::Target::Album(id)));
                 }
             }
         }
     }
-
-    let effective_alpha = expand_alpha * controls;
-    if effective_alpha <= 0.001 {
-        return;
-    }
-    let mut cui = ui.new_child(egui::UiBuilder::new().id_salt("np-controls").max_rect(ui.max_rect()));
-    cui.multiply_opacity(effective_alpha);
-    let ui = &mut cui;
-    let interactive = effective_alpha > 0.5;
     // The star: a 30 px disc that washes under the pointer and fills in the accent
     // once liked. The ⋯ menu sits at the line's end, as on music.youtube.com.
     let liked = app.liked.contains(&heard.id);
