@@ -54,12 +54,14 @@ pub fn overlay(app: &mut App, ctx: &egui::Context, now: f64, screen: Rect) {
                     },
                 );
             } else if b.mode == BgMode::Solid {
-                painter.rect_filled(rect, 0.0, look.solid());
+                let win_r = if cfg!(target_os = "macos") && !app.fullscreen { theme::macos_window_radius() } else { 0.0 };
+                painter.rect_filled(rect, win_r, look.solid());
             } else {
+                let win_r = if cfg!(target_os = "macos") && !app.fullscreen { theme::macos_window_radius() } else { 0.0 };
                 let dom = app.dominant_color().to_array();
                 let ch = |i: usize| theme::anim(ctx, ("np-dom-shade", i), f32::from(dom[i]), 0.9).round() as u8;
                 let solid = Color32::from_rgb(ch(0), ch(1), ch(2));
-                painter.rect_filled(rect, 0.0, solid);
+                painter.rect_filled(rect, win_r, solid);
             }
             let k = b.scrim / 0.3;
             if app.bg_is_light() {

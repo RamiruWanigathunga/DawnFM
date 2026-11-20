@@ -120,7 +120,12 @@ pub fn background(app: &mut App, ui: &mut Ui, screen: Rect, now: f64, only: Opti
         Some(r) => ui.painter().with_clip_rect(r),
         None => ui.painter().clone(),
     };
-    painter.rect_filled(screen, 0.0, base_color(app));
+    let win_r = if cfg!(target_os = "macos") && !app.fullscreen {
+        theme::macos_window_radius()
+    } else {
+        0.0
+    };
+    painter.rect_filled(screen, win_r, base_color(app));
     let art = matches!(mode, BgMode::Kawarp | BgMode::CoverStatic | BgMode::CoverFullbleed);
     if let Some(bg) = app.bg.as_ref().filter(|_| art) {
         let blend = theme::ease_in_out(((now - app.art_changed) / 1.4) as f32);
@@ -145,10 +150,10 @@ pub fn background(app: &mut App, ui: &mut Ui, screen: Rect, now: f64, only: Opti
     } else if mode == BgMode::Solid {
         // Plain colour: nothing over it.
     } else {
-        painter.rect_filled(screen, 0.0, look.solid());
+        painter.rect_filled(screen, win_r, look.solid());
     }
     if light {
-        painter.rect_filled(screen, 0.0, Color32::from_white_alpha(212));
+        painter.rect_filled(screen, win_r, Color32::from_white_alpha(212));
     }
 }
 

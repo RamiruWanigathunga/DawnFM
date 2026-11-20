@@ -1605,6 +1605,24 @@ impl eframe::App for App {
             self.paint_swipe_arrow(&ctx, now);
         }
 
+        // Native macOS 15 window frame border & rounded contour
+        if cfg!(target_os = "macos") && !self.fullscreen && !ctx.input(|i| i.viewport().fullscreen.unwrap_or(false)) {
+            let radius = theme::macos_window_radius();
+            let border = theme::macos_window_border();
+            egui::Area::new(egui::Id::unique("macos-window-border"))
+                .order(egui::Order::Tooltip)
+                .fixed_pos(screen.min)
+                .interactable(false)
+                .show(&ctx, |ui| {
+                    ui.painter().rect_stroke(
+                        screen,
+                        radius,
+                        egui::Stroke::new(1.0, border),
+                        egui::StrokeKind::Inside,
+                    );
+                });
+        }
+
         if dev_var("YTM_THEME_TOUR").is_some() {
             self.theme_tour(&ctx, now);
         } else {
