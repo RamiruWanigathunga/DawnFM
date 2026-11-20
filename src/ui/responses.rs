@@ -273,6 +273,9 @@ impl App {
                     }
                 }
                 let mut prefetch_urls = Vec::new();
+                if let Some(t) = crate::model::pick_thumb(&a.banner, 1440).or_else(|| a.banner.iter().max_by_key(|t| t.width)) {
+                    prefetch_urls.push(t.url.clone());
+                }
                 for card in a.albums.iter().chain(&a.playlists).take(8) {
                     if let Some(t) = crate::model::pick_thumb(&card.thumbs, 360) {
                         prefetch_urls.push(crate::model::sized(&t.url, 544));
@@ -292,6 +295,12 @@ impl App {
                     && let Some(sub) = a.following.as_mut().filter(|s| &s.channel == channel)
                 {
                     sub.subscribed = self.artist.as_ref().filter(|p| p.id == a.id).and_then(|p| p.following.as_ref()).map_or(!*was, |s| s.subscribed);
+                }
+                self.artists_cache.insert(a.id.clone(), (a.clone(), std::time::Instant::now()));
+                if self.artists_cache.len() > 12 {
+                    if let Some(oldest) = self.artists_cache.iter().min_by_key(|(_, (_, t))| *t).map(|(k, _)| k.clone()) {
+                        self.artists_cache.remove(&oldest);
+                    }
                 }
                 self.artist = Some(a);
             }
@@ -466,6 +475,11 @@ impl App {
                 self.optimistic_sub = None;
                 if let Some(sub) = self.artist.as_mut().and_then(|a| a.following.as_mut()).filter(|s| s.channel == channel) {
                     sub.subscribed = subscribed;
+                }
+                for (cached, _) in self.artists_cache.values_mut() {
+                    if let Some(sub) = cached.following.as_mut().filter(|s| s.channel == channel) {
+                        sub.subscribed = subscribed;
+                    }
                 }
             }
             Resp::Collaboration(c) => {
@@ -759,9 +773,15 @@ impl App {
         // Same for a subscription YouTube Music refused: the button goes back.
         if (e.starts_with("Subscribe failed") || e.starts_with("Unsubscribe failed"))
             && let Some((channel, was)) = self.optimistic_sub.take()
-            && let Some(sub) = self.artist.as_mut().and_then(|a| a.following.as_mut()).filter(|s| s.channel == channel)
         {
-            sub.subscribed = was;
+            if let Some(sub) = self.artist.as_mut().and_then(|a| a.following.as_mut()).filter(|s| s.channel == channel) {
+                sub.subscribed = was;
+            }
+            for (cached, _) in self.artists_cache.values_mut() {
+                if let Some(sub) = cached.following.as_mut().filter(|s| s.channel == channel) {
+                    sub.subscribed = was;
+                }
+            }
         }
         if let Some(h) = &mut self.home {
             h.loading_more = None;

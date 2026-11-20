@@ -359,6 +359,8 @@ pub struct App {
     /// refreshes it quietly), and their loads under way.
     lists: Lists,
     artist: Option<ArtistPage>,
+    /// Recent artist pages kept in memory, so returning to an artist displays immediately.
+    artists_cache: HashMap<String, (ArtistPage, std::time::Instant)>,
     library: Option<Library>,
     /// A save/remove shown in the library before YouTube Music confirms it: the card and
     /// which way it went, so a failure can put the library back.
@@ -703,6 +705,7 @@ impl App {
             search: None,
             lists: Lists::default(),
             artist: None,
+            artists_cache: HashMap::new(),
             library: None,
             optimistic_save: None,
             optimistic_sub: None,
@@ -932,7 +935,6 @@ impl App {
         self.back.push(prev);
         self.forward.clear();
         self.page_loaded();
-        crate::sync::trim_memory();
     }
 
     /// Show `q`'s results in the search dropdown (an empty query just focuses the box).
@@ -1071,7 +1073,14 @@ impl App {
                 self.visit_list(id, matches!(self.page, Page::Album(_)));
                 None
             }
-            Page::Artist(id) => Some(Req::Artist(id.clone())),
+            Page::Artist(id) => {
+                if let Some((cached, at)) = self.artists_cache.get(id) {
+                    if at.elapsed() < std::time::Duration::from_secs(10 * 60) {
+                        self.artist = Some(cached.clone());
+                    }
+                }
+                Some(Req::Artist(id.clone()))
+            }
             Page::Library(LibTab::History) if self.logged_in => Some(Req::History),
             Page::Library(LibTab::Artists) if self.logged_in => {
                 // The "From your history" rows need History too.

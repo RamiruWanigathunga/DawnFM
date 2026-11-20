@@ -226,6 +226,7 @@ impl Collection {
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct ArtistPage {
     pub id: String,
     pub name: String,
@@ -251,6 +252,7 @@ pub struct ArtistPage {
 
 /// The account's YouTube subscription to an artist's channel: the same one the YouTube
 /// Music app and youtube.com share, so subscribing here shows up there.
+#[derive(Clone, Debug)]
 pub struct ArtistSub {
     /// The channel to subscribe to (usually the artist page's own id).
     pub channel: String,

@@ -222,6 +222,11 @@ impl App {
                 } else if let Some(sub) = self.artist.as_mut().and_then(|a| a.following.as_mut()) {
                     self.optimistic_sub = Some((sub.channel.clone(), sub.subscribed));
                     sub.subscribed = subscribe;
+                    for (cached, _) in self.artists_cache.values_mut() {
+                        if let Some(s) = cached.following.as_mut().filter(|s| s.channel == sub.channel) {
+                            s.subscribed = subscribe;
+                        }
+                    }
                     let req = Req::SetSubscribed {
                         channel: sub.channel.clone(),
                         subscribe,

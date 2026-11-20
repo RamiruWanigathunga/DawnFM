@@ -1596,7 +1596,8 @@ pub fn artist(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
     let w = ui.available_width();
     let hero_h = hero_height(w);
     let (hero, _) = ui.allocate_exact_size(vec2(w, hero_h), Sense::hover());
-    if let Some(t) = a.banner.iter().max_by_key(|t| t.width) {
+    let target_px = ((w * ui.ctx().pixels_per_point()).round() as u32).min(1920);
+    if let Some(t) = crate::model::pick_thumb(&a.banner, target_px).or_else(|| a.banner.iter().max_by_key(|t| t.width)) {
         let img_ratio = if t.height > 0 { t.width as f32 / t.height as f32 } else { 16.0 / 9.0 };
         let vis_h = (img_ratio / (w / hero_h)).min(1.0);
         let uv = Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, vis_h));
