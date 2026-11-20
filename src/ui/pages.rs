@@ -1571,6 +1571,125 @@ fn artist_top_songs_section(ui: &mut Ui, a: &crate::backend::ArtistPage, acts: &
     });
 }
 
+fn paint_ambient_backdrop(ui: &Ui, url: &str, rect: Rect, blur_extra: f32) {
+    let ctx = ui.ctx();
+    let blur_size = vec2(64.0, 64.0);
+    let id = egui::Id::unique(("ambient-fade", url));
+    let now = ctx.input(|i| i.time);
+    match egui::Image::new(url).load_for_size(ctx, blur_size) {
+        Ok(egui::load::TexturePoll::Ready { texture }) => {
+            let fade_a = match ctx.data(|d| d.get_temp::<Option<f64>>(id)) {
+                Some(Some(t0)) if now - t0 < 0.25 => ((now - t0) / 0.25) as f32,
+                Some(None) => {
+                    ctx.data_mut(|d| d.insert_temp(id, Some(now)));
+                    0.0
+                }
+                _ => 1.0,
+            };
+            if fade_a < 1.0 {
+                super::animate(ctx);
+            }
+            let spread = 16.0 + 26.0 * blur_extra;
+            let taps: [(Vec2, f32); 9] = [
+                (vec2(0.0, 0.0), 0.38),
+                (vec2(-spread, 0.0), 0.08),
+                (vec2(spread, 0.0), 0.08),
+                (vec2(0.0, -spread * 0.7), 0.08),
+                (vec2(0.0, spread * 0.7), 0.08),
+                (vec2(-spread * 0.7, -spread * 0.5), 0.06),
+                (vec2(spread * 0.7, spread * 0.5), 0.06),
+                (vec2(-spread * 0.7, spread * 0.5), 0.06),
+                (vec2(spread * 0.7, -spread * 0.5), 0.06),
+            ];
+            for (offset, alpha) in taps {
+                let r = rect.translate(offset);
+                let tint = Color32::from_white_alpha((alpha.clamp(0.0, 1.0) * fade_a * 255.0) as u8);
+                egui::Image::from_texture(texture.clone())
+                    .uv(Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)))
+                    .tint(tint)
+                    .paint_at(ui, r);
+            }
+        }
+        Ok(egui::load::TexturePoll::Pending { .. }) => {
+            ctx.data_mut(|d| d.insert_temp::<Option<f64>>(id, None));
+            ctx.request_repaint_after(std::time::Duration::from_millis(50));
+        }
+        Err(_) => {}
+    }
+}
+
+fn paint_feathered_photo(ui: &Ui, url: &str, rect: Rect, alpha: f32) {
+    if alpha <= 0.01 {
+        return;
+    }
+    let ctx = ui.ctx();
+    let id = egui::Id::unique(("photo-fade", url));
+    let now = ctx.input(|i| i.time);
+    match egui::Image::new(url).load_for_size(ctx, rect.size()) {
+        Ok(egui::load::TexturePoll::Ready { texture }) => {
+            let fade_a = match ctx.data(|d| d.get_temp::<Option<f64>>(id)) {
+                Some(Some(t0)) if now - t0 < 0.22 => ((now - t0) / 0.22) as f32,
+                Some(None) => {
+                    ctx.data_mut(|d| d.insert_temp(id, Some(now)));
+                    0.0
+                }
+                _ => 1.0,
+            };
+            if fade_a < 1.0 {
+                super::animate(ctx);
+            }
+            const COLS: usize = 20;
+            const ROWS: usize = 20;
+            let mut mesh = egui::Mesh::with_texture(texture.id);
+            for r in 0..=ROWS {
+                let v_frac = r as f32 / ROWS as f32;
+                let y = rect.top() + rect.height() * v_frac;
+                let y_fade = if v_frac < 0.10 {
+                    let t = v_frac / 0.10;
+                    t * t * (3.0 - 2.0 * t)
+                } else if v_frac > 0.60 {
+                    let t = (1.0 - v_frac) / 0.40;
+                    t * t * (3.0 - 2.0 * t)
+                } else {
+                    1.0
+                };
+                for c in 0..=COLS {
+                    let u_frac = c as f32 / COLS as f32;
+                    let x = rect.left() + rect.width() * u_frac;
+                    let x_fade = if u_frac < 0.22 {
+                        let t = u_frac / 0.22;
+                        t * t * (3.0 - 2.0 * t)
+                    } else if u_frac > 0.78 {
+                        let t = (1.0 - u_frac) / 0.22;
+                        t * t * (3.0 - 2.0 * t)
+                    } else {
+                        1.0
+                    };
+                    let a = ((x_fade * y_fade).clamp(0.0, 1.0) * alpha * fade_a * 255.0) as u8;
+                    mesh.vertices.push(egui::epaint::Vertex {
+                        pos: pos2(x, y),
+                        uv: pos2(u_frac, v_frac),
+                        color: Color32::from_white_alpha(a),
+                    });
+                }
+            }
+            for r in 0..ROWS {
+                for c in 0..COLS {
+                    let i = (r * (COLS + 1) + c) as u32;
+                    let next_r = ((r + 1) * (COLS + 1) + c) as u32;
+                    mesh.indices.extend_from_slice(&[i, next_r, i + 1, i + 1, next_r, next_r + 1]);
+                }
+            }
+            ui.painter().add(egui::Shape::mesh(mesh));
+        }
+        Ok(egui::load::TexturePoll::Pending { .. }) => {
+            ctx.data_mut(|d| d.insert_temp::<Option<f64>>(id, None));
+            ctx.request_repaint_after(std::time::Duration::from_millis(50));
+        }
+        Err(_) => {}
+    }
+}
+
 pub fn artist(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
     if app.artist.as_ref().is_none_or(|a| a.id != id) {
         placeholder_artist(app, ui, now);
@@ -1592,21 +1711,65 @@ pub fn artist(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
     let acts = &mut app.actions;
     let top = &a.top;
 
-    // Full-width cinematic hero banner fading into the page.
+    // Full-width cinematic hero area with centered feathered portrait and sticky ambient backdrop.
     let w = ui.available_width();
     let hero_h = hero_height(w);
     let (hero, _) = ui.allocate_exact_size(vec2(w, hero_h), Sense::hover());
-    let target_px = ((w * ui.ctx().pixels_per_point()).round() as u32).min(1920);
-    if let Some(t) = crate::model::pick_thumb(&a.banner, target_px).or_else(|| a.banner.iter().max_by_key(|t| t.width)) {
-        let img_ratio = if t.height > 0 { t.width as f32 / t.height as f32 } else { 16.0 / 9.0 };
-        let vis_h = (img_ratio / (w / hero_h)).min(1.0);
-        let uv = Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, vis_h));
-        widgets::paint_remote(ui, &t.url, hero, 0.0, uv, Color32::WHITE);
-    } else {
-        ui.painter().rect_filled(hero, 0.0, theme::with_alpha(accent, 0.25));
+
+    // Scroll metrics for dynamic scroll blur & parallax (matching Apple Music macOS artist page)
+    let scroll_y = (ui.clip_rect().top() - hero.top()).max(0.0);
+    let scroll_t = (scroll_y / 220.0).clamp(0.0, 1.0);
+    let parallax_y = (scroll_y * 0.60).min(scroll_y);
+    let bg_top = hero.top() + parallax_y;
+    let bg_h = (hero_h + scroll_y * 0.50).max(hero_h);
+    let bg_rect = Rect::from_min_size(pos2(hero.left(), bg_top), vec2(w, bg_h));
+
+    // Base atmospheric tone while images download or as subtle background tint
+    ui.painter().rect_filled(bg_rect, 0.0, theme::with_alpha(accent, 0.16));
+
+    let portrait_thumb = a.photo.iter().max_by_key(|t| t.width)
+        .or_else(|| a.banner.iter().max_by_key(|t| t.width));
+    let bg_thumb = a.banner.iter().max_by_key(|t| t.width)
+        .or_else(|| a.photo.iter().max_by_key(|t| t.width));
+
+    // 1. Ambient Blurred Backdrop: wide atmospheric layer covering the header
+    if let Some(bt) = bg_thumb {
+        let low_url = crate::model::sized(&bt.url, 72);
+        paint_ambient_backdrop(ui, &low_url, bg_rect, scroll_t);
     }
-    // Smooth multi-stop downward vertical gradient dissolve into page background
-    paint_hero_gradient_dissolve(ui.painter(), hero, theme::bg());
+
+    // 2. Centered Feathered Portrait: sharp at top, softly fading & blurring on scroll
+    let portrait_alpha = (1.0 - scroll_t * 1.25).clamp(0.0, 1.0);
+    if let Some(pt) = portrait_thumb {
+        let portrait_h = (hero_h * 0.90).min(460.0);
+        let aspect = if pt.height > 0 { (pt.width as f32 / pt.height as f32).clamp(0.70, 1.35) } else { 1.0 };
+        let portrait_w = (portrait_h * aspect).clamp(240.0, (w * 0.70).min(560.0));
+        let portrait_center_x = hero.center().x;
+        let portrait_center_y = hero.top() + hero_h * 0.44 + parallax_y * 0.25;
+        let portrait_rect = Rect::from_center_size(pos2(portrait_center_x, portrait_center_y), vec2(portrait_w, portrait_h));
+
+        // When scrolling, render a blurred silhouette behind the portrait (matching Image 2)
+        if scroll_t > 0.04 {
+            let low_photo = crate::model::sized(&pt.url, 48);
+            paint_ambient_backdrop(ui, &low_photo, portrait_rect.expand(20.0 * scroll_t), scroll_t);
+        }
+
+        // Crisp feathered portrait at top of scroll (matching Image 1)
+        if portrait_alpha > 0.01 {
+            let target_px = ((portrait_w * ui.ctx().pixels_per_point()).round() as u32).clamp(400, 1200);
+            let photo_url = crate::model::sized(&pt.url, target_px);
+            paint_feathered_photo(ui, &photo_url, portrait_rect, portrait_alpha);
+        }
+    }
+
+    // 3. Dynamic frosted veil on scroll (creates the diffused frosted glass look in Image 2)
+    if scroll_t > 0.0 {
+        let veil_alpha = (scroll_t * 0.38).min(0.38);
+        ui.painter().rect_filled(bg_rect, 0.0, theme::with_alpha(theme::bg(), veil_alpha));
+    }
+
+    // 4. Smooth multi-stop downward vertical gradient dissolve into page background
+    paint_hero_gradient_dissolve(ui.painter(), bg_rect, theme::bg());
 
     let base_x = hero.left() + 28.0;
     let btn_y = hero.bottom() - 36.0;
