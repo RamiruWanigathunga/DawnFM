@@ -1174,6 +1174,10 @@ pub fn collection(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
         placeholder_collection(app, ui, now);
         return;
     }
+    let album_thumbs = app.opened(id).filter(|o| o.c.is_album).map(|o| o.c.thumbs.clone());
+    if let Some(thumbs) = &album_thumbs {
+        app.request_album_art(id, thumbs);
+    }
     let rows = Rows::new(app, now);
     // The header's motion sleeve, asked for before the release is borrowed below.
     let (release, artist) = match app.opened(id) {
@@ -1610,6 +1614,20 @@ pub fn artist(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
     if app.artist.as_ref().is_none_or(|a| a.id != id) {
         placeholder_artist(app, ui, now);
         return;
+    }
+    let artist_thumbs = app.artist.as_ref().map(|a| {
+        if !a.banner.is_empty() {
+            a.banner.clone()
+        } else if !a.photo.is_empty() {
+            a.photo.clone()
+        } else {
+            a.albums.first().map(|c| c.thumbs.clone()).unwrap_or_default()
+        }
+    });
+    if let Some(thumbs) = &artist_thumbs {
+        if !thumbs.is_empty() {
+            app.request_artist_art(id, thumbs);
+        }
     }
     let accent = app.accent_color();
     // Apple's own page for this artist: their display name and the hero clip.

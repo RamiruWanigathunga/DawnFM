@@ -99,6 +99,10 @@ impl App {
             crate::images::prefetch_thumbs(&self.backend, prefetch_urls);
         }
 
+        if c.is_album {
+            self.request_album_art(&c.id, &c.thumbs);
+        }
+
         let id = c.id.clone();
         let keep = self.keep_lists();
         let keep: Vec<&str> = keep.iter().map(String::as_str).collect();

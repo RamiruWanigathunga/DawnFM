@@ -428,6 +428,10 @@ pub struct App {
     apple_motion: std::collections::HashMap<String, MotionView>,
     /// Apple lookups already in flight.
     apple_waiting: std::collections::HashSet<String>,
+    /// Artwork dominant colors cached by key (e.g. "album:{id}", "artist:{id}").
+    pub art_colors: std::collections::HashMap<String, egui::Color32>,
+    /// Artwork color requests currently in flight.
+    art_waiting: std::collections::HashSet<String>,
     /// Settings › Artist pages: the listener's own signature service, or empty.
     signature_api: String,
     /// Signatures already uploaded, by name key (`artist_signature::key`).
@@ -778,6 +782,8 @@ impl App {
             apple_missed: Default::default(),
             apple_motion: Default::default(),
             apple_waiting: Default::default(),
+            art_colors: Default::default(),
+            art_waiting: Default::default(),
             signature_api: get("signature_api").unwrap_or_default(),
             signature_tex: Default::default(),
             signature_images: Default::default(),
@@ -1070,13 +1076,35 @@ impl App {
             // The empty search is the page's landing state: nothing to ask for.
             Page::Search(q) if !q.trim().is_empty() && self.search.as_ref().is_none_or(|s| &s.query != q) => Some(Req::Search(q.clone())),
             Page::Album(id) | Page::Playlist(id) => {
-                self.visit_list(id, matches!(self.page, Page::Album(_)));
+                let is_album = matches!(self.page, Page::Album(_));
+                if is_album {
+                    let thumbs = self.opened(id).map(|o| o.c.thumbs.clone());
+                    if let Some(thumbs) = thumbs {
+                        self.request_album_art(id, &thumbs);
+                    }
+                }
+                self.visit_list(id, is_album);
                 None
             }
             Page::Artist(id) => {
-                if let Some((cached, at)) = self.artists_cache.get(id) {
+                let cached_artist = self.artists_cache.get(id).and_then(|(cached, at)| {
                     if at.elapsed() < std::time::Duration::from_secs(10 * 60) {
-                        self.artist = Some(cached.clone());
+                        Some(cached.clone())
+                    } else {
+                        None
+                    }
+                });
+                if let Some(cached) = cached_artist {
+                    let thumbs = if !cached.banner.is_empty() {
+                        cached.banner.clone()
+                    } else if !cached.photo.is_empty() {
+                        cached.photo.clone()
+                    } else {
+                        cached.albums.first().map(|c| c.thumbs.clone()).unwrap_or_default()
+                    };
+                    self.artist = Some(cached);
+                    if !thumbs.is_empty() {
+                        self.request_artist_art(id, &thumbs);
                     }
                 }
                 Some(Req::Artist(id.clone()))
@@ -1239,8 +1267,30 @@ impl App {
         self.dominant
     }
 
-    /// Target page background color: in dark mode, starts from the #111111 main dark base,
-    /// and when an album or song is active, slightly adjusts to a subtle ambient tint of its artwork/dominant color.
+    pub(super) fn request_album_art(&mut self, id: &str, thumbs: &[crate::model::Thumb]) {
+        let key = format!("album:{id}");
+        if self.art_colors.contains_key(&key) || self.art_waiting.contains(&key) {
+            return;
+        }
+        if let Some(t) = crate::model::pick_thumb(thumbs, 544).or_else(|| thumbs.first()) {
+            self.art_waiting.insert(key.clone());
+            self.backend.request(crate::backend::Req::Art { key, url: t.url.clone() });
+        }
+    }
+
+    pub(super) fn request_artist_art(&mut self, id: &str, thumbs: &[crate::model::Thumb]) {
+        let key = format!("artist:{id}");
+        if self.art_colors.contains_key(&key) || self.art_waiting.contains(&key) {
+            return;
+        }
+        if let Some(t) = thumbs.iter().max_by_key(|t| t.width).or_else(|| thumbs.first()) {
+            self.art_waiting.insert(key.clone());
+            self.backend.request(crate::backend::Req::Art { key, url: t.url.clone() });
+        }
+    }
+
+    /// Target page background color: in dark mode, starts from the #111111 main dark base.
+    /// Only Album and Artist pages tint to the subtle ambient tint of that specific page's artwork.
     pub fn page_target_color(&self) -> Color32 {
         if theme::light() {
             return theme::bg();
@@ -1249,8 +1299,15 @@ impl App {
         if self.look().id != crate::preset::DEFAULT_ID {
             return self.look().solid();
         }
-        if self.shown().is_some() || self.current().is_some() {
-            let dom = self.dominant;
+
+        // Only tint background for Artist and Album pages matching that page's artwork
+        let page_dom = match &self.page {
+            Page::Album(id) => self.art_colors.get(&format!("album:{id}")).copied(),
+            Page::Artist(id) => self.art_colors.get(&format!("artist:{id}")).copied(),
+            _ => None,
+        };
+
+        if let Some(dom) = page_dom {
             let (r, g, b) = (dom.r() as f32, dom.g() as f32, dom.b() as f32);
             let max_c = r.max(g).max(b);
             let min_c = r.min(g).min(b);

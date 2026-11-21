@@ -262,6 +262,16 @@ impl App {
                 if self.page == Page::Artist(a.id.clone()) {
                     self.loading = false;
                 }
+                let thumbs = if !a.banner.is_empty() {
+                    &a.banner
+                } else if !a.photo.is_empty() {
+                    &a.photo
+                } else {
+                    a.albums.first().map(|c| &c.thumbs[..]).unwrap_or(&[])
+                };
+                if !thumbs.is_empty() {
+                    self.request_artist_art(&a.id, thumbs);
+                }
                 let apple_key = format!("artist:{}", a.id);
                 let answered = self.apple_artists.get(&a.id).is_some_and(Option::is_some);
                 let cooling = self.apple_missed.get(&apple_key).is_some_and(|t| t.elapsed() < std::time::Duration::from_secs(120));
@@ -366,6 +376,8 @@ impl App {
                 }
             }
             Resp::Art { key, art } => {
+                self.art_waiting.remove(&key);
+                self.art_colors.insert(key.clone(), art.dominant);
                 if self.mix_hold().is_none() && self.current_id() == Some(key.as_str()) {
                     self.accent = art.accent;
                     self.dominant = art.dominant;

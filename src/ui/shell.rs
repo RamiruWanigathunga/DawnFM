@@ -157,8 +157,8 @@ pub fn background(app: &mut App, ui: &mut Ui, screen: Rect, now: f64, only: Opti
                 scale: (b.scale - 0.08).max(1.0) + if still { 0.0 } else { level.min(0.5) * 0.08 },
             },
         );
-    } else if mode == BgMode::Solid {
-        // Plain colour: nothing over it.
+    } else if mode == BgMode::Solid || look.id == crate::preset::DEFAULT_ID {
+        // Plain colour or custom ambient page colour: nothing over it.
     } else {
         painter.rect_filled(screen, win_r, look.solid());
     }
