@@ -134,14 +134,10 @@ jobs:
           {
             echo "Dawn FM is a fast, lightweight native YouTube Music player built in Rust."
             echo
-            echo "### macOS"
-            echo "The app is signed ad hoc, so macOS asks before the first launch: right-click Dawn FM and choose Open."
-            echo "- **Apple Silicon** (M1 and newer): \`arm64\` · **Intel**: \`x64\`"
-            echo "- \`.dmg\`: drag Dawn FM to Applications."
-            echo
-            echo "### Windows"
-            echo "- **Installer**: download \`DawnFM-${GITHUB_REF_NAME#v}-windows-x64-setup.exe\` and run setup."
-            echo "- **Portable**: download \`DawnFM-${GITHUB_REF_NAME#v}-windows-x64-portable.zip\`, extract anywhere, and run \`dawnfm.exe\`."
+            echo "### Windows Installation & SmartScreen"
+            echo "- **Installer**: Run \`DawnFM-${GITHUB_REF_NAME#v}-windows-x64-setup.exe\` to install."
+            echo "- **Portable**: Extract \`DawnFM-${GITHUB_REF_NAME#v}-windows-x64-portable.zip\` and run \`dawnfm.exe\`."
+            echo "- **If blocked by Windows SmartScreen**: Right-click the \`.exe\` or \`.zip\` → **Properties** → check **Unblock** at the bottom → click **OK**."
             echo
             echo "## Changes"
             if [ -n "$prev" ]; then

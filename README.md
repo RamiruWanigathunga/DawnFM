@@ -56,11 +56,11 @@
 ### macOS
 1. Download the latest `.dmg` from **[Releases](https://github.com/wenujacodes/DawnFM/releases/latest)**.
 2. Open the disk image and drag **Dawn FM** to `/Applications`.
-3. *First launch on macOS*: Right-click **Dawn FM** and choose **Open** (or run `xattr -dr com.apple.quarantine "/Applications/Dawn FM.app"` in Terminal).
 
 ### Windows
 - **Installer**: Download `DawnFM-2.4.3-windows-x64-setup.exe` from **[Releases](https://github.com/wenujacodes/DawnFM/releases/latest)** and run setup.
 - **Portable**: Download `DawnFM-2.4.3-windows-x64-portable.zip`, extract to any folder, and run `dawnfm.exe`.
+- **SmartScreen / Unknown Publisher**: If Windows Defender SmartScreen blocks installation or launch, right-click the downloaded `.exe` (or `.zip`) → **Properties** → check **Unblock** at the bottom → click **OK**.
 
 ## Building from source
 
