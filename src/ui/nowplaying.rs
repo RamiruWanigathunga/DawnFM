@@ -514,16 +514,6 @@ fn sleeve(app: &mut App, ui: &mut Ui, x0: f32, w: f32, info_y: f32, track: &crat
     let sr = if interactive { sr.on_hover_cursor(egui::CursorIcon::PointingHand) } else { sr };
     let sh = theme::anim_bool(ui.ctx(), sr.id.with("h"), interactive && sr.hovered(), 0.1);
     let pop = theme::anim_bool(ui.ctx(), ("liked", &heard.id), liked, 0.3);
-    // The same translucent disc as the ⋯ beside it, a little brighter once liked.
-    let disc = (0.09 + 0.07 * sh + 0.05 * pop).min(0.30);
-    if disc > 0.0 {
-        let star_fill = if bg_light {
-            Color32::from_rgba_premultiplied(240, 240, 244, (120.0 + 50.0 * sh) as u8)
-        } else {
-            theme::glass(disc)
-        };
-        ui.painter().circle_filled(star.center(), 15.0, star_fill);
-    }
     let base_star = if bg_light { Color32::from_rgb(0x18, 0x14, 0x1c) } else { Color32::WHITE };
     let dim = 0.85 + 0.15 * sh;
     let tint = theme::lerp_color(theme::with_alpha(base_star, dim), app.accent_color(), pop);
