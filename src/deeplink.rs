@@ -159,6 +159,8 @@ pub fn install() {
 mod win {
     use std::io::Write;
 
+    use crate::sync::MutexExt;
+
     use windows::Win32::Foundation::{CloseHandle, ERROR_PIPE_CONNECTED, HANDLE};
     use windows::Win32::Storage::FileSystem::{FILE_FLAG_FIRST_PIPE_INSTANCE, PIPE_ACCESS_INBOUND, ReadFile};
     use windows::Win32::System::Pipes::{

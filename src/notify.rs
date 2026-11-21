@@ -7,6 +7,7 @@
 //! macOS versions). The text goes in as script arguments, never into the script
 //! itself, so nothing in a title needs escaping. Failures are logged once.
 
+#[cfg_attr(not(target_os = "macos"), allow(unused_imports))]
 use std::sync::atomic::{AtomicBool, Ordering};
 
 /// Reads the title and the message from the arguments after the script.

@@ -4,7 +4,9 @@
 
 use std::sync::Mutex;
 
+#[cfg_attr(not(target_os = "macos"), allow(unused_imports))]
 use tray_icon::menu::accelerator::{Accelerator, Code, Modifiers};
+#[cfg_attr(not(target_os = "macos"), allow(unused_imports))]
 use tray_icon::menu::{AboutMetadata, Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu};
 
 use crate::sync::MutexExt;

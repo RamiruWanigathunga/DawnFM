@@ -828,18 +828,48 @@ fn without_counts(s: &str) -> String {
     s.split(" • ").filter(|p| !count(p)).collect::<Vec<_>>().join(" • ")
 }
 
-fn home_greeting() -> &'static str {
+#[cfg(windows)]
+fn local_hour() -> u32 {
+    #[repr(C)]
+    struct SystemTime {
+        w_year: u16,
+        w_month: u16,
+        w_day_of_week: u16,
+        w_day: u16,
+        w_hour: u16,
+        w_minute: u16,
+        w_second: u16,
+        w_milliseconds: u16,
+    }
+    unsafe extern "system" {
+        fn GetLocalTime(st: *mut SystemTime);
+    }
+    let mut st: SystemTime = unsafe { std::mem::zeroed() };
+    unsafe { GetLocalTime(&mut st) };
+    st.w_hour as u32
+}
+
+#[cfg(unix)]
+fn local_hour() -> u32 {
     let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
     let mut tm = std::mem::MaybeUninit::<libc::tm>::uninit();
     let time_t = now as libc::time_t;
-    let hour = unsafe {
+    unsafe {
         if !libc::localtime_r(&time_t, tm.as_mut_ptr()).is_null() {
-            tm.assume_init().tm_hour
+            tm.assume_init().tm_hour as u32
         } else {
             12
         }
-    };
-    match hour {
+    }
+}
+
+#[cfg(not(any(windows, unix)))]
+fn local_hour() -> u32 {
+    12
+}
+
+fn home_greeting() -> &'static str {
+    match local_hour() {
         5..=11 => "Good morning",
         12..=17 => "Good afternoon",
         _ => "Good evening",

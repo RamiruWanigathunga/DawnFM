@@ -63,6 +63,7 @@ async fn download(http: &reqwest::Client) -> anyhow::Result<bytes::Bytes> {
 fn install(bin: &Path, bytes: &[u8]) -> anyhow::Result<()> {
     let tmp = bin.with_extension("part");
     std::fs::write(&tmp, bytes)?;
+    #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o755))?;
