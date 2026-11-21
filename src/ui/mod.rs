@@ -1340,12 +1340,20 @@ impl App {
         Color32::from_rgb(ch(0, target.r()), ch(1, target.g()), ch(2, target.b()))
     }
 
-    /// Sidebar background fill: in dark mode, #222629 (RGB: 34, 38, 41).
-    pub fn sidebar_fill(&self, _ctx: &egui::Context, alpha: f32) -> Color32 {
+    /// Sidebar background fill: in dark mode, blends #222629 (RGB: 34, 38, 41)
+    /// to reflect the ambient page background color very slightly.
+    pub fn sidebar_fill(&self, ctx: &egui::Context, alpha: f32) -> Color32 {
         if theme::light() {
             theme::panel(alpha)
         } else {
-            theme::SIDEBAR_BG_DARK
+            let base = theme::SIDEBAR_BG_DARK;
+            let p_col = self.page_color(ctx);
+            let tinted = theme::lerp_color(base, p_col, 0.32);
+            if alpha < 1.0 {
+                theme::with_alpha(tinted, alpha)
+            } else {
+                tinted
+            }
         }
     }
 

@@ -134,7 +134,7 @@ pub fn background(app: &mut App, ui: &mut Ui, screen: Rect, now: f64, only: Opti
             ne: 0,
             se: 0,
         };
-        painter.rect_filled(side_rect, cr, theme::SIDEBAR_BG_DARK);
+        painter.rect_filled(side_rect, cr, app.sidebar_fill(ui.ctx(), 1.0));
     }
     let art = matches!(mode, BgMode::Kawarp | BgMode::CoverStatic | BgMode::CoverFullbleed);
     if let Some(bg) = app.bg.as_ref().filter(|_| art) {
