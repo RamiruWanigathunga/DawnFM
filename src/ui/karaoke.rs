@@ -1129,17 +1129,17 @@ impl View {
                     };
                     if let Some(a) = first_active {
                         if i == a + 1 {
-                            // Show the upcoming 1 line after active lyrics clearly; don't immediately hide it.
-                            t.0 = t.0.max(0.70);
-                            t.1 = (t.1 * 0.2).min(1.0);
+                            // Upcoming 1 line after active lyrics: keep it subtle and darker so it doesn't distract or point out.
+                            t.0 = t.0.clamp(0.28, 0.35);
+                            t.1 = (t.1 * 0.4).max(0.8).min(1.5);
                         } else if i + 1 == a {
-                            // Keep the line right after it has been sung clearly visible without blur.
-                            t.0 = t.0.max(0.65);
-                            t.1 = 0.0;
+                            // Keep the line right after it has been sung softly receding.
+                            t.0 = t.0.clamp(0.28, 0.32);
+                            t.1 = (t.1 * 0.4).max(0.8).min(1.5);
                         } else if i + 2 == a {
                             // Subtly show two lines ago as well.
-                            t.0 = t.0.max(0.35);
-                            t.1 = (t.1 * 0.3).min(1.5);
+                            t.0 = t.0.min(0.22);
+                            t.1 = (t.1 * 0.6).min(2.5);
                         }
                     }
                     t
@@ -1167,11 +1167,11 @@ impl View {
                 let dim = if sung_now || rel == 0 {
                     cfg.inactive_alpha
                 } else if rel == 1 {
-                    (cfg.upcoming_alpha).max(0.70)
+                    0.35
                 } else if rel == -1 {
-                    cfg.past_alpha.map_or(0.65, |p| p.max(0.65))
+                    0.32
                 } else if rel == -2 {
-                    cfg.past_alpha.map_or(0.35, |p| p.max(0.35))
+                    0.22
                 } else if past {
                     lerp(cfg.past_alpha.unwrap_or(upcoming), upcoming, reveal)
                 } else {
@@ -1183,10 +1183,14 @@ impl View {
                     BlurScope::Past => past,
                     BlurScope::Upcoming => !past || reveal > 0.0,
                 };
-                let target = if rel == 1 || rel == 0 || sung_now || rel == -1 {
+                let target = if rel == 0 || sung_now {
                     0.0
+                } else if rel == 1 {
+                    if cfg.blur > 0.0 && blur_on { (cfg.blur * 0.4).min(1.2) } else { 0.0 }
+                } else if rel == -1 {
+                    if cfg.blur > 0.0 && blur_on { (cfg.blur * 0.4).min(1.2) } else { 0.0 }
                 } else if rel == -2 {
-                    if cfg.blur > 0.0 && blur_on { (cfg.blur * 0.3).min(1.5) } else { 0.0 }
+                    if cfg.blur > 0.0 && blur_on { (cfg.blur * 0.6).min(2.0) } else { 0.0 }
                 } else if cfg.blur > 0.0 && blur_on {
                     (cfg.blur * (1.0 + 0.35 * (dist - 1.0).clamp(0.0, 3.0))).min(9.0)
                 } else {

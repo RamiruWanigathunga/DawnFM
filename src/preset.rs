@@ -174,7 +174,7 @@ impl Default for LyricStyle {
             line_gap: 0.6,
             anchor: 0.28,
             fill: Fill::Sweep,
-            active_alpha: 0.3,
+            active_alpha: 0.55,
             inactive_alpha: 0.3,
             falloff: 0.01,
             min_alpha: 0.25,
