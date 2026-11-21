@@ -538,6 +538,7 @@ mod tests {
     /// A fake bundle packed the way the release workflow packs it (`ditto` zip and
     /// `hdiutil` disk image), unpacked the way an update does.
     #[test]
+    #[cfg(target_os = "macos")]
     fn finds_the_app_in_release_downloads() {
         let root = std::env::temp_dir().join(format!("bitchord-update-test-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
