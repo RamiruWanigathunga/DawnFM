@@ -66,5 +66,7 @@
   "move_down": "Mover abajo",
   "remove_from_queue": "Eliminar de la cola",
   "view_queue": "Ver cola",
-  "toggle_queue": "Alternar cola"
+  "toggle_queue": "Alternar cola",
+  "full_screen": "Pantalla completa",
+  "exit_full_screen": "Salir de pantalla completa"
 }

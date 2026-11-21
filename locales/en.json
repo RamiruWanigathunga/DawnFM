@@ -66,5 +66,7 @@
   "move_down": "Move down",
   "remove_from_queue": "Remove from queue",
   "view_queue": "View queue",
-  "toggle_queue": "Toggle queue"
+  "toggle_queue": "Toggle queue",
+  "full_screen": "Full screen",
+  "exit_full_screen": "Exit full screen"
 }

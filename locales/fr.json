@@ -66,5 +66,7 @@
   "move_down": "Descendre",
   "remove_from_queue": "Retirer de la file",
   "view_queue": "Afficher la file",
-  "toggle_queue": "Basculer la file d'attente"
+  "toggle_queue": "Basculer la file d'attente",
+  "full_screen": "Plein écran",
+  "exit_full_screen": "Quitter le plein écran"
 }

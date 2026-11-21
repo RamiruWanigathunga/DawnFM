@@ -66,5 +66,7 @@
   "move_down": "下に移動",
   "remove_from_queue": "キューから削除",
   "view_queue": "キューを表示",
-  "toggle_queue": "キューを切り替え"
+  "toggle_queue": "キューを切り替え",
+  "full_screen": "全画面表示",
+  "exit_full_screen": "全画面表示を終了"
 }

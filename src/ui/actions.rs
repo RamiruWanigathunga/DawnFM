@@ -349,7 +349,8 @@ impl App {
             self.np_tab = NpTab::UpNext;
         }
         let is_fullscreen = self.fullscreen || ctx.input(|i| i.viewport().fullscreen.unwrap_or(false));
-        if full && self.np_open {
+        let fs_toggled = ctx.data_mut(|d| d.remove_temp::<bool>(egui::Id::unique("fullscreen-toggled"))).unwrap_or(false);
+        if (full && self.np_open) || fs_toggled {
             self.set_fullscreen(ctx, !is_fullscreen);
         }
         let in_search = self.search_focused || !self.search_text.is_empty() || self.search_drop.is_some();

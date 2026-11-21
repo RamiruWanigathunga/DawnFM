@@ -66,5 +66,7 @@
   "move_down": "Nach unten",
   "remove_from_queue": "Aus Warteschlange entfernen",
   "view_queue": "Warteschlange anzeigen",
-  "toggle_queue": "Warteschlange umschalten"
+  "toggle_queue": "Warteschlange umschalten",
+  "full_screen": "Vollbild",
+  "exit_full_screen": "Vollbildmodus beenden"
 }
