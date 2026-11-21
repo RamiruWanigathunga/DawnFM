@@ -55,10 +55,23 @@ pub fn galley_wrapped(
     width: f32,
     rows: usize,
 ) -> std::sync::Arc<egui::Galley> {
+    galley_wrapped_align(ui, text, font, color, width, rows, egui::Align::LEFT)
+}
+
+pub fn galley_wrapped_align(
+    ui: &Ui,
+    text: &str,
+    font: egui::FontId,
+    color: Color32,
+    width: f32,
+    rows: usize,
+    align: egui::Align,
+) -> std::sync::Arc<egui::Galley> {
     let mut job = egui::text::LayoutJob::simple(text.to_owned(), font.clone(), color, width.max(10.0));
     job.wrap.max_rows = rows;
     job.wrap.break_anywhere = false;
     job.wrap.overflow_character = Some('…');
+    job.halign = align;
     let g = ui.fonts_mut(|f| f.layout_job(job.clone()));
     if !crate::bidi::has_rtl(text) {
         return g;
@@ -78,7 +91,7 @@ pub fn galley_wrapped(
         rows_text.push(s.trim_end().to_owned());
     }
     let mut job = crate::bidi::job(&rows_text.join("\n"), font, color);
-    job.halign = g.job.halign;
+    job.halign = align;
     ui.fonts_mut(|f| f.layout_job(job))
 }
 
@@ -612,11 +625,25 @@ pub fn card(ui: &mut Ui, c: &Card, width: f32, liked: bool, acts: &mut Vec<Actio
         play_hit = p.clicked();
     }
     let tcolor = theme::text();
-    let title = galley_wrapped(ui, &c.title, theme::semibold(14.5), tcolor, width, 2);
+    let align = if c.round { egui::Align::Center } else { egui::Align::LEFT };
+    let title = galley_wrapped_align(ui, &c.title, theme::semibold(14.5), tcolor, width, 2, align);
     let title_h = title.size().y;
-    ui.painter().galley(pos2(rect.left(), img.bottom() + 10.0), title, tcolor);
+    let title_pos = if c.round {
+        pos2(rect.center().x, img.bottom() + 10.0)
+    } else {
+        pos2(rect.left(), img.bottom() + 10.0)
+    };
+    ui.painter().galley(title_pos, title, tcolor);
     let sub_y = img.bottom() + 14.0 + title_h;
-    linked_text(ui, pos2(rect.left(), sub_y), &card_subtitle(&c.subtitle), &c.links, theme::regular(13.0), theme::text_dim(), width, acts);
+    let sub_text = card_subtitle(&c.subtitle);
+    if !sub_text.is_empty() {
+        if c.round {
+            let sub = galley_wrapped_align(ui, &sub_text, theme::regular(13.0), theme::text_dim(), width, 1, egui::Align::Center);
+            ui.painter().galley(pos2(rect.center().x, sub_y), sub, theme::text_dim());
+        } else {
+            linked_text(ui, pos2(rect.left(), sub_y), &sub_text, &c.links, theme::regular(13.0), theme::text_dim(), width, acts);
+        }
+    }
     // Right-click anywhere on the tile opens its menu.
     egui::Popup::context_menu(&resp).show(|ui| card_menu_contents(ui, c, liked, acts));
 
@@ -1454,8 +1481,12 @@ pub fn skeleton_grid(ui: &mut Ui, time: f64, card: f32, circle: bool, count: usi
         for _ in 0..count {
             let (r, _) = ui.allocate_exact_size(vec2(card, card + 48.0), Sense::hover());
             shimmer(ui, Rect::from_min_size(r.min, Vec2::splat(card)), radius);
-            shimmer(ui, Rect::from_min_size(r.min + vec2(0.0, card + 10.0), vec2(card * 0.75, 12.0)), 4.0);
-            shimmer(ui, Rect::from_min_size(r.min + vec2(0.0, card + 28.0), vec2(card * 0.45, 10.0)), 4.0);
+            let title_w = card * 0.70;
+            let title_x = if circle { (card - title_w) / 2.0 } else { 0.0 };
+            shimmer(ui, Rect::from_min_size(r.min + vec2(title_x, card + 10.0), vec2(title_w, 12.0)), 4.0);
+            if !circle {
+                shimmer(ui, Rect::from_min_size(r.min + vec2(0.0, card + 28.0), vec2(card * 0.45, 10.0)), 4.0);
+            }
         }
     });
     if ui.is_rect_visible(Rect::from_x_y_ranges(ui.max_rect().x_range(), top..=ui.cursor().top())) {
