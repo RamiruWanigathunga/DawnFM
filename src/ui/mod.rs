@@ -1239,13 +1239,13 @@ impl App {
         self.dominant
     }
 
-    /// Target page background color: in dark mode, starts from the #111111 main dark base,
+    /// Target page background color: in dark mode, starts from the #1E1F22 main dark base,
     /// and when an album or song is active, slightly adjusts to a subtle ambient tint of its artwork/dominant color.
     pub fn page_target_color(&self) -> Color32 {
         if theme::light() {
             return theme::bg();
         }
-        let base_dark = Color32::from_rgb(0x11, 0x11, 0x11);
+        let base_dark = Color32::from_rgb(0x1E, 0x1F, 0x22);
         if self.look().id != crate::preset::DEFAULT_ID {
             return self.look().solid();
         }
@@ -1263,9 +1263,9 @@ impl App {
                 let norm_g = (g * scale).min(255.0);
                 let norm_b = (b * scale).min(255.0);
                 let blend = (0.24 * (sat * 1.5).min(1.0)).clamp(0.0, 0.40);
-                let t_r = (17.0 * (1.0 - blend) + norm_r * blend).round() as u8;
-                let t_g = (17.0 * (1.0 - blend) + norm_g * blend).round() as u8;
-                let t_b = (17.0 * (1.0 - blend) + norm_b * blend).round() as u8;
+                let t_r = (30.0 * (1.0 - blend) + norm_r * blend).round() as u8;
+                let t_g = (31.0 * (1.0 - blend) + norm_g * blend).round() as u8;
+                let t_b = (34.0 * (1.0 - blend) + norm_b * blend).round() as u8;
                 Color32::from_rgb(t_r, t_g, t_b)
             }
         } else {
@@ -1281,6 +1281,15 @@ impl App {
         let target = self.page_target_color();
         let ch = |i: usize, val: u8| theme::anim(ctx, ("page-ambient-ch", i), f32::from(val), 0.8).round() as u8;
         Color32::from_rgb(ch(0, target.r()), ch(1, target.g()), ch(2, target.b()))
+    }
+
+    /// Sidebar background fill: in dark mode, #0F0E10 (RGB: 15, 14, 16).
+    pub fn sidebar_fill(&self, _ctx: &egui::Context, alpha: f32) -> Color32 {
+        if theme::light() {
+            theme::panel(alpha)
+        } else {
+            theme::SIDEBAR_BG_DARK
+        }
     }
 
     /// Background fill for the side lyrics panel and queue drawer, matching the ambient
@@ -1565,12 +1574,13 @@ impl eframe::App for App {
             // The logo's row is 32 points tall.
             // The macOS window buttons sit over the sidebar's top-left: start below them.
             let side_margin = egui::Margin { left: 14, right: 14, top: titlebar::top_margin(16, 32.0).max(titlebar::MAC_BUTTONS_CLEAR), bottom: 16 };
+            let side_fill = self.sidebar_fill(&ctx, side_alpha);
             let side_frame = match app_style.sidebar {
-                SidebarStyle::Glass => egui::Frame::new().fill(theme::panel(side_alpha)).inner_margin(side_margin),
+                SidebarStyle::Glass => egui::Frame::new().fill(side_fill).inner_margin(side_margin),
                 SidebarStyle::Transparent => egui::Frame::new().inner_margin(side_margin),
-                SidebarStyle::Solid => egui::Frame::new().fill(look.solid()).inner_margin(side_margin),
+                SidebarStyle::Solid => egui::Frame::new().fill(side_fill).inner_margin(side_margin),
                 SidebarStyle::Floating => egui::Frame::new()
-                    .fill(theme::panel(side_alpha.max(0.3)))
+                    .fill(side_fill)
                     .stroke(egui::Stroke::new(1.0, theme::glass(0.08)))
                     .corner_radius(egui::CornerRadius::same(theme::panel_radius().max(12)))
                     .outer_margin(egui::Margin { left: 10, right: 4, top: 10, bottom: 10 })

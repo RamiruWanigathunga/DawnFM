@@ -126,6 +126,16 @@ pub fn background(app: &mut App, ui: &mut Ui, screen: Rect, now: f64, only: Opti
         0.0
     };
     painter.rect_filled(screen, win_r, app.page_color(ui.ctx()));
+    if !light && !app.fullscreen && only.is_none() {
+        let side_rect = Rect::from_min_max(screen.min, pos2(screen.left() + SIDEBAR_W, screen.bottom()));
+        let cr = egui::CornerRadius {
+            nw: win_r as u8,
+            sw: win_r as u8,
+            ne: 0,
+            se: 0,
+        };
+        painter.rect_filled(side_rect, cr, theme::SIDEBAR_BG_DARK);
+    }
     let art = matches!(mode, BgMode::Kawarp | BgMode::CoverStatic | BgMode::CoverFullbleed);
     if let Some(bg) = app.bg.as_ref().filter(|_| art) {
         let blend = theme::ease_in_out(((now - app.art_changed) / 1.4) as f32);

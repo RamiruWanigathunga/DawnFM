@@ -586,7 +586,7 @@ pub fn collection_genre(c: &crate::backend::Collection) -> &'static str {
 pub fn paint_ambient_glow(painter: &egui::Painter, rect: Rect, color: Color32) {
     let center = pos2(rect.left() + rect.width() * 0.35, rect.top() + rect.height() * 0.32);
     let radius = rect.width().max(rect.height()) * 0.65;
-    let dark_bg = Color32::from_rgb(0x11, 0x11, 0x11);
+    let dark_bg = Color32::from_rgb(0x1E, 0x1F, 0x22);
     let mut mesh = egui::Mesh::default();
     let c_center = theme::with_alpha(color, 0.45);
     let c_edge = Color32::TRANSPARENT;
