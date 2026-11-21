@@ -59,9 +59,63 @@ jobs:
           name: macos-${{ matrix.arch }}
           path: dist/*
 
+  build-windows:
+    name: Build Windows (x64)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release-windows-x64
+
+      - name: Work out the version
+        id: version
+        shell: bash
+        run: echo "value=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Test
+        run: cargo test --locked --release
+
+      - name: Build
+        run: cargo build --locked --release
+
+      - name: Package installer with Inno Setup
+        shell: pwsh
+        run: |
+          ISCC.exe installer/dawnfm.iss
+
+      - name: Package Windows artifacts
+        shell: pwsh
+        run: |
+          $v = "${{ steps.version.outputs.value }}"
+          New-Item -ItemType Directory -Force dist | Out-Null
+
+          # Rename Inno Setup output to updater convention
+          if (Test-Path "dist/dawnfm-setup-v*.exe") {
+            Copy-Item "dist/dawnfm-setup-v*.exe" "dist/DawnFM-$v-windows-x64-setup.exe"
+          }
+
+          # Portable bundle
+          $portableFiles = @("target/release/dawnfm.exe", "installer/portable.txt", "README.md", "LICENSE")
+          if (Test-Path "target/release/WebView2Loader.dll") {
+            $portableFiles += "target/release/WebView2Loader.dll"
+          }
+          Compress-Archive -Path $portableFiles -DestinationPath "dist/DawnFM-$v-windows-x64-portable.zip"
+          Get-ChildItem dist | Format-Table Name, Length
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: windows-x64
+          path: dist/*
+
   release:
     name: Publish the release
-    needs: build
+    needs: [build, build-windows]
     runs-on: ubuntu-latest
     steps:
       # The full history, for the list of changes since the last tag.
@@ -78,10 +132,16 @@ jobs:
         run: |
           prev=$(git describe --tags --abbrev=0 "$GITHUB_REF_NAME^" 2>/dev/null || true)
           {
-            echo "The app is signed ad hoc, so macOS asks before the first launch: right-click Dawn FM and choose Open."
+            echo "Dawn FM is a fast, lightweight native YouTube Music player built in Rust."
             echo
+            echo "### macOS"
+            echo "The app is signed ad hoc, so macOS asks before the first launch: right-click Dawn FM and choose Open."
             echo "- **Apple Silicon** (M1 and newer): \`arm64\` · **Intel**: \`x64\`"
             echo "- \`.dmg\`: drag Dawn FM to Applications."
+            echo
+            echo "### Windows"
+            echo "- **Installer**: download \`DawnFM-${GITHUB_REF_NAME#v}-windows-x64-setup.exe\` and run setup."
+            echo "- **Portable**: download \`DawnFM-${GITHUB_REF_NAME#v}-windows-x64-portable.zip\`, extract anywhere, and run \`dawnfm.exe\`."
             echo
             echo "## Changes"
             if [ -n "$prev" ]; then

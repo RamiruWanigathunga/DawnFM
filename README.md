@@ -8,7 +8,7 @@
     <a href="https://github.com/wenujacodes/DawnFM/releases/latest"><img src="https://img.shields.io/github/v/release/wenujacodes/DawnFM?style=flat-square&color=a855f7&labelColor=0d1117" alt="Latest release"></a>
     <a href="https://github.com/wenujacodes/DawnFM/releases"><img src="https://img.shields.io/github/downloads/wenujacodes/DawnFM/total?style=flat-square&color=a855f7&labelColor=0d1117" alt="All-time Downloads"></a>
     <img src="https://img.shields.io/badge/status-active%20development-22c55e?style=flat-square&labelColor=0d1117" alt="Active Development">
-    <img src="https://img.shields.io/badge/platform-macOS-333?style=flat-square&labelColor=0d1117" alt="Platforms">
+    <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows-333?style=flat-square&labelColor=0d1117" alt="Platforms">
     <a href="LICENSE"><img src="https://img.shields.io/github/license/wenujacodes/DawnFM?style=flat-square&color=333&labelColor=0d1117" alt="License: GPL-3.0"></a>
   </p>
 
@@ -49,13 +49,18 @@
 
 - **Zero Telemetry**: No analytics, tracking scripts, or user profiling.
 - **Direct Connections**: All network requests connect directly to YouTube Music and configured sources.
-- **Encrypted Storage**: Credentials are securely saved directly in macOS Keychain.
+- **Encrypted Storage**: Credentials are securely saved directly in macOS Keychain or Windows Credential Manager.
 
 ## Installation
 
+### macOS
 1. Download the latest `.dmg` from **[Releases](https://github.com/wenujacodes/DawnFM/releases/latest)**.
 2. Open the disk image and drag **Dawn FM** to `/Applications`.
 3. *First launch on macOS*: Right-click **Dawn FM** and choose **Open** (or run `xattr -dr com.apple.quarantine "/Applications/Dawn FM.app"` in Terminal).
+
+### Windows
+- **Installer**: Download `DawnFM-2.4.3-windows-x64-setup.exe` from **[Releases](https://github.com/wenujacodes/DawnFM/releases/latest)** and run setup.
+- **Portable**: Download `DawnFM-2.4.3-windows-x64-portable.zip`, extract to any folder, and run `dawnfm.exe`.
 
 ## Building from source
 
@@ -65,7 +70,7 @@ Requires the [Rust toolchain](https://rustup.rs/):
 git clone https://github.com/wenujacodes/DawnFM.git
 cd DawnFM
 cargo build --release
-sh macos/bundle.sh target/release/dawnfm 2.4.2 out
+sh macos/bundle.sh target/release/dawnfm 2.4.3 out
 ```
 
 The signed bundle will be located at `out/Dawn FM.app`.
