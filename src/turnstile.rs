@@ -37,7 +37,7 @@ window.addEventListener('message', function (e) {
 (function() {
   function applyTheme() {
     if (document.body) {
-      document.body.style.backgroundColor = '#1E1F22';
+      document.body.style.backgroundColor = '#111111';
       document.body.style.color = '#FFFFFF';
     }
   }

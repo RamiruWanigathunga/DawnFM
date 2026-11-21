@@ -1239,13 +1239,13 @@ impl App {
         self.dominant
     }
 
-    /// Target page background color: in dark mode, starts from the #1E1F22 main dark base,
+    /// Target page background color: in dark mode, starts from the #111111 main dark base,
     /// and when an album or song is active, slightly adjusts to a subtle ambient tint of its artwork/dominant color.
     pub fn page_target_color(&self) -> Color32 {
         if theme::light() {
             return theme::bg();
         }
-        let base_dark = Color32::from_rgb(0x1E, 0x1F, 0x22);
+        let base_dark = Color32::from_rgb(0x11, 0x11, 0x11);
         if self.look().id != crate::preset::DEFAULT_ID {
             return self.look().solid();
         }
@@ -1263,9 +1263,9 @@ impl App {
                 let norm_g = (g * scale).min(255.0);
                 let norm_b = (b * scale).min(255.0);
                 let blend = (0.24 * (sat * 1.5).min(1.0)).clamp(0.0, 0.40);
-                let t_r = (30.0 * (1.0 - blend) + norm_r * blend).round() as u8;
-                let t_g = (31.0 * (1.0 - blend) + norm_g * blend).round() as u8;
-                let t_b = (34.0 * (1.0 - blend) + norm_b * blend).round() as u8;
+                let t_r = (17.0 * (1.0 - blend) + norm_r * blend).round() as u8;
+                let t_g = (17.0 * (1.0 - blend) + norm_g * blend).round() as u8;
+                let t_b = (17.0 * (1.0 - blend) + norm_b * blend).round() as u8;
                 Color32::from_rgb(t_r, t_g, t_b)
             }
         } else {

@@ -8,7 +8,7 @@ use egui::{Color32, FontData, FontDefinitions, FontFamily, FontId};
 // ------------------------------------------------------------------ colours
 
 /// Base surface under the animated background (seen while it fades in).
-const BG: Color32 = Color32::from_rgb(0x1E, 0x1F, 0x22);
+const BG: Color32 = Color32::from_rgb(0x11, 0x11, 0x11);
 /// Sidebar surface colour in dark mode: #0F0E10 (RGB: 15, 14, 16).
 pub const SIDEBAR_BG_DARK: Color32 = Color32::from_rgb(0x0F, 0x0E, 0x10);
 const TEXT: Color32 = Color32::from_rgb(242, 240, 245);
@@ -70,13 +70,13 @@ pub fn menu_fill() -> Color32 {
     if light() {
         Color32::from_rgba_premultiplied(246, 246, 248, 225)
     } else {
-        Color32::from_rgba_premultiplied(0x1E, 0x1F, 0x22, 220)
+        Color32::from_rgba_premultiplied(0x11, 0x11, 0x11, 220)
     }
 }
 
 /// Dialogs and cards that float over the page.
 pub fn surface_fill() -> Color32 {
-    if light() { Color32::from_rgb(252, 251, 253) } else { Color32::from_rgb(0x1E, 0x1F, 0x22) }
+    if light() { Color32::from_rgb(252, 251, 253) } else { Color32::from_rgb(0x11, 0x11, 0x11) }
 }
 
 /// Theme preset multiplier for every glass surface (f32 bits; 1.0 by default).
