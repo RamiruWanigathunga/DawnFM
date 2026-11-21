@@ -396,6 +396,10 @@ impl App {
                 match info {
                     Some(artwork) => {
                         self.apple_missed.remove(&key);
+                        if let Some(logo) = &artwork.logo {
+                            let prefetch_url = logo.at_height(144);
+                            crate::images::prefetch_thumbs(&self.backend, vec![prefetch_url]);
+                        }
                         self.apple_artists.insert(id, Some(artwork));
                     }
                     None => {

@@ -300,6 +300,7 @@ fn placeholder_artist(app: &mut App, ui: &mut Ui, now: f64) {
             }
         });
     });
+    ui.ctx().request_repaint_after(std::time::Duration::from_millis(16));
 }
 
 /// Search loading skeleton: top result card on the left with top songs on the right,
@@ -1417,7 +1418,8 @@ pub fn collection(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
 // ------------------------------------------------------------------ artist
 
 /// Apple's wordmark for the artist, bottom-left at `base`, no wider than `max_w`.
-fn wordmark(ui: &Ui, base: egui::Pos2, logo: &crate::apple::LogoSrc, max_w: f32) -> bool {
+/// Returns the opacity (0.0..=1.0) if ready/rendering, or None if pending.
+fn wordmark(ui: &Ui, base: egui::Pos2, logo: &crate::apple::LogoSrc, max_w: f32) -> Option<f32> {
     let aspect = logo.w.max(1) as f32 / logo.h.max(1) as f32;
     let mut size = vec2(72.0 * aspect, 72.0);
     if size.x > max_w {
@@ -1426,8 +1428,32 @@ fn wordmark(ui: &Ui, base: egui::Pos2, logo: &crate::apple::LogoSrc, max_w: f32)
     let url = logo.at_height((size.y * 2.0) as u32);
     let rect = Rect::from_min_size(pos2(base.x, base.y - 40.0 - size.y), size);
     let uv = Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0));
-    widgets::paint_remote(ui, &url, rect, 0.0, uv, theme::text());
-    true
+    let ctx = ui.ctx();
+    match egui::Image::new(&url).load_for_size(ctx, rect.size()) {
+        Ok(egui::load::TexturePoll::Ready { texture }) => {
+            const LOGO_FADE: f64 = 0.12;
+            let now = ctx.input(|i| i.time);
+            let id = egui::Id::unique(("logo-fade", &url));
+            let a = match ctx.data(|d| d.get_temp::<Option<f64>>(id)) {
+                Some(Some(t0)) if now - t0 < LOGO_FADE => ((now - t0) / LOGO_FADE) as f32,
+                Some(None) => {
+                    ctx.data_mut(|d| d.insert_temp(id, Some(now)));
+                    0.0
+                }
+                _ => 1.0,
+            };
+            if a < 1.0 {
+                super::animate(ctx);
+            }
+            let alpha = theme::ease_out(a);
+            egui::Image::from_texture(texture)
+                .uv(uv)
+                .tint(theme::text().gamma_multiply(alpha))
+                .paint_at(ui, rect);
+            Some(alpha)
+        }
+        _ => None,
+    }
 }
 
 fn artist_latest_release_card(ui: &mut Ui, a: &crate::backend::ArtistPage, acts: &mut Vec<Action>, width: f32) {
@@ -1728,13 +1754,20 @@ pub fn artist(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
         }
     }
 
-    // Artist name: show special Apple wordmark logo if available, otherwise large bold typography
+    // Artist name: show special Apple wordmark logo if available and ready, otherwise keep clean bold typography
     let has_logo = apple.as_ref().and_then(|x| x.logo.as_ref()).is_some();
-    if let Some(logo) = apple.as_ref().and_then(|x| x.logo.as_ref()) {
+    let name_pos = pos2(base_x, btn_y - 54.0);
+    let logo_alpha = apple.as_ref().and_then(|x| x.logo.as_ref()).and_then(|logo| {
         let logo_base = hero.left_bottom() + vec2(28.0, -54.0);
-        wordmark(ui, logo_base, logo, w * 0.62);
+        wordmark(ui, logo_base, logo, w * 0.62)
+    });
+
+    if let Some(alpha) = logo_alpha {
+        if alpha < 1.0 {
+            let text_col = theme::text().gamma_multiply(1.0 - alpha);
+            ui.painter().text(name_pos, Align2::LEFT_BOTTOM, &name, theme::bold(52.0), text_col);
+        }
     } else {
-        let name_pos = pos2(base_x, btn_y - 54.0);
         ui.painter().text(name_pos, Align2::LEFT_BOTTOM, &name, theme::bold(52.0), theme::text());
     }
     // Monthly audience and subscribers, as YouTube Music writes them.

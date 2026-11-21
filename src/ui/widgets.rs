@@ -1311,11 +1311,11 @@ pub fn h_scroll<R>(ui: &mut Ui, id: &str, nudge: i32, count: usize, item_width: 
 
 /// The skeleton's light band sweeping across `r`, for anything still loading.
 pub fn shimmer_band(ui: &Ui, r: Rect, radius: f32, time: f64) {
-    let phase = ((time * 0.8) % 1.6) as f32 - 0.3;
-    let x = r.left() + (r.width() + 400.0) * phase - 200.0;
-    let band = Rect::from_min_max(pos2((x - 120.0).max(r.left()), r.top()), pos2((x + 120.0).min(r.right()), r.bottom()));
+    let phase = ((time * 1.3) % 1.5) as f32 - 0.25;
+    let x = r.left() + (r.width() + 300.0) * phase - 150.0;
+    let band = Rect::from_min_max(pos2((x - 70.0).max(r.left()), r.top()), pos2((x + 70.0).min(r.right()), r.bottom()));
     if band.width() > 0.0 {
-        ui.painter().rect_filled(band, radius, theme::glass(0.04));
+        ui.painter().rect_filled(band, radius, theme::glass(0.025));
     }
 }
 
@@ -1335,7 +1335,7 @@ fn own_art<'a>(ctx: &egui::Context, url: &'a str) -> &'a str {
 }
 
 pub fn paint_remote(ui: &Ui, url: &str, rect: Rect, radius: f32, uv: Rect, tint: Color32) {
-    const FADE: f64 = 0.22;
+    const FADE: f64 = 0.14;
     let ctx = ui.ctx();
     let url = own_art(ctx, url);
     let now = ctx.input(|i| i.time);
@@ -1359,7 +1359,7 @@ pub fn paint_remote(ui: &Ui, url: &str, rect: Rect, radius: f32, uv: Rect, tint:
         Ok(egui::load::TexturePoll::Pending { .. }) => {
             ctx.data_mut(|d| d.insert_temp::<Option<f64>>(id, None));
             shimmer_band(ui, rect, radius, now);
-            ctx.request_repaint_after(std::time::Duration::from_millis(66));
+            ctx.request_repaint_after(std::time::Duration::from_millis(16));
         }
         // A failed image keeps its plain placeholder.
         Err(_) => {}
@@ -1406,7 +1406,7 @@ pub fn skeleton_rows(ui: &mut Ui, time: f64, rows: usize) {
             ui.painter().rect_filled(b, radius, theme::glass(0.06));
             shimmer_band(ui, b, radius, time);
         }
-        ui.ctx().request_repaint_after(std::time::Duration::from_millis(66));
+        ui.ctx().request_repaint_after(std::time::Duration::from_millis(16));
     }
 }
 
@@ -1431,9 +1431,9 @@ pub fn skeleton(ui: &mut Ui, time: f64, rows: usize, card: f32) {
             }
         });
     }
-    // The shimmer needs frames only while it's on screen, and 15 fps is plenty.
+    // Repaint smoothly at 60 fps while on screen
     if ui.is_rect_visible(Rect::from_x_y_ranges(ui.max_rect().x_range(), top..=ui.cursor().top())) {
-        ui.ctx().request_repaint_after(std::time::Duration::from_millis(66));
+        ui.ctx().request_repaint_after(std::time::Duration::from_millis(16));
     }
 }
 
@@ -1455,7 +1455,7 @@ pub fn skeleton_grid(ui: &mut Ui, time: f64, card: f32, circle: bool, count: usi
         }
     });
     if ui.is_rect_visible(Rect::from_x_y_ranges(ui.max_rect().x_range(), top..=ui.cursor().top())) {
-        ui.ctx().request_repaint_after(std::time::Duration::from_millis(66));
+        ui.ctx().request_repaint_after(std::time::Duration::from_millis(16));
     }
 }
 
