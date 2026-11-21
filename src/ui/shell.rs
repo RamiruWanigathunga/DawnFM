@@ -846,6 +846,21 @@ pub fn player_bar(app: &mut App, ui: &mut Ui, now: f64, _frosted: bool) {
         } else {
             theme::lerp_color(app.page_color(&ctx), Color32::WHITE, 0.18)
         };
+
+        // Realistic soft drop shadow under the floating controller bar
+        let shadow_ambient = if theme::light() {
+            egui::epaint::Shadow { offset: [0, 8], blur: 32, spread: 2, color: Color32::from_black_alpha(40) }
+        } else {
+            egui::epaint::Shadow { offset: [0, 8], blur: 32, spread: 2, color: Color32::from_black_alpha(150) }
+        };
+        let shadow_contact = if theme::light() {
+            egui::epaint::Shadow { offset: [0, 2], blur: 8, spread: 0, color: Color32::from_black_alpha(25) }
+        } else {
+            egui::epaint::Shadow { offset: [0, 2], blur: 8, spread: 0, color: Color32::from_black_alpha(90) }
+        };
+        ui.painter().add(shadow_ambient.as_shape(cap, egui::CornerRadius::same(radius as u8)));
+        ui.painter().add(shadow_contact.as_shape(cap, egui::CornerRadius::same(radius as u8)));
+
         ui.painter().rect_filled(cap, radius, fill);
         ui.painter().rect_stroke(cap, radius, egui::Stroke::new(1.0, stroke_col), egui::StrokeKind::Inside);
 
