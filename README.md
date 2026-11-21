@@ -6,6 +6,7 @@
 
   <p>
     <a href="https://github.com/wenujacodes/DawnFM/releases/latest"><img src="https://img.shields.io/github/v/release/wenujacodes/DawnFM?style=flat-square&color=a855f7&labelColor=0d1117" alt="Latest release"></a>
+    <a href="https://github.com/wenujacodes/DawnFM/releases"><img src="https://img.shields.io/github/downloads/wenujacodes/DawnFM/total?style=flat-square&color=a855f7&labelColor=0d1117" alt="All-time Downloads"></a>
     <img src="https://img.shields.io/badge/status-active%20development-22c55e?style=flat-square&labelColor=0d1117" alt="Active Development">
     <img src="https://img.shields.io/badge/platform-macOS-333?style=flat-square&labelColor=0d1117" alt="Platforms">
     <a href="LICENSE"><img src="https://img.shields.io/github/license/wenujacodes/DawnFM?style=flat-square&color=333&labelColor=0d1117" alt="License: GPL-3.0"></a>
