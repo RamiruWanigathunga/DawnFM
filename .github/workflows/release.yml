@@ -84,7 +84,11 @@ jobs:
             echo "- \`.dmg\`: drag Dawn FM to Applications."
             echo
             echo "## Changes"
-            if [ -n "$prev" ]; then git log --no-merges --pretty='- %s' "$prev..$GITHUB_REF_NAME"; else echo "- First release"; fi
+            if [ -n "$prev" ]; then
+              git log --no-merges --pretty='- %s' "$prev..$GITHUB_REF_NAME" | grep -v -E "^- (build:|Bump version)" || echo "- Bug fixes and improvements"
+            else
+              echo "- First release"
+            fi
           } > notes.md
           cat notes.md
 
