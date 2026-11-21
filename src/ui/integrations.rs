@@ -226,19 +226,27 @@ impl App {
     /// Close the app for real, even with "Close to tray" on.
     pub(super) fn quit(&mut self, ctx: &egui::Context) {
         crate::dock::stop_activity();
+        self.audio.send(crate::audio::AudioCmd::Stop);
         self.exiting = true;
         ctx.send_viewport_cmd(egui::ViewportCommand::Close);
     }
 
-    /// Clicking the window close button hides the window to the background
+    /// On macOS, clicking the window close button hides the window to the background
     /// like native apps (e.g. Apple Music / Spotify), keeping playback alive.
-    /// Use Quit from the menu to close the app for real.
+    /// On Windows and other non-macOS platforms, closing the window quits the application.
     pub(super) fn tray_window(&mut self, ctx: &egui::Context) {
         let close_requested = ctx.input(|i| i.viewport().close_requested());
         if close_requested && !self.exiting {
-            ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
-            ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
-            self.window_hidden = true;
+            #[cfg(target_os = "macos")]
+            {
+                ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+                ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+                self.window_hidden = true;
+            }
+            #[cfg(not(target_os = "macos"))]
+            {
+                self.quit(ctx);
+            }
         }
     }
 

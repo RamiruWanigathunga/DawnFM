@@ -1845,6 +1845,8 @@ impl eframe::App for App {
     }
 
     fn on_exit(&mut self, gl: Option<&eframe::glow::Context>) {
+        self.audio.send(crate::audio::AudioCmd::Stop);
+        crate::dock::stop_activity();
         if let (Some(bg), Some(gl)) = (&self.bg, gl) {
             bg.destroy(gl);
         }
