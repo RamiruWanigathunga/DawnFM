@@ -1283,7 +1283,7 @@ impl App {
         Color32::from_rgb(ch(0, target.r()), ch(1, target.g()), ch(2, target.b()))
     }
 
-    /// Sidebar background fill: in dark mode, #0F0E10 (RGB: 15, 14, 16).
+    /// Sidebar background fill: in dark mode, #222629 (RGB: 34, 38, 41).
     pub fn sidebar_fill(&self, _ctx: &egui::Context, alpha: f32) -> Color32 {
         if theme::light() {
             theme::panel(alpha)

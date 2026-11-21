@@ -9,8 +9,8 @@ use egui::{Color32, FontData, FontDefinitions, FontFamily, FontId};
 
 /// Base surface under the animated background (seen while it fades in).
 const BG: Color32 = Color32::from_rgb(0x11, 0x11, 0x11);
-/// Sidebar surface colour in dark mode: #0F0E10 (RGB: 15, 14, 16).
-pub const SIDEBAR_BG_DARK: Color32 = Color32::from_rgb(0x0F, 0x0E, 0x10);
+/// Sidebar surface colour in dark mode: #222629 (RGB: 34, 38, 41).
+pub const SIDEBAR_BG_DARK: Color32 = Color32::from_rgb(0x22, 0x26, 0x29);
 const TEXT: Color32 = Color32::from_rgb(242, 240, 245);
 const TEXT_DIM: Color32 = Color32::from_rgb(178, 172, 186);
 const TEXT_FAINT: Color32 = Color32::from_rgb(130, 124, 140);
