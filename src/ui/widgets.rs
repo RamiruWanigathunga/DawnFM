@@ -129,7 +129,11 @@ pub fn linked_text(
         let resp = ui.interact(r, ui.scope_id().with(("artist-link", text, i, pos.x as i32, pos.y as i32)), Sense::click());
         let resp = named(resp, &l.name).on_hover_cursor(egui::CursorIcon::PointingHand);
         if resp.hovered() {
-            let hover_color = if theme::light() { Color32::BLACK } else { Color32::WHITE };
+            let hover_color = if (0.299 * color.r() as f32 + 0.587 * color.g() as f32 + 0.114 * color.b() as f32) < 128.0 {
+                Color32::BLACK
+            } else {
+                Color32::WHITE
+            };
             let hg = ui.painter().layout_no_wrap(name.to_string(), font.clone(), hover_color);
             ui.painter().galley(pos2(pos.x + x0, pos.y), hg, hover_color);
         }

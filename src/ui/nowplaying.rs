@@ -465,14 +465,14 @@ fn sleeve(app: &mut App, ui: &mut Ui, x0: f32, w: f32, info_y: f32, track: &crat
     }
 
     let title_color = if bg_light {
-        Color32::from_rgb(0x18, 0x14, 0x1c)
+        Color32::BLACK
     } else {
         Color32::WHITE
     };
     let artist_color = if bg_light {
-        Color32::from_black_alpha(175)
+        Color32::from_black_alpha(225)
     } else {
-        theme::text_dim()
+        Color32::from_white_alpha(225)
     };
 
     text_at(ui, pos2(x0, info_y), &track.title, theme::semibold(17.0), title_color, text_w);
@@ -514,8 +514,8 @@ fn sleeve(app: &mut App, ui: &mut Ui, x0: f32, w: f32, info_y: f32, track: &crat
     let sr = if interactive { sr.on_hover_cursor(egui::CursorIcon::PointingHand) } else { sr };
     let sh = theme::anim_bool(ui.ctx(), sr.id.with("h"), interactive && sr.hovered(), 0.1);
     let pop = theme::anim_bool(ui.ctx(), ("liked", &heard.id), liked, 0.3);
-    let base_star = if bg_light { Color32::from_rgb(0x18, 0x14, 0x1c) } else { Color32::WHITE };
-    let dim = 0.85 + 0.15 * sh;
+    let base_star = if bg_light { Color32::BLACK } else { Color32::WHITE };
+    let dim = 0.92 + 0.08 * sh;
     let tint = theme::lerp_color(theme::with_alpha(base_star, dim), app.accent_color(), pop);
     // It swells a quarter on the way, as the mini player's does.
     let size = 19.0 * (1.0 + 0.25 * (pop * std::f32::consts::PI).sin());
@@ -567,7 +567,7 @@ fn sleeve(app: &mut App, ui: &mut Ui, x0: f32, w: f32, info_y: f32, track: &crat
     let focus = theme::anim_bool(ui.ctx(), "np-seek-h", total > 0.0 && !held && interactive && (sresp.hovered() || sresp.dragged()), 0.18);
     let thick = 4.0 + 4.0 * focus;
     let bar = Rect::from_min_max(pos2(x0, hit.center().y - thick / 2.0), pos2(x0 + w, hit.center().y + thick / 2.0));
-    let seek_bg = if bg_light { Color32::from_black_alpha(35) } else { Color32::from_white_alpha(38) };
+    let seek_bg = if bg_light { Color32::from_black_alpha(45) } else { Color32::from_white_alpha(50) };
     ui.painter().rect_filled(bar, thick / 2.0, seek_bg);
     // Automix: the handoff window tints to the song's colour with its start ticked, so
     // the blend has a place it visibly begins at.
@@ -581,14 +581,14 @@ fn sleeve(app: &mut App, ui: &mut Ui, x0: f32, w: f32, info_y: f32, track: &crat
     let frac = if total > 0.0 { (pos / total).clamp(0.0, 1.0) } else { 0.0 };
     if frac > 0.0 {
         let fill = if bg_light {
-            theme::lerp_color(Color32::from_black_alpha(170), Color32::from_rgb(0x18, 0x14, 0x1c), focus)
+            theme::lerp_color(Color32::from_black_alpha(230), Color32::BLACK, focus)
         } else {
-            theme::lerp_color(Color32::from_white_alpha(163), Color32::from_white_alpha(240), focus)
+            theme::lerp_color(Color32::from_white_alpha(235), Color32::WHITE, focus)
         };
         ui.painter().rect_filled(Rect::from_min_size(bar.min, vec2(bar.width() * frac, thick)), thick / 2.0, fill);
     }
     let at = |p: egui::Pos2| (((p.x - x0) / w.max(1.0)).clamp(0.0, 1.0) * total).max(0.0);
-    let tc = if bg_light { Color32::from_black_alpha(160) } else { theme::with_alpha(Color32::WHITE, 0.62) };
+    let tc = if bg_light { Color32::from_black_alpha(225) } else { Color32::from_white_alpha(225) };
     let g = widgets::galley(ui, &super::fmt_time(pos as u32), theme::semibold(11.0), tc, 80.0);
     ui.painter().galley(pos2(x0, hit.bottom() + 2.0), g, tc);
     let left = super::fmt_time((total - pos).max(0.0) as u32);
@@ -634,7 +634,7 @@ fn sleeve(app: &mut App, ui: &mut Ui, x0: f32, w: f32, info_y: f32, track: &crat
     // The marks are primary white, an off shuffle or repeat tertiary; a pressed button
     // shrinks to 90%, as the reference's does.
     let ink = |h: f32, base: f32, on: f32| {
-        let col = if bg_light { Color32::from_rgb(0x18, 0x14, 0x1c) } else { Color32::WHITE };
+        let col = if bg_light { Color32::BLACK } else { Color32::WHITE };
         theme::with_alpha(theme::lerp_color(theme::with_alpha(col, base), col, h), on)
     };
     let enabled = app.current().is_some();
@@ -654,7 +654,7 @@ fn sleeve(app: &mut App, ui: &mut Ui, x0: f32, w: f32, info_y: f32, track: &crat
         (resp, h, p)
     };
     let (r, h, p) = btn(ui, 0, "shuffle", &t!("shuffle_up_next"), true);
-    super::glyphs::draw(ui, r.rect.center(), icons[0] * (1.0 - 0.1 * p), super::glyphs::SHUFFLE, ink(h, 0.55, 1.0));
+    super::glyphs::draw(ui, r.rect.center(), icons[0] * (1.0 - 0.1 * p), super::glyphs::SHUFFLE, ink(h, 0.90, 1.0));
     if interactive && r.clicked() {
         app.shuffle_upcoming();
     }
@@ -698,7 +698,7 @@ fn sleeve(app: &mut App, ui: &mut Ui, x0: f32, w: f32, info_y: f32, track: &crat
         Repeat::One => (super::glyphs::REPEAT_ONE, true),
     };
     let (r, h, p) = btn(ui, 4, "repeat", &t!("repeat"), true);
-    super::glyphs::draw(ui, r.rect.center(), icons[4] * (1.0 - 0.1 * p), glyph, if on { app.accent_color() } else { ink(h, 0.55, 1.0) });
+    super::glyphs::draw(ui, r.rect.center(), icons[4] * (1.0 - 0.1 * p), glyph, if on { app.accent_color() } else { ink(h, 0.90, 1.0) });
     if interactive && r.clicked() {
         app.queue.repeat = match app.queue.repeat {
             Repeat::Off => Repeat::All,
@@ -712,7 +712,8 @@ fn sleeve(app: &mut App, ui: &mut Ui, x0: f32, w: f32, info_y: f32, track: &crat
         let since = ui.ctx().memory_mut(|m| *m.data.get_temp_mut_or_insert_with(egui::Id::unique(("no-lyrics", &track.id)), || now));
         let a = (1.0 - ((now - since - 3.0) / 1.0) as f32).clamp(0.0, 1.0);
         if a > 0.0 {
-            let c = theme::with_alpha(theme::text_dim(), a * 0.8);
+            let base = if bg_light { Color32::BLACK } else { Color32::WHITE };
+            let c = theme::with_alpha(base, a * 0.90);
             text_at(ui, pos2(x0, ty + 40.0), &t!("no_lyrics_for_this_song"), theme::regular(14.0), c, w);
             // Frames only for the fade-out.
             let wait = (since + 3.0 - now).max(0.0);
@@ -922,8 +923,8 @@ fn synced(app: &mut App, ui: &mut Ui, rect: Rect, id: &str, lyrics: &Lyrics, now
 fn plain_lyrics(app: &mut App, ui: &mut Ui, rect: Rect, lyrics: &Lyrics) {
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect));
     let bg_light = app.bg_is_light();
-    let default_text = if bg_light { Color32::from_rgb(0x18, 0x14, 0x1c) } else { theme::text() };
-    let faint_text = if bg_light { Color32::from_black_alpha(140) } else { theme::text_faint() };
+    let default_text = if bg_light { Color32::BLACK } else { Color32::WHITE };
+    let faint_text = if bg_light { Color32::from_black_alpha(210) } else { Color32::from_white_alpha(210) };
     egui::ScrollArea::vertical().id_salt("plain-lyrics").auto_shrink(false).show(&mut child, |ui| {
         ui.label(egui::RichText::new(t!("lyrics_not_synced")).font(theme::regular(13.0)).color(faint_text));
         ui.add_space(14.0);
@@ -986,8 +987,8 @@ pub(crate) fn options_menu(
         tint_fn(h)
     } else {
         let bg_light = app.bg_is_light();
-        let base = if bg_light { Color32::from_rgb(0x18, 0x14, 0x1c) } else { Color32::WHITE };
-        theme::with_alpha(base, 0.75 + 0.25 * h)
+        let base = if bg_light { Color32::BLACK } else { Color32::WHITE };
+        theme::with_alpha(base, 0.90 + 0.10 * h)
     };
     for dx in [-5.0, 0.0, 5.0] {
         ui.painter().circle_filled(rect.center() + vec2(dx, 0.0), 1.8, dot_col);
@@ -1217,7 +1218,8 @@ pub(super) fn audio_badge(app: &App, ui: &mut Ui, at: egui::Pos2, small: bool) -
         let accent = app.accent_color();
         (theme::lerp_color(accent, Color32::WHITE, 0.10 + 0.30 * hover), theme::with_alpha(accent, 0.85 + 0.15 * hover))
     } else {
-        (theme::with_alpha(theme::text_dim(), 0.85 + 0.15 * hover), theme::text_dim())
+        let base = if app.bg_is_light() { Color32::BLACK } else { Color32::WHITE };
+        (theme::with_alpha(base, 0.88 + 0.12 * hover), theme::with_alpha(base, 0.88))
     };
     let mut x = at.x;
     if glyph {
