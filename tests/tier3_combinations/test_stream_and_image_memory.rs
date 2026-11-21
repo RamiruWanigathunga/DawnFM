@@ -41,7 +41,7 @@ fn test_concurrent_streaming_window_and_image_cache_lru() {
         let mut pass_index = 0u64;
         let textures = Textures::default();
 
-        while running_clone.load(Ordering::Relaxed) {
+        loop {
             pass_index += 1;
             // Generate synthetic 500 KB images
             let key = format!("https://example.com/art_{pass_index}.jpg");
@@ -61,6 +61,10 @@ fn test_concurrent_streaming_window_and_image_cache_lru() {
             textures.end_pass(pass_index);
             img_counter.fetch_add(1, Ordering::Relaxed);
             thread::sleep(Duration::from_millis(2));
+
+            if !running_clone.load(Ordering::Relaxed) && img_counter.load(Ordering::Relaxed) >= 1 {
+                break;
+            }
         }
 
         assert!(raw_cache.len() <= HTTP_CACHE_MAX_ENTRIES);
@@ -81,6 +85,7 @@ fn test_concurrent_streaming_window_and_image_cache_lru() {
             let mut buf = [0u8; 1024];
             let n = reader.read(&mut buf).expect("Read must succeed");
             assert_eq!(n, 1024);
+            thread::sleep(Duration::from_millis(1));
         }
     }
 
