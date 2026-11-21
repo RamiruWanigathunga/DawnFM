@@ -248,20 +248,6 @@ pub fn is_macos_above_15() -> bool {
     }
 }
 
-/// Native macOS window corner radius: 10.5pt on macOS 14/15 (Sonoma/Sequoia), 16.0pt on macOS 16+ (Darwin 25+).
-pub fn macos_window_radius() -> f32 {
-    if is_macos_above_15() { 16.0 } else { 10.5 }
-}
-
-/// Native macOS 15 window frame border color: crisp subtle white hairline in dark mode, subtle dark hairline in light mode.
-pub fn macos_window_border() -> Color32 {
-    if light() {
-        Color32::from_black_alpha(28)
-    } else {
-        Color32::from_white_alpha(32)
-    }
-}
-
 /// Material constants and properties for macOS AppKit NSVisualEffectView.
 #[cfg(target_os = "macos")]
 pub mod macos_vibrancy {
@@ -318,15 +304,6 @@ pub fn apply_native_vibrancy() {
 
         // Ensure native window shadow is active
         let () = msg_send![&*window, setHasShadow: true];
-
-        // Enable layer-backed view with native macOS 15 corner radius clipping
-        let () = msg_send![&*content_view, setWantsLayer: true];
-        let layer: Option<Retained<AnyObject>> = msg_send![&*content_view, layer];
-        if let Some(layer) = layer {
-            let radius: f64 = macos_window_radius() as f64;
-            let () = msg_send![&*layer, setCornerRadius: radius];
-            let () = msg_send![&*layer, setMasksToBounds: true];
-        }
 
         let bounds: NSRect = msg_send![&*content_view, bounds];
         let effect_alloc: *mut AnyObject = msg_send![objc2::class!(NSVisualEffectView), alloc];
