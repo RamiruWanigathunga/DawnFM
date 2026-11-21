@@ -150,7 +150,8 @@ fn body(app: &mut App, ui: &mut Ui, now: f64) {
     // 860 points, and below that the cover gives way to the panel.
     let narrow = area.width() - 64.0 < 860.0;
     // Header: on the window buttons' line, when the app draws them.
-    let header_top = area.top() + if app.fullscreen { 16.0 } else { 12.0 };
+    let is_fullscreen = app.fullscreen || ui.input(|i| i.viewport().fullscreen.unwrap_or(false));
+    let header_top = area.top() + if is_fullscreen { 16.0 } else { 12.0 };
     let header = Rect::from_min_size(pos2(area.left() + 20.0, header_top), vec2(area.width() - 40.0, 44.0));
 
     // Fullscreen auto-hide after 3.5s of mouse inactivity
@@ -158,8 +159,8 @@ fn body(app: &mut App, ui: &mut Ui, now: f64) {
     let controls_hovered = ui.rect_contains_pointer(controls_rect) || ui.rect_contains_pointer(header);
     let busy = app.seek_drag.is_some() || egui::Popup::is_any_open(ui.ctx());
     let idle = now - app.mouse_last_moved >= 3.5;
-    let active = !app.fullscreen || !idle || busy || controls_hovered;
-    let controls_alpha = if app.fullscreen {
+    let active = !is_fullscreen || !idle || busy || controls_hovered;
+    let controls_alpha = if is_fullscreen {
         theme::anim_bool(ui.ctx(), "np-controls-visible", active, 0.25)
     } else {
         1.0
@@ -223,7 +224,7 @@ fn body(app: &mut App, ui: &mut Ui, now: f64) {
     }
     if close {
         app.np_open = false;
-        if app.fullscreen {
+        if app.fullscreen || ui.input(|i| i.viewport().fullscreen.unwrap_or(false)) {
             app.set_fullscreen(ui.ctx(), false);
         }
     }

@@ -348,12 +348,21 @@ impl App {
             self.np_open = true;
             self.np_tab = NpTab::UpNext;
         }
+        let is_fullscreen = self.fullscreen || ctx.input(|i| i.viewport().fullscreen.unwrap_or(false));
         if full && self.np_open {
-            self.set_fullscreen(ctx, !self.fullscreen);
+            self.set_fullscreen(ctx, !is_fullscreen);
         }
+        let in_search = self.search_focused || !self.search_text.is_empty() || self.search_drop.is_some();
         if esc {
-            if self.fullscreen {
+            if in_search {
+                self.search_focused = false;
+                self.search_text.clear();
+                self.search_drop = None;
+                self.suggestions = Default::default();
+                self.suggest_sel = None;
+            } else if is_fullscreen {
                 self.set_fullscreen(ctx, false);
+                ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(false));
             } else {
                 self.np_open = false;
             }
@@ -399,9 +408,16 @@ impl App {
 
     pub(super) fn set_fullscreen(&mut self, ctx: &egui::Context, on: bool) {
         self.fullscreen = on;
+        super::titlebar::set_fullscreen(ctx, on);
+        if !on && self.mouse_hidden {
+            self.mouse_hidden = false;
+            ctx.send_viewport_cmd(egui::ViewportCommand::CursorVisible(true));
+        }
         // Windows: in one step, without winit's unthemed-frame flash.
         if !crate::fullscreen::set(on) {
             ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(on));
+        } else if !on {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(false));
         }
         ctx.request_repaint();
     }
