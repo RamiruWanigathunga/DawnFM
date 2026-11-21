@@ -105,6 +105,7 @@ impl App {
         let Some(arrival) = self.lists.arrived(load, c, more, &keep) else { return };
         if self.page_list() == Some(id.as_str()) {
             self.loading = false;
+            self.scroll_top = true;
         }
         if id == LIKED_MUSIC
             && let Some(o) = self.lists.get(LIKED_MUSIC)

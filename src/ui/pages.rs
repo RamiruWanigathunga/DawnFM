@@ -905,7 +905,7 @@ fn home(app: &mut App, ui: &mut Ui, now: f64) {
                 continue;
             }
         }
-        let id = format!("home-{i}-{}", s.title);
+        let id = format!("home-{i}-{}-{}", s.title, app.page_visit);
         match &s.kind {
             ShelfKind::Cards(cards) => {
                 let (strap, thumb) = if s.title == "Listen again" { (None, None) } else { (s.strapline.as_deref(), s.strap_thumb.as_deref()) };
@@ -955,11 +955,14 @@ fn new(app: &mut App, ui: &mut Ui, now: f64) {
     }
     let rows = Rows::new(app, now);
     let Some(e) = &app.explore else { return };
-    card_row(ui, "ex-new", if app.logged_in { "New releases for you" } else { "Popular new releases" }, &e.new_albums, &mut app.actions);
+    let id_new = format!("ex-new-{}", app.page_visit);
+    card_row(ui, &id_new, if app.logged_in { "New releases for you" } else { "Popular new releases" }, &e.new_albums, &mut app.actions);
     if !e.top.is_empty() {
-        song_grid(ui, &rows, &app.liked, &mut app.actions, "ex-top", "Top songs", None, &e.top, 4);
+        let id_top = format!("ex-top-{}", app.page_visit);
+        song_grid(ui, &rows, &app.liked, &mut app.actions, &id_top, "Top songs", None, &e.top, 4);
     }
-    card_row(ui, "ex-charts", "Charts", &e.charts, &mut app.actions);
+    let id_charts = format!("ex-charts-{}", app.page_visit);
+    card_row(ui, &id_charts, "Charts", &e.charts, &mut app.actions);
 }
 
 pub(super) fn page_title(ui: &mut Ui, title: &str) {
@@ -1429,7 +1432,7 @@ fn artist_latest_release_card(ui: &mut Ui, a: &crate::backend::ArtistPage, acts:
         }
 }
 
-fn artist_top_songs_section(ui: &mut Ui, a: &crate::backend::ArtistPage, acts: &mut Vec<Action>, width: f32, liked: &HashSet<String>) {
+fn artist_top_songs_section(ui: &mut Ui, a: &crate::backend::ArtistPage, acts: &mut Vec<Action>, width: f32, liked: &HashSet<String>, visit: u64) {
     let top = &a.top;
     if top.is_empty() {
         return;
@@ -1438,7 +1441,7 @@ fn artist_top_songs_section(ui: &mut Ui, a: &crate::backend::ArtistPage, acts: &
     let rows_per_page = 5;
     let items_per_page = (num_cols * rows_per_page).max(1);
     let total_pages = top.len().div_ceil(items_per_page).max(1);
-    let id = format!("artist-top-songs-{}", a.id);
+    let id = format!("artist-top-songs-{}-{}", a.id, visit);
     let (at_start, at_end) = widgets::h_scroll_edges(ui, &id);
     let mut nudge = 0;
 
@@ -1871,7 +1874,7 @@ pub fn artist(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
                 ui.add_space(24.0);
                 // Right Column: Top Songs 3-column grid with carousel pagination
                 ui.allocate_ui_with_layout(vec2(right_w, 0.0), egui::Layout::top_down(egui::Align::LEFT), |ui| {
-                    artist_top_songs_section(ui, a, acts, right_w, &app.liked);
+                    artist_top_songs_section(ui, a, acts, right_w, &app.liked, app.page_visit);
                 });
             });
         } else {
@@ -1880,13 +1883,16 @@ pub fn artist(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
             ui.add_space(8.0);
             artist_latest_release_card(ui, a, acts, cw.min(420.0));
             ui.add_space(20.0);
-            artist_top_songs_section(ui, a, acts, cw, &app.liked);
+            artist_top_songs_section(ui, a, acts, cw, &app.liked, app.page_visit);
         }
 
         ui.add_space(24.0);
-        card_row(ui, "a-albums", "Albums & singles", &a.albums, acts);
-        card_row(ui, "a-pl", "Featured on", &a.playlists, acts);
-        card_row(ui, "a-sim", "Fans might also like", &a.similar, acts);
+        let id_albums = format!("a-albums-{}", app.page_visit);
+        card_row(ui, &id_albums, "Albums & singles", &a.albums, acts);
+        let id_pl = format!("a-pl-{}", app.page_visit);
+        card_row(ui, &id_pl, "Featured on", &a.playlists, acts);
+        let id_sim = format!("a-sim-{}", app.page_visit);
+        card_row(ui, &id_sim, "Fans might also like", &a.similar, acts);
         if let Some(d) = a.description.as_deref().filter(|d| !d.trim().is_empty()) {
             shelf_header(ui, "", "About", None, None, false);
             let full = ui.available_width().min(820.0);
