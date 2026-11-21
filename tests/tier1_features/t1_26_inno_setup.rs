@@ -39,7 +39,7 @@ fn test_iss_script_app_metadata() {
         "Script must define MyAppName macro as 'Dawn FM'"
     );
     assert!(
-        script.contains("#define MyAppVersion \"2.4.1\""),
+        script.contains("#define MyAppVersion \"2.4.2\""),
         "Script must define MyAppVersion matching crate version"
     );
     assert!(

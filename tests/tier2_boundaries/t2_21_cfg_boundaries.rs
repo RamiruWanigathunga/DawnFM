@@ -110,7 +110,7 @@ fn test_cargo_toml_lockfile_target_sync() {
         "Cargo.lock must contain package 'dawnfm'"
     );
     assert!(
-        lock_content.contains("version = \"2.4.1\""),
-        "Cargo.lock must match version '2.4.1'"
+        lock_content.contains("version = \"2.4.2\""),
+        "Cargo.lock must match version '2.4.2'"
     );
 }
