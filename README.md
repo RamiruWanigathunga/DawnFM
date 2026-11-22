@@ -59,8 +59,8 @@
 3. **Privacy & Security Unlock**: If macOS blocks the app on first launch, go to **System Settings** → **Privacy & Security**, scroll down to the **Security** section, and click **Open Anyway** (or right-click **Dawn FM** in Applications and choose **Open**).
 
 ### Windows
-- **Installer**: Download `DawnFM-2.4.3-windows-x64-setup.exe` from **[Releases](https://github.com/wenujacodes/DawnFM/releases/latest)** and run setup.
-- **Portable**: Download `DawnFM-2.4.3-windows-x64-portable.zip`, extract to any folder, and run `dawnfm.exe`.
+- **Installer**: Download `DawnFM-2.4.4-windows-x64-setup.exe` from **[Releases](https://github.com/wenujacodes/DawnFM/releases/latest)** and run setup.
+- **Portable**: Download `DawnFM-2.4.4-windows-x64-portable.zip`, extract to any folder, and run `dawnfm.exe`.
 - **SmartScreen Unlock**: If Windows Defender SmartScreen blocks installation or launch, right-click the downloaded `.exe` (or `.zip`) → **Properties** → check **Unblock** at the bottom → click **OK** (or click **More info** → **Run anyway**).
 
 ## Building from source
@@ -71,7 +71,7 @@ Requires the [Rust toolchain](https://rustup.rs/):
 git clone https://github.com/wenujacodes/DawnFM.git
 cd DawnFM
 cargo build --release
-sh macos/bundle.sh target/release/dawnfm 2.4.3 out
+sh macos/bundle.sh target/release/dawnfm 2.4.4 out
 ```
 
 The signed bundle will be located at `out/Dawn FM.app`.
