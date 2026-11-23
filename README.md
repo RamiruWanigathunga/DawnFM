@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="assets/icon/icon.png" width="120" alt="Dawn FM icon">
+  <img src="assets/icon/icon.png" width="120" alt="Dawn FM">
   <h1>Dawn FM</h1>
   <p><strong>Fast, lightweight native YouTube Music player for macOS & Windows</strong></p>
   <p>Pure Rust · No Electron · 120 FPS animations · Ultra-low memory</p>
