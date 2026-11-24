@@ -443,6 +443,7 @@ impl App {
                     track: Some(t.clone()),
                 }),
             });
+            self.backend.request(Req::Lyrics(Box::new(t.clone())));
         }
     }
 

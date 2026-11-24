@@ -230,7 +230,7 @@ pub struct Client {
 }
 
 const CHALLENGE_RETRY: Duration = Duration::from_secs(15 * 60);
-const RECENT: usize = 8;
+const RECENT: usize = 128;
 
 pub struct Query<'a> {
     pub video_id: &'a str,
@@ -254,10 +254,41 @@ impl Client {
         }
     }
 
+    /// Look up cached lyrics by video ID.
+    pub fn get_recent(&self, video_id: &str) -> Option<LyricsSet> {
+        self.recent.lock_unpoisoned().iter().find(|(id, _)| id == video_id).map(|(_, l)| l.clone())
+    }
+
+    /// Insert or update lyrics in recent cache.
+    pub fn insert_recent(&self, video_id: String, set: LyricsSet) {
+        let mut recent = self.recent.lock_unpoisoned();
+        if let Some(pos) = recent.iter().position(|(id, _)| *id == video_id) {
+            recent.remove(pos);
+        } else if recent.len() >= RECENT {
+            recent.pop_front();
+        }
+        recent.push_back((video_id, set));
+    }
+
+    /// Fetch from fast REST sources (Unison and lrc.red) in parallel.
+    pub async fn fetch_fast(&self, q: &Query<'_>) -> Vec<Lyrics> {
+        let (unison, lrcred) = tokio::join!(self.fetch_unison(q), self.fetch_lrcred(q));
+        let mut sources = Vec::new();
+        match unison {
+            Ok(s) => sources.extend(s),
+            Err(e) => log::info!("unison: {e:#}"),
+        }
+        match lrcred {
+            Ok(s) => sources.extend(s),
+            Err(e) => log::info!("lrc.red: {e:#}"),
+        }
+        sources
+    }
+
     /// Every source's lyrics for a song: the Better Lyrics stream, Unison and lrc.red, together.
     pub async fn fetch(&self, q: &Query<'_>) -> anyhow::Result<LyricsSet> {
-        if let Some((_, l)) = self.recent.lock_unpoisoned().iter().find(|(id, _)| id == q.video_id) {
-            return Ok(l.clone());
+        if let Some(l) = self.get_recent(q.video_id) {
+            return Ok(l);
         }
         let (stream, unison, lrcred) = tokio::join!(self.fetch_stream(q), self.fetch_unison(q), self.fetch_lrcred(q));
         let mut sources = Vec::new();
@@ -278,15 +309,11 @@ impl Client {
         }
         sources.sort_by_key(|l| Provider::ALL.iter().position(|p| *p == l.provider));
         let set = LyricsSet { sources };
-        let mut recent = self.recent.lock_unpoisoned();
-        if recent.len() == RECENT {
-            recent.pop_front();
-        }
-        recent.push_back((q.video_id.to_owned(), set.clone()));
+        self.insert_recent(q.video_id.to_owned(), set.clone());
         Ok(set)
     }
 
-    async fn fetch_stream(&self, q: &Query<'_>) -> anyhow::Result<Vec<Lyrics>> {
+    pub async fn fetch_stream(&self, q: &Query<'_>) -> anyhow::Result<Vec<Lyrics>> {
         let mut jwt = self.token(false).await?;
         for attempt in 0..2 {
             let mut form = vec![("videoId", q.video_id.to_owned())];
@@ -304,7 +331,7 @@ impl Client {
             }
             form.push(("alwaysFetchMetadata", "false".to_owned()));
             form.push(("token", jwt.clone()));
-            let resp = self.http.post(format!("{API}v2/lyrics")).form(&form).timeout(Duration::from_secs(20)).send().await?;
+            let resp = self.http.post(format!("{API}v2/lyrics")).form(&form).timeout(Duration::from_secs(6)).send().await?;
             if resp.status() == reqwest::StatusCode::FORBIDDEN && attempt == 0 {
                 jwt = self.token(true).await?;
                 continue;
@@ -321,7 +348,7 @@ impl Client {
         if let Some(a) = q.album {
             params.push(("album", a.to_owned()));
         }
-        let resp = self.http.get(UNISON_API).query(&params).timeout(Duration::from_secs(10)).send().await?;
+        let resp = self.http.get(UNISON_API).query(&params).timeout(Duration::from_secs(4)).send().await?;
         if resp.status() == reqwest::StatusCode::NOT_FOUND {
             return Ok(vec![]);
         }
@@ -343,7 +370,7 @@ impl Client {
             .get(format!("{LRCRED_API}search.json"))
             .query(&[("q", query)])
             .header(reqwest::header::USER_AGENT, LRCRED_UA)
-            .timeout(Duration::from_secs(8))
+            .timeout(Duration::from_secs(4))
             .send()
             .await?
             .error_for_status()?
@@ -359,7 +386,7 @@ impl Client {
             .http
             .get(format!("{LRCRED_API}s/{isrc}.ttml"))
             .header(reqwest::header::USER_AGENT, LRCRED_UA)
-            .timeout(Duration::from_secs(8))
+            .timeout(Duration::from_secs(4))
             .send()
             .await?
             .error_for_status()?
@@ -399,7 +426,7 @@ impl Client {
             .http
             .post(format!("{API}verify-turnstile"))
             .json(&serde_json::json!({ "token": turnstile }))
-            .timeout(Duration::from_secs(15))
+            .timeout(Duration::from_secs(5))
             .send()
             .await?
             .error_for_status()?

@@ -786,8 +786,8 @@ impl Backend {
                     None => return Ok(None),
                 },
                 Req::Lyrics(track) => {
-                    let video_id = track.id.clone();
-                    Resp::Lyrics { lyrics: self.lyrics_for(&track).await, video_id }
+                    self.handle_lyrics(&track).await;
+                    return Ok(None);
                 }
                 Req::Segments { video_id } => {
                     let segments = crate::sponsorblock::segments(&self.http(), &video_id).await?;
@@ -1018,43 +1018,88 @@ impl Backend {
         Ok(())
     }
 
-    async fn lyrics_for(&self, t: &Track) -> LyricsSet {
+    async fn handle_lyrics(&self, t: &Track) {
+        let video_id = t.id.clone();
+        if let Some(cached) = self.lyrics.get_recent(&video_id) {
+            let _ = self.tx.send(Resp::Lyrics { video_id, lyrics: cached });
+            self.wake();
+            return;
+        }
+
         let artist = t.artist_line();
+        let duration = match t.duration {
+            Some(d) => Some(d),
+            None => self.stream_duration(&t.id).await,
+        };
         let query = lyrics::Query {
             video_id: &t.id,
             song: &t.title,
             artist: &artist,
             album: t.album.as_ref().map(|a| a.name.as_str()),
-            duration: match t.duration {
-                Some(d) => Some(d),
-                None => self.stream_duration(&t.id).await,
-            },
+            duration,
         };
-        let mut set = self.lyrics.fetch(&query).await.unwrap_or_else(|e| {
-            log::warn!("lyrics failed: {e:#}");
-            LyricsSet::default()
-        });
-        // Dev hook: YTM_LYRICS_FAIL=<source key>[,<key>…] makes those sources come back empty.
-        if let Ok(fail) = std::env::var("YTM_LYRICS_FAIL") {
-            set.sources.retain(|l| !fail.split(',').any(|k| k.trim() == l.provider.key()));
+
+        // 1. Fetch fast sources (Unison + lrc.red) first in parallel (~200ms)
+        let fast_sources = self.lyrics.fetch_fast(&query).await;
+        let mut has_fast = false;
+        if !fast_sources.is_empty() {
+            let mut set = LyricsSet { sources: fast_sources };
+            set.sources.sort_by_key(|l| lyrics::Provider::ALL.iter().position(|p| *p == l.provider));
+            if let Ok(fail) = std::env::var("YTM_LYRICS_FAIL") {
+                set.sources.retain(|l| !fail.split(',').any(|k| k.trim() == l.provider.key()));
+            }
+            if !set.sources.is_empty() {
+                has_fast = true;
+                let _ = self.tx.send(Resp::Lyrics { video_id: video_id.clone(), lyrics: set.clone() });
+                self.wake();
+                self.lyrics.insert_recent(video_id.clone(), set);
+            }
         }
-        set
+
+        // 2. Fetch Better Lyrics SSE stream in continuation
+        let stream_res = self.lyrics.fetch_stream(&query).await;
+        let mut all_sources = self.lyrics.get_recent(&video_id).map(|s| s.sources).unwrap_or_default();
+        let mut updated = false;
+        match stream_res {
+            Ok(stream_sources) => {
+                for s in stream_sources {
+                    if !all_sources.iter().any(|existing| existing.provider == s.provider) {
+                        all_sources.push(s);
+                        updated = true;
+                    }
+                }
+            }
+            Err(e) => log::warn!("better lyrics failed: {e:#}"),
+        }
+
+        all_sources.sort_by_key(|l| lyrics::Provider::ALL.iter().position(|p| *p == l.provider));
+        let mut final_set = LyricsSet { sources: all_sources };
+        if let Ok(fail) = std::env::var("YTM_LYRICS_FAIL") {
+            final_set.sources.retain(|l| !fail.split(',').any(|k| k.trim() == l.provider.key()));
+        }
+
+        self.lyrics.insert_recent(video_id.clone(), final_set.clone());
+
+        if !has_fast || updated {
+            let _ = self.tx.send(Resp::Lyrics { video_id, lyrics: final_set });
+            self.wake();
+        }
     }
 
     /// The song's length from its stream, for a track listed without one (some home,
     /// radio and queue rows). Without a duration Better Lyrics only finds plain lyrics,
-    /// so wait for playback to resolve the stream, up to 15 s. The player's own duration
+    /// so wait for playback to resolve the stream briefly. The player's own duration
     /// counts too: starting a song clears it, and a restored session sets it.
     async fn stream_duration(&self, video_id: &str) -> Option<u32> {
-        for _ in 0..150 {
+        for _ in 0..5 {
             let ms = self.current.lock_unpoisoned().as_ref().filter(|(id, _)| id == video_id).map(|(_, s)| s.duration_ms);
             let ms = ms.filter(|ms| *ms > 0).or_else(|| self.audio.status.duration().map(|d| d.as_millis() as u64));
             if let Some(ms) = ms.filter(|ms| *ms > 0) {
                 return Some((ms / 1000) as u32);
             }
-            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            tokio::time::sleep(std::time::Duration::from_millis(60)).await;
         }
-        log::info!("lyrics: no duration for {video_id}");
+        log::debug!("lyrics: no duration for {video_id}");
         None
     }
 

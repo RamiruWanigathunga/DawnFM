@@ -752,7 +752,7 @@ pub(super) fn lyrics_drawer(app: &mut App, ui: &mut Ui, now: f64) {
 }
 
 /// A song whose lyrics nobody asked for (restored, or picked up from another device)
-/// or whose answer never came: ask once after a few seconds, then stop spinning.
+/// or whose answer never came: ask immediately, then stop spinning after timeout.
 /// False when there are lyrics for the song to draw.
 fn lyrics_wait(app: &mut App, ui: &mut Ui, rect: Rect, now: f64) -> bool {
     let Some(shown) = app.shown().cloned() else { return false };
@@ -761,7 +761,7 @@ fn lyrics_wait(app: &mut App, ui: &mut Ui, rect: Rect, now: f64) -> bool {
     }
     let key = egui::Id::unique("lyrics-drawer-wait");
     let (since, mut asked) = ui.ctx().data(|d| d.get_temp::<(String, f64, bool)>(key)).filter(|(id, ..)| *id == shown.id).map_or((now, false), |(_, t, a)| (t, a));
-    if !asked && now - since > 3.0 {
+    if !asked {
         app.backend.request(crate::backend::Req::Lyrics(Box::new(shown.clone())));
         asked = true;
     }
@@ -771,7 +771,7 @@ fn lyrics_wait(app: &mut App, ui: &mut Ui, rect: Rect, now: f64) -> bool {
         if now - since < 20.0 {
             ui.spinner();
             ui.label(egui::RichText::new(t!("loading_lyrics")).color(theme::text_dim()));
-            ui.ctx().request_repaint_after(std::time::Duration::from_millis(500));
+            ui.ctx().request_repaint_after(std::time::Duration::from_millis(100));
         } else {
             ui.label(egui::RichText::new(t!("no_lyrics_yet")).font(theme::semibold(16.0)).color(theme::text_dim()));
         }
@@ -780,15 +780,30 @@ fn lyrics_wait(app: &mut App, ui: &mut Ui, rect: Rect, now: f64) -> bool {
 }
 
 fn lyrics_panel(app: &mut App, ui: &mut Ui, rect: Rect, now: f64, centered: bool) {
-    // Lent out for the frame rather than cloned (the drawing needs `app` mutably).
-    let Some((id, set)) = app.lyrics.take() else {
+    let Some(shown) = app.shown().cloned() else { return };
+    if !app.lyrics.as_ref().is_some_and(|(id, _)| *id == shown.id) {
+        let key = egui::Id::unique("lyrics-panel-wait");
+        let (since, mut asked) = ui.ctx().data(|d| d.get_temp::<(String, f64, bool)>(key)).filter(|(id, ..)| *id == shown.id).map_or((now, false), |(_, t, a)| (t, a));
+        if !asked {
+            app.backend.request(crate::backend::Req::Lyrics(Box::new(shown.clone())));
+            asked = true;
+        }
+        ui.ctx().data_mut(|d| d.insert_temp(key, (shown.id.clone(), since, asked)));
         ui.add_space(rect.height() * 0.35);
         ui.vertical_centered(|ui| {
-            ui.spinner();
-            ui.label(egui::RichText::new(t!("loading_lyrics")).color(theme::text_dim()));
+            if now - since < 20.0 {
+                ui.spinner();
+                ui.label(egui::RichText::new(t!("loading_lyrics")).color(theme::text_dim()));
+                ui.ctx().request_repaint_after(std::time::Duration::from_millis(100));
+            } else {
+                ui.label(egui::RichText::new(t!("no_lyrics_yet")).font(theme::semibold(16.0)).color(theme::text_dim()));
+            }
         });
         return;
-    };
+    }
+
+    // Lent out for the frame rather than cloned (the drawing needs `app` mutably).
+    let Some((id, set)) = app.lyrics.take() else { return };
     if let Some(lyrics) = app.lyric_prefs.choose(&id, &set).and_then(|p| set.get(p)) {
         let panel = Rect::from_min_max(rect.min, pos2(rect.right(), rect.bottom() - 4.0));
         if lyrics.sync == Sync::None {
