@@ -190,15 +190,17 @@ fn body(app: &mut App, ui: &mut Ui, now: f64) {
                 np_header_button_paint(ui, r, icon::CHEVRON_DOWN, 20.0, false, 0.0, bg_light, accent);
             }
 
-            // Direct Full Screen toggle button
-            let fs_label = if is_fullscreen { t!("exit_full_screen") } else { t!("full_screen") };
-            if interactive {
-                if np_header_button(ui, icon::MAXIMIZE_2, 17.0, &fs_label, is_fullscreen, bg_light, accent).clicked() {
-                    app.set_fullscreen(ui.ctx(), !is_fullscreen);
+            // Direct Full Screen toggle button (omitted on Windows since titlebar already has native fullscreen/maximize buttons)
+            if !cfg!(windows) {
+                let fs_label = if is_fullscreen { t!("exit_full_screen") } else { t!("full_screen") };
+                if interactive {
+                    if np_header_button(ui, icon::MAXIMIZE_2, 17.0, &fs_label, is_fullscreen, bg_light, accent).clicked() {
+                        app.set_fullscreen(ui.ctx(), !is_fullscreen);
+                    }
+                } else {
+                    let (r, _) = ui.allocate_exact_size(vec2(34.0, 34.0), Sense::hover());
+                    np_header_button_paint(ui, r, icon::MAXIMIZE_2, 17.0, is_fullscreen, 0.0, bg_light, accent);
                 }
-            } else {
-                let (r, _) = ui.allocate_exact_size(vec2(34.0, 34.0), Sense::hover());
-                np_header_button_paint(ui, r, icon::MAXIMIZE_2, 17.0, is_fullscreen, 0.0, bg_light, accent);
             }
 
             // Direct Queue toggle button in fullscreen header
