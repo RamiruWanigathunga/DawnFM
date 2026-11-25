@@ -350,20 +350,22 @@ pub fn chip(ui: &mut Ui, label: &str, selected: bool) -> Response {
         let off_fill = theme::lerp_color(Color32::from_black_alpha(12), Color32::from_black_alpha(22), h);
         let on_fill = if h > 0.0 { theme::lerp_color(accent, Color32::BLACK, 0.08) } else { accent };
         let fill = theme::lerp_color(off_fill, on_fill, s);
-        let stroke = theme::lerp_color(Color32::from_black_alpha(((25.0 + 15.0 * h) * (1.0 - s)) as u8), theme::with_alpha(Color32::WHITE, 0.35), s);
+        let stroke = theme::lerp_color(Color32::from_black_alpha(((25.0 + 15.0 * h) * (1.0 - s)) as u8), Color32::TRANSPARENT, s);
         let text_c = theme::lerp_color(theme::text(), Color32::WHITE, s);
         (fill, stroke, text_c)
     } else {
         let off_fill = theme::glass(0.11 + 0.08 * h);
         let on_fill = if h > 0.0 { theme::lerp_color(accent, Color32::WHITE, 0.12) } else { accent };
         let fill = theme::lerp_color(off_fill, on_fill, s);
-        let stroke = theme::lerp_color(theme::glass(0.15 + 0.10 * h), theme::with_alpha(Color32::WHITE, 0.30), s);
+        let stroke = theme::lerp_color(theme::glass(0.15 + 0.10 * h), Color32::TRANSPARENT, s);
         let text_c = theme::lerp_color(Color32::from_white_alpha(215), Color32::WHITE, s.max(h * 0.5));
         (fill, stroke, text_c)
     };
 
     ui.painter().rect_filled(rect, radius, fill);
-    ui.painter().rect_stroke(rect, radius, egui::Stroke::new(1.0, stroke_color), egui::StrokeKind::Inside);
+    if stroke_color.a() > 0 {
+        ui.painter().rect_stroke(rect, radius, egui::Stroke::new(1.0, stroke_color), egui::StrokeKind::Inside);
+    }
     ui.painter().galley(rect.center() - text.size() / 2.0, text, fg);
     resp
 }
