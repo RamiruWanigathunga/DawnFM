@@ -1769,9 +1769,9 @@ pub fn artist(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
     let acts = &mut app.actions;
     let top = &a.top;
 
-    // Full-width cinematic hero banner fading into the page.
+    // Full-width cinematic hero banner fading into the page, taller so more of the artist cover is visible.
     let w = ui.available_width();
-    let hero_h = hero_height(w);
+    let hero_h = (w * 0.48).clamp(340.0, 560.0);
     let (hero, _) = ui.allocate_exact_size(vec2(w, hero_h), Sense::hover());
     let target_px = ((w * ui.ctx().pixels_per_point()).round() as u32).min(1920);
     if let Some(t) = crate::model::pick_thumb(&a.banner, target_px).or_else(|| a.banner.iter().max_by_key(|t| t.width)) {
@@ -1782,8 +1782,25 @@ pub fn artist(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
     } else {
         ui.painter().rect_filled(hero, 0.0, theme::with_alpha(accent, 0.25));
     }
-    // Smooth multi-stop downward vertical gradient dissolve into page background
-    paint_hero_gradient_dissolve(ui.painter(), hero, page_bg);
+    // Lower downward vertical gradient dissolve so the upper artist cover remains unobstructed.
+    const ARTIST_STOPS: [(f32, u8); 5] = [
+        (0.56, 0),
+        (0.72, 90),
+        (0.86, 185),
+        (0.95, 240),
+        (1.00, 255),
+    ];
+    for sw in ARTIST_STOPS.windows(2) {
+        let (y0_pct, a0) = sw[0];
+        let (y1_pct, a1) = sw[1];
+        let seg = Rect::from_min_max(
+            pos2(hero.left(), hero.top() + hero.height() * y0_pct),
+            pos2(hero.right(), hero.top() + hero.height() * y1_pct),
+        );
+        let c0 = Color32::from_rgba_unmultiplied(page_bg.r(), page_bg.g(), page_bg.b(), a0);
+        let c1 = Color32::from_rgba_unmultiplied(page_bg.r(), page_bg.g(), page_bg.b(), a1);
+        super::shell::vgradient(ui.painter(), seg, c0, c1);
+    }
 
     let artist_target = Target::Artist(id.to_owned());
 
@@ -1813,10 +1830,11 @@ pub fn artist(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
         }
     });
 
+    let (below, _) = ui.allocate_exact_size(vec2(w, 58.0), Sense::hover());
     let base_x = hero.left() + 28.0;
-    let btn_y = hero.bottom() - 38.0;
+    let btn_y = below.top() + 26.0;
 
-    // Large circular Play/Pause button with accent
+    // Large circular Play/Pause button with black/white background
     let gap = 14.0;
     let play_center = pos2(base_x + 24.0, btn_y);
     let play_rect = Rect::from_center_size(play_center, vec2(48.0, 48.0));
@@ -1828,9 +1846,17 @@ pub fn artist(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
     let h_val = play_h as u8 as f32;
     let light = theme::light();
     let (play_bg, stroke_col, glyph_col) = if light {
-        (theme::lerp_color(Color32::from_white_alpha(235), Color32::WHITE, h_val), Color32::from_black_alpha(35), accent)
+        (
+            theme::lerp_color(Color32::from_rgb(0x18, 0x18, 0x1c), Color32::BLACK, h_val),
+            Color32::from_black_alpha(30),
+            Color32::WHITE,
+        )
     } else {
-        (theme::glass(0.18 + 0.10 * h_val), theme::glass(0.22 + 0.12 * h_val), accent)
+        (
+            theme::lerp_color(Color32::from_rgb(0xf2, 0xf2, 0xf6), Color32::WHITE, h_val),
+            Color32::from_white_alpha(30),
+            Color32::from_rgb(0x14, 0x14, 0x18),
+        )
     };
     // Soft drop shadow
     ui.painter().circle_filled(play_center + vec2(0.0, 1.5), 24.0, Color32::from_black_alpha(if light { 25 } else { 45 }));
@@ -1845,14 +1871,23 @@ pub fn artist(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
         }
     }
 
-    // Subscribe pill button: YouTube subscription to this artist
+    // Subscribe pill button with subscriber count inside
+    let sub_count = a.subscribers.as_deref().map(|s| {
+        s.trim_end_matches(" subscribers")
+            .trim_end_matches(" subscriber")
+            .trim()
+    }).filter(|s| !s.is_empty());
     if let Some(sub) = &a.following {
-        let label = if sub.subscribed { "Subscribed" } else { "Subscribe" };
-        let galley = ui.painter().layout_no_wrap(label.to_owned(), theme::semibold(13.5), theme::text());
+        let base_label = if sub.subscribed { "Subscribed" } else { "Subscribe" };
+        let label = match sub_count {
+            Some(c) => format!("{base_label}  {c}"),
+            None => base_label.to_owned(),
+        };
+        let galley = ui.painter().layout_no_wrap(label.clone(), theme::semibold(13.5), theme::text());
         let check_w = if sub.subscribed { 20.0 } else { 0.0 };
         let w = galley.size().x + check_w + 32.0;
         let pill = Rect::from_min_size(pos2(play_center.x + 24.0 + gap, btn_y - 17.0), vec2(w, 34.0));
-        let resp = named(ui.interact(pill, ui.scope_id().with("hero_sub"), Sense::click()), label).on_hover_cursor(egui::CursorIcon::PointingHand);
+        let resp = named(ui.interact(pill, ui.scope_id().with("hero_sub"), Sense::click()), base_label).on_hover_cursor(egui::CursorIcon::PointingHand);
         let h = resp.hovered() as u8 as f32;
         // Soft drop shadow
         ui.painter().rect_filled(pill.translate(vec2(0.0, 1.5)), 17.0, Color32::from_black_alpha(if light { 25 } else { 42 }));
@@ -1879,15 +1914,19 @@ pub fn artist(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
         }
     }
 
-    // Monthly audience and subscribers, placed cleanly and well-aligned above the buttons
-    let stats = [a.audience.as_deref(), a.subscribers.as_deref()].into_iter().flatten().collect::<Vec<_>>().join(" • ");
-    let stats_y = btn_y - 24.0 - 14.0;
+    // Monthly audience positioned neatly at the bottom of the dissolved hero banner
+    let stats = if a.following.is_some() {
+        a.audience.clone().unwrap_or_default()
+    } else {
+        [a.audience.as_deref(), a.subscribers.as_deref()].into_iter().flatten().collect::<Vec<_>>().join(" • ")
+    };
+    let stats_y = hero.bottom() - 8.0;
     if !stats.is_empty() {
         ui.painter().text(pos2(base_x, stats_y), Align2::LEFT_BOTTOM, &stats, theme::semibold(13.5), theme::text_dim());
     }
 
     // Artist name: above the stats line with clean breathing room
-    let name_bottom_y = if !stats.is_empty() { stats_y - 18.0 } else { btn_y - 24.0 - 14.0 };
+    let name_bottom_y = if !stats.is_empty() { stats_y - 18.0 } else { hero.bottom() - 12.0 };
     let has_logo = apple.as_ref().and_then(|x| x.logo.as_ref()).is_some();
     let name_pos = pos2(base_x, name_bottom_y);
     let logo_alpha = apple.as_ref().and_then(|x| x.logo.as_ref()).and_then(|logo| {
