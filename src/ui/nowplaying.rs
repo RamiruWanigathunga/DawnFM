@@ -170,7 +170,8 @@ fn body(app: &mut App, ui: &mut Ui, now: f64) {
         ui.ctx().data_mut(|d| d.insert_temp(last_id, app.np_tab));
         app.np_tab
     };
-    let split_queue = !narrow && (app.np_tab == NpTab::UpNext || panel_tab == NpTab::UpNext);
+    let fullbleed_lyrics_view = !no_lyrics && cs.layout == Layout::LyricsOnly && look.background.mode == crate::preset::BgMode::CoverFullbleed;
+    let split_queue = !narrow && !fullbleed_lyrics_view && (app.np_tab == NpTab::UpNext || panel_tab == NpTab::UpNext);
 
     let mut close = false;
     if controls_alpha > 0.001 {

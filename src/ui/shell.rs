@@ -1311,8 +1311,9 @@ fn volume_slider(app: &mut App, ui: &mut Ui, slider: Rect, salt: &str) {
 // ------------------------------------------------------------------ queue drawer
 
 pub fn queue_drawer(app: &mut App, ui: &mut Ui) {
+    let ink = if theme::light() { Color32::BLACK } else { Color32::WHITE };
     ui.horizontal(|ui| {
-        ui.label(egui::RichText::new("Up next").font(theme::bold(20.0)));
+        ui.label(egui::RichText::new("Up next").font(theme::bold(20.0)).color(ink));
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             // Left of the window buttons, which sit over the drawer's top right.
             ui.add_space(super::titlebar::right_gap(ui.ctx(), ui.max_rect(), 0.0));
@@ -1333,14 +1334,15 @@ pub fn queue_list(app: &mut App, ui: &mut Ui, salt: &str) {
     let mut reorder: Option<(usize, usize)> = None;
     let down = ui.input(|i| i.pointer.any_down());
     let pointer = ui.input(|i| i.pointer.interact_pos());
+    let ink = if theme::light() { Color32::BLACK } else { Color32::WHITE };
 
     egui::ScrollArea::vertical().id_salt(("queue", salt)).auto_shrink(false).show(ui, |ui| {
         if app.queue.tracks.is_empty() {
-            ui.label(egui::RichText::new("Nothing queued yet").color(theme::text_dim()));
+            ui.label(egui::RichText::new("Nothing queued yet").color(ink));
             return;
         }
         let start = app.queue.index.unwrap_or(0);
-        ui.checkbox(&mut app.autoplay, egui::RichText::new("Autoplay similar songs").color(theme::text_dim())).on_hover_cursor(egui::CursorIcon::PointingHand);
+        ui.checkbox(&mut app.autoplay, egui::RichText::new("Autoplay similar songs").color(ink)).on_hover_cursor(egui::CursorIcon::PointingHand);
         ui.add_space(6.0);
         let accent = app.accent_color();
         let (queue, liked, acts, has_current, by) = (&app.queue.tracks, &app.liked, &mut app.actions, app.queue.index.is_some(), &app.jam.by);
@@ -1358,6 +1360,7 @@ pub fn queue_list(app: &mut App, ui: &mut Ui, salt: &str) {
                 remove_queue: (!current).then_some(i),
                 added_by: by.get(&t.id).cloned(),
                 alt: k % 2 == 0,
+                plain_text: true,
                 ..rows.opts(liked, t, None, false)
             };
             let resp = widgets::track_row(ui, t, &o, acts);
@@ -1416,11 +1419,11 @@ pub fn queue_list(app: &mut App, ui: &mut Ui, salt: &str) {
 
                         let text_x = rect.left() + 40.0;
                         let max_w = card_w - 60.0;
-                        widgets::text_at(ui, pos2(text_x, cy - 8.5), &t.title, theme::semibold(13.0), theme::text(), max_w);
-                        widgets::text_at(ui, pos2(text_x, cy + 4.5), &t.artist_line(), theme::regular(11.5), theme::text_dim(), max_w);
+                        widgets::text_at(ui, pos2(text_x, cy - 8.5), &t.title, theme::semibold(13.0), ink, max_w);
+                        widgets::text_at(ui, pos2(text_x, cy + 4.5), &t.artist_line(), theme::regular(11.5), ink, max_w);
 
                         let handle_x = rect.right() - 8.0;
-                        let handle_stroke = egui::Stroke::new(1.5, theme::text_dim());
+                        let handle_stroke = egui::Stroke::new(1.5, ink);
                         for dy in [-3.5, 0.0, 3.5] {
                             ui.painter().line_segment([pos2(handle_x - 5.0, cy + dy), pos2(handle_x + 5.0, cy + dy)], handle_stroke);
                         }

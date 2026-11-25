@@ -984,6 +984,8 @@ pub struct RowOpts {
     pub draggable: bool,
     /// Alternating row background tint for visual clarity across song lists.
     pub alt: bool,
+    /// Use plain high-contrast white/black text (for Queue Manager over dynamic backgrounds).
+    pub plain_text: bool,
 }
 
 const ROW_H: f32 = 56.0;
@@ -1180,21 +1182,24 @@ pub fn track_row(ui: &mut Ui, t: &Track, o: &RowOpts, acts: &mut Vec<Action>) ->
     // never under it, so a long album name can't run into the count.
     let content_right = plays_right - if plays_text.is_some() { plays_w + 16.0 } else { 0.0 };
 
+    let plain_ink = if theme::light() { Color32::BLACK } else { Color32::WHITE };
+    let dim_col = if o.plain_text { plain_ink } else { theme::text_dim() };
+
     if album_row && wide {
-        let title_col = theme::text();
+        let title_col = if o.plain_text { plain_ink } else { theme::text() };
         let content_w = content_right - x;
         let artist_x = x + content_w * 0.48;
         text_at(ui, pos2(x, cy - 9.0), &t.title, theme::semibold(14.5), title_col, artist_x - x - 16.0);
-        linked_text(ui, pos2(artist_x, cy - 8.0), &t.artist_line(), &t.artists, theme::regular(13.5), theme::text_dim(), content_w - (artist_x - x) - 16.0, acts);
+        linked_text(ui, pos2(artist_x, cy - 8.0), &t.artist_line(), &t.artists, theme::regular(13.5), dim_col, content_w - (artist_x - x) - 16.0, acts);
         if let Some(p) = &plays_text {
-            ui.painter().text(pos2(plays_right, cy), Align2::RIGHT_CENTER, p, theme::regular(13.0), theme::text_dim());
+            ui.painter().text(pos2(plays_right, cy), Align2::RIGHT_CENTER, p, theme::regular(13.0), dim_col);
         }
         if let Some(d) = t.duration {
-            ui.painter().text(pos2(right, cy), Align2::RIGHT_CENTER, super::fmt_time(d), theme::regular(13.0), theme::text_dim());
+            ui.painter().text(pos2(right, cy), Align2::RIGHT_CENTER, super::fmt_time(d), theme::regular(13.0), dim_col);
         }
         if o.draggable {
             let handle_x = rect.right() - 16.0;
-            let handle_color = if h > 0.0 || o.is_dragged { theme::text() } else { theme::text_dim() };
+            let handle_color = if o.plain_text { plain_ink } else if h > 0.0 || o.is_dragged { theme::text() } else { theme::text_dim() };
             let stroke = egui::Stroke::new(1.5, handle_color);
             for dy in [-4.0, 0.0, 4.0] {
                 ui.painter().line_segment([pos2(handle_x - 6.0, cy + dy), pos2(handle_x + 6.0, cy + dy)], stroke);
@@ -1208,7 +1213,7 @@ pub fn track_row(ui: &mut Ui, t: &Track, o: &RowOpts, acts: &mut Vec<Action>) ->
         (true, true) => (avail * 0.55, Some(x + avail * 0.6)),
         _ => (avail, None),
     };
-    let title_col = theme::text();
+    let title_col = if o.plain_text { plain_ink } else { theme::text() };
     let sub = if album_row { None } else { Some(t.artist_line()) };
     let sub = match (sub, &o.added_by) {
         (Some(s), Some(by)) if !s.is_empty() => Some(format!("{s} \u{2022} Added by {by}")),
@@ -1219,16 +1224,16 @@ pub fn track_row(ui: &mut Ui, t: &Track, o: &RowOpts, acts: &mut Vec<Action>) ->
     let text_max_w = title_w.min(content_right - x).max(20.0);
     text_at(ui, pos2(x, title_y), &t.title, theme::semibold(14.5), title_col, text_max_w);
     if let Some(sub) = &sub {
-        linked_text(ui, pos2(x, cy + 2.0), sub, &t.artists, theme::regular(13.0), theme::text_dim(), text_max_w, acts);
+        linked_text(ui, pos2(x, cy + 2.0), sub, &t.artists, theme::regular(13.0), dim_col, text_max_w, acts);
     }
     if let Some(p) = &plays_text {
-        ui.painter().text(pos2(plays_right, cy), Align2::RIGHT_CENTER, p, theme::regular(13.0), theme::text_dim());
+        ui.painter().text(pos2(plays_right, cy), Align2::RIGHT_CENTER, p, theme::regular(13.0), dim_col);
     }
     if let (Some(ax), Some(album)) = (album_x, &t.album) {
         let w = (content_right - ax).max(20.0);
-        let g = galley(ui, &album.name, theme::regular(13.5), theme::text_dim(), w);
+        let g = galley(ui, &album.name, theme::regular(13.5), dim_col, w);
         let ar = Rect::from_min_size(pos2(ax, cy - 9.0), g.size());
-        ui.painter().galley(ar.min, g, theme::text_dim());
+        ui.painter().galley(ar.min, g, dim_col);
         // Album name opens the album, like the artist names.
         if let Some(id) = &album.id {
             let r = named(ui.interact(ar, resp.id.with("album"), Sense::click()), &album.name);
@@ -1244,11 +1249,11 @@ pub fn track_row(ui: &mut Ui, t: &Track, o: &RowOpts, acts: &mut Vec<Action>) ->
         }
     }
     if let Some(d) = t.duration {
-        ui.painter().text(pos2(right, cy), Align2::RIGHT_CENTER, super::fmt_time(d), theme::regular(13.0), theme::text_dim());
+        ui.painter().text(pos2(right, cy), Align2::RIGHT_CENTER, super::fmt_time(d), theme::regular(13.0), dim_col);
     }
     if o.draggable {
         let handle_x = rect.right() - 16.0;
-        let handle_color = if h > 0.0 || o.is_dragged { theme::text() } else { theme::text_dim() };
+        let handle_color = if o.plain_text { plain_ink } else if h > 0.0 || o.is_dragged { theme::text() } else { theme::text_dim() };
         let stroke = egui::Stroke::new(1.5, handle_color);
         for dy in [-4.0, 0.0, 4.0] {
             ui.painter().line_segment([pos2(handle_x - 6.0, cy + dy), pos2(handle_x + 6.0, cy + dy)], stroke);

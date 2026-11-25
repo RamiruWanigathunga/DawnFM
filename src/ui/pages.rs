@@ -140,6 +140,7 @@ impl Rows {
             is_dragged: false,
             draggable: false,
             alt: false,
+            plain_text: false,
         }
     }
 }
