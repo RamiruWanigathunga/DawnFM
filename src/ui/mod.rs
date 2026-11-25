@@ -1437,6 +1437,9 @@ impl App {
     }
 
     pub fn bg_is_light(&self) -> bool {
+        if !theme::light() {
+            return false;
+        }
         let d = self.dominant;
         (0.299 * d.r() as f32 + 0.587 * d.g() as f32 + 0.114 * d.b() as f32) / 255.0 > 0.52
     }
