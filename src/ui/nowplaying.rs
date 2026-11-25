@@ -271,7 +271,24 @@ fn body(app: &mut App, ui: &mut Ui, now: f64) {
     // Artwork alone: centered.
     let col_art = Rect::from_center_size(content.center(), vec2(content.width().min(content.height() * 0.9), content.height()));
     let slide = 72.0;
-    let right = if lyrics_only {
+    let right = if split_queue {
+        // When showing queue: keep album artwork and controllers at the exact same size,
+        // sliding smoothly to the left, and give the queue manager a compact, elegant width on the right.
+        let side = art_side(cs, col_art);
+        let max_queue_w = (content.width() - side - 48.0).max(280.0);
+        let queue_w = ((content.width() * 0.36).clamp(320.0, 460.0)).min(max_queue_w);
+        let right_rect = Rect::from_min_size(
+            pos2(content.right() - queue_w, content.top()),
+            vec2(queue_w, content.height()),
+        );
+        let avail_left = (right_rect.left() - 28.0 - content.left()).max(side);
+        let left_center_x = content.left() + avail_left / 2.0;
+        let slide_dist = (content.center().x - left_center_x).max(0.0);
+        let col = col_art.translate(vec2(-slide_dist * glide, 0.0));
+        let px = (art_side(cs, col_art) * ppp) as u32;
+        cover_column(app, ui, col, &track, no_lyrics, now, px, controls_alpha);
+        right_rect
+    } else if lyrics_only {
         // No cover column next to the panel: the artwork fades in from the left as the panel leaves.
         let px = (art_side(cs, col_art) * ppp) as u32;
         if art_vis > 0.001 {
