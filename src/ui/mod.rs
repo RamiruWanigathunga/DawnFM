@@ -1400,6 +1400,20 @@ impl App {
         }
     }
 
+    pub(super) fn blurred_art_tex(&mut self, ctx: &egui::Context, key: &str) -> Option<egui::TextureHandle> {
+        if let Some(tex) = self.art_blur_tex.get(key) {
+            return Some(tex.clone());
+        }
+        let rgba = self.art_blurs.get(key)?;
+        if rgba.len() != (crate::art::SIZE * crate::art::SIZE * 4) as usize {
+            return None;
+        }
+        let img = egui::ColorImage::from_rgba_unmultiplied([crate::art::SIZE as usize, crate::art::SIZE as usize], rgba);
+        let tex = ctx.load_texture(format!("album-blur:{key}"), img, egui::TextureOptions::LINEAR);
+        self.art_blur_tex.insert(key.to_owned(), tex.clone());
+        Some(tex)
+    }
+
     /// Paint the window-wide backdrop with warm blurred artwork and alive ambient glow.
     fn paint_page_backdrop(&mut self, ctx: &egui::Context, painter: &egui::Painter, area: egui::Rect, now: f64) {
         let base = self.page_color(ctx);
@@ -1418,14 +1432,7 @@ impl App {
             return;
         }
 
-        if !self.art_blur_tex.contains_key(&key)
-            && let Some(rgba) = self.art_blurs.get(&key)
-            && rgba.len() == (crate::art::SIZE * crate::art::SIZE * 4) as usize
-        {
-            let img = egui::ColorImage::from_rgba_unmultiplied([crate::art::SIZE as usize, crate::art::SIZE as usize], rgba);
-            let tex = ctx.load_texture(format!("album-blur:{key}"), img, egui::TextureOptions::LINEAR);
-            self.art_blur_tex.insert(key.clone(), tex);
-        }
+        let blur_tex = self.blurred_art_tex(ctx, &key);
 
         let loaded_t = self.art_loaded_at.get(&key).copied().unwrap_or(now);
         let fade = theme::ease_out(((now - loaded_t) / 0.65).clamp(0.0, 1.0) as f32);
@@ -1436,7 +1443,7 @@ impl App {
         let light = theme::light();
         let p = painter.with_clip_rect(area);
 
-        if let Some(tex) = self.art_blur_tex.get(&key) {
+        if let Some(tex) = blur_tex {
             let t = if self.playing() { (now * 0.28) as f32 } else { 0.0 };
             let dx = t.sin() * 0.045;
             let dy = (t * 0.73).cos() * 0.045;
@@ -1588,15 +1595,14 @@ impl App {
         }
     }
 
-    /// Height of the bottom player area: the capsule's 56 points plus the margin it
-    /// floats on.
+    /// Height of the bottom player area: the compact capsule's 44 points plus its floating margin.
     fn bar_height(&self) -> f32 {
         if self.page == Page::Settings {
             0.0
         } else if shell::docked(self) {
             shell::DOCKED_H
         } else {
-            96.0
+            68.0
         }
     }
 

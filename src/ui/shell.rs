@@ -811,6 +811,37 @@ pub fn docked(app: &App) -> bool {
     app.look().chrome.player_bar == crate::preset::PlayerBar::Docked
 }
 
+fn paint_blurred_capsule(painter: &egui::Painter, cap: Rect, radius: f32, tex: &egui::TextureHandle, tint: Color32) {
+    let mut mesh = egui::Mesh::with_texture(tex.id());
+    let to_uv = |p: Pos2| {
+        let ux = ((p.x - cap.left()) / cap.width().max(1.0)).clamp(0.0, 1.0);
+        let vy = ((p.y - cap.top()) / cap.height().max(1.0)).clamp(0.0, 1.0);
+        pos2(0.10 + ux * 0.80, 0.25 + vy * 0.50)
+    };
+    mesh.vertices.push(egui::epaint::Vertex { pos: cap.center(), uv: to_uv(cap.center()), color: tint });
+
+    let mut ring: Vec<Pos2> = Vec::with_capacity(28);
+    let left_c = pos2(cap.left() + radius, cap.center().y);
+    let right_c = pos2(cap.right() - radius, cap.center().y);
+    const ARC_SEGS: usize = 12;
+    for i in 0..=ARC_SEGS {
+        let a = std::f32::consts::FRAC_PI_2 + (i as f32 / ARC_SEGS as f32) * std::f32::consts::PI;
+        ring.push(left_c + vec2(a.cos() * radius, a.sin() * radius));
+    }
+    for i in 0..=ARC_SEGS {
+        let a = -std::f32::consts::FRAC_PI_2 + (i as f32 / ARC_SEGS as f32) * std::f32::consts::PI;
+        ring.push(right_c + vec2(a.cos() * radius, a.sin() * radius));
+    }
+    let count = ring.len() as u32;
+    for (idx, p) in ring.into_iter().enumerate() {
+        mesh.vertices.push(egui::epaint::Vertex { pos: p, uv: to_uv(p), color: tint });
+        let cur = 1 + idx as u32;
+        let next = 1 + ((idx as u32 + 1) % count);
+        mesh.add_triangle(0, cur, next);
+    }
+    painter.add(egui::Shape::mesh(mesh));
+}
+
 pub fn player_bar(app: &mut App, ui: &mut Ui, now: f64, _frosted: bool) {
     let full = ui.max_rect();
     // A docked strip is opaque and takes clicks across its whole width.
@@ -826,26 +857,54 @@ pub fn player_bar(app: &mut App, ui: &mut Ui, now: f64, _frosted: bool) {
         ui.painter().rect_filled(cap, 0.0, base);
         cap.shrink2(vec2(12.0, 0.0))
     } else {
-        const H: f32 = 56.0;
+        const H: f32 = 44.0;
         let radius = H / 2.0;
-        let max_w = 840.0;
-        let w = (full.width() - 32.0).clamp(420.0, max_w).min(full.width() - 16.0);
-        let cap = Rect::from_min_size(pos2(full.center().x - w / 2.0, full.bottom() - 14.0 - H), vec2(w, H));
+        let max_w = 640.0;
+        let w = (full.width() - 80.0).clamp(380.0, max_w).min(full.width() - 24.0);
+        let cap = Rect::from_min_size(pos2(full.center().x - w / 2.0, full.bottom() - 12.0 - H), vec2(w, H));
         ui.interact(cap, ui.scope_id().with("player-strip"), Sense::hover());
 
-        let fill = if theme::light() {
-            Color32::from_rgba_premultiplied(248, 248, 250, 245)
+        let light = theme::light();
+        let p_col = app.page_color(&ctx);
+        let fill = if light {
+            theme::with_alpha(theme::lerp_color(p_col, Color32::WHITE, 0.72), 0.72)
         } else {
-            let p_col = app.page_color(&ctx);
-            theme::lerp_color(p_col, Color32::WHITE, 0.08)
+            theme::with_alpha(theme::lerp_color(p_col, Color32::from_rgb(0x16, 0x18, 0x1e), 0.45), 0.72)
         };
-        let stroke_col = if theme::light() {
-            Color32::from_rgba_unmultiplied(0, 0, 0, 22)
-        } else {
-            theme::lerp_color(app.page_color(&ctx), Color32::WHITE, 0.18)
-        };
-
         ui.painter().rect_filled(cap, radius, fill);
+
+        let blur_key = match &app.page {
+            Page::Album(id) => Some(format!("album:{id}")),
+            Page::Artist(id) => Some(format!("artist:{id}")),
+            _ => app.art_key.clone().or_else(|| app.current_id().map(str::to_owned)),
+        };
+        if let Some(k) = blur_key
+            && let Some(dom) = app.art_colors.get(&k).copied()
+        {
+            let r = dom.r() as f32 / 255.0;
+            let g = dom.g() as f32 / 255.0;
+            let b = dom.b() as f32 / 255.0;
+            let mx = r.max(g).max(b);
+            let mn = r.min(g).min(b);
+            let sat = if mx > 0.0 { (mx - mn) / mx } else { 0.0 };
+            if sat >= 0.17
+                && mx >= 0.08
+                && let Some(tex) = app.blurred_art_tex(&ctx, &k)
+            {
+                let tint = if light {
+                    Color32::from_rgba_premultiplied(46, 46, 46, 46)
+                } else {
+                    Color32::from_rgba_premultiplied(78, 76, 74, 78)
+                };
+                paint_blurred_capsule(ui.painter(), cap, radius, &tex, tint);
+            }
+        }
+
+        let stroke_col = if light {
+            Color32::from_white_alpha(150)
+        } else {
+            Color32::from_white_alpha(38)
+        };
         ui.painter().rect_stroke(cap, radius, egui::Stroke::new(1.0, stroke_col), egui::StrokeKind::Inside);
 
         cap
@@ -863,7 +922,6 @@ pub fn player_bar(app: &mut App, ui: &mut Ui, now: f64, _frosted: bool) {
     let playing = app.playing();
     let accent = app.accent_color();
     let cy = cap.center().y;
-    let dock = docked(app);
 
     let ink = |h: f32| {
         if theme::light() {
@@ -876,32 +934,32 @@ pub fn player_bar(app: &mut App, ui: &mut Ui, now: f64, _frosted: bool) {
 
     // ------------------------------------------------------------------ Left Zone: Transport Controls
     let tbtn = |ui: &mut Ui, x: f32, key: &str, name: &str| -> egui::Response {
-        let r = Rect::from_center_size(pos2(x, cy), Vec2::splat(28.0));
+        let r = Rect::from_center_size(pos2(x, cy), Vec2::splat(24.0));
         let resp = ui.interact(r, ui.scope_id().with(("bar-t", key)), Sense::click());
         named(resp, name).on_hover_text(name).on_hover_cursor(egui::CursorIcon::PointingHand)
     };
 
-    let left_start = cap.left() + if dock { 16.0 } else { 20.0 };
-    let show_modes = cap.width() >= 520.0;
+    let left_start = cap.left() + 16.0;
+    let show_modes = cap.width() >= 480.0;
     let (x_shuf, x_prev, x_play, x_next, x_rep, left_boundary) = if show_modes {
-        let s = left_start + 12.0;
-        let p = s + 28.0;
-        let pl = p + 32.0;
-        let n = pl + 32.0;
-        let r = n + 28.0;
-        (s, p, pl, n, r, r + 22.0)
+        let s = left_start + 10.0;
+        let p = s + 24.0;
+        let pl = p + 26.0;
+        let n = pl + 26.0;
+        let r = n + 24.0;
+        (s, p, pl, n, r, r + 16.0)
     } else {
-        let p = left_start + 14.0;
-        let pl = p + 32.0;
-        let n = pl + 32.0;
-        (0.0, p, pl, n, 0.0, n + 20.0)
+        let p = left_start + 12.0;
+        let pl = p + 26.0;
+        let n = pl + 26.0;
+        (0.0, p, pl, n, 0.0, n + 16.0)
     };
 
     // Shuffle (if show_modes)
     if show_modes {
         let r_shuf = tbtn(ui, x_shuf, "shuffle", &t!("shuffle_up_next"));
         let h = if r_shuf.hovered() { 1.0 } else { 0.0 };
-        glyphs::draw(ui, r_shuf.rect.center(), 18.0, glyphs::SHUFFLE, ink(h));
+        glyphs::draw(ui, r_shuf.rect.center(), 15.5, glyphs::SHUFFLE, ink(h));
         if r_shuf.clicked() {
             app.shuffle_upcoming();
         }
@@ -910,7 +968,7 @@ pub fn player_bar(app: &mut App, ui: &mut Ui, now: f64, _frosted: bool) {
     // Previous
     let r_prev = tbtn(ui, x_prev, "prev", &t!("previous"));
     let h = if r_prev.hovered() { 1.0 } else { 0.0 };
-    glyphs::draw(ui, r_prev.rect.center(), 20.0, glyphs::PREVIOUS, ink(h));
+    glyphs::draw(ui, r_prev.rect.center(), 17.5, glyphs::PREVIOUS, ink(h));
     if r_prev.clicked() && enabled {
         app.prev();
     }
@@ -923,16 +981,16 @@ pub fn player_bar(app: &mut App, ui: &mut Ui, now: f64, _frosted: bool) {
     let morph = theme::anim_bool(&ctx, "bar-play-morph", playing || app.buffering, 0.18);
     if app.buffering {
         let a = now as f32 * 6.0;
-        let pts: Vec<Pos2> = (0..16).map(|i| c + vec2((a + i as f32 * 0.24).cos(), (a + i as f32 * 0.24).sin()) * 8.0).collect();
-        ui.painter().add(egui::Shape::Path(egui::epaint::PathShape::line(pts, egui::epaint::PathStroke::new(2.2, ink(0.6)))));
+        let pts: Vec<Pos2> = (0..16).map(|i| c + vec2((a + i as f32 * 0.24).cos(), (a + i as f32 * 0.24).sin()) * 7.0).collect();
+        ui.painter().add(egui::Shape::Path(egui::epaint::PathShape::line(pts, egui::epaint::PathStroke::new(2.0, ink(0.6)))));
         ctx.request_repaint_after(std::time::Duration::from_millis(33));
     } else {
         let fg = ink(0.9 + 0.1 * h);
         if morph < 1.0 {
-            glyphs::draw(ui, c, 24.0, glyphs::PLAY, theme::with_alpha(fg, 1.0 - morph));
+            glyphs::draw(ui, c, 20.0, glyphs::PLAY, theme::with_alpha(fg, 1.0 - morph));
         }
         if morph > 0.0 {
-            glyphs::draw(ui, c, 24.0, glyphs::PAUSE, theme::with_alpha(fg, morph));
+            glyphs::draw(ui, c, 20.0, glyphs::PAUSE, theme::with_alpha(fg, morph));
         }
     }
     if r_play.clicked() && enabled {
@@ -942,7 +1000,7 @@ pub fn player_bar(app: &mut App, ui: &mut Ui, now: f64, _frosted: bool) {
     // Next
     let r_next = tbtn(ui, x_next, "next", &t!("next"));
     let h = if r_next.hovered() { 1.0 } else { 0.0 };
-    glyphs::draw(ui, r_next.rect.center(), 20.0, glyphs::NEXT, ink(h));
+    glyphs::draw(ui, r_next.rect.center(), 17.5, glyphs::NEXT, ink(h));
     if r_next.clicked() && enabled {
         app.next();
     }
@@ -956,7 +1014,7 @@ pub fn player_bar(app: &mut App, ui: &mut Ui, now: f64, _frosted: bool) {
         };
         let r_rep = tbtn(ui, x_rep, "repeat", &t!("repeat"));
         let h = if r_rep.hovered() { 1.0 } else { 0.0 };
-        glyphs::draw(ui, r_rep.rect.center(), 18.0, glyph, if on { accent } else { ink(h) });
+        glyphs::draw(ui, r_rep.rect.center(), 15.5, glyph, if on { accent } else { ink(h) });
         if r_rep.clicked() {
             app.queue.repeat = match app.queue.repeat {
                 Repeat::Off => Repeat::All,
@@ -967,18 +1025,18 @@ pub fn player_bar(app: &mut App, ui: &mut Ui, now: f64, _frosted: bool) {
     }
 
     // ------------------------------------------------------------------ Right Zone: Lyrics, Queue, Star, Volume
-    let r_pad = if dock { 16.0 } else { 20.0 };
-    let r_base = cap.right() - r_pad - 12.0;
-    let r_spacing = if cap.width() < 600.0 { 26.0 } else { 30.0 };
+    let r_pad = 16.0;
+    let r_base = cap.right() - r_pad - 10.0;
+    let r_spacing = if cap.width() < 540.0 { 24.0 } else { 26.0 };
     let vol_x = r_base;
     let star_x = r_base - r_spacing;
     let q_x = r_base - 2.0 * r_spacing;
     let lyr_x = r_base - 3.0 * r_spacing;
-    let right_boundary = lyr_x - 18.0;
+    let right_boundary = lyr_x - 16.0;
 
     // Volume hover slider
-    let slider_w = (r_spacing * 2.0).min(64.0);
-    let r_vol = Rect::from_center_size(pos2(vol_x, cy), Vec2::splat(28.0));
+    let slider_w = (r_spacing * 2.0).min(56.0);
+    let r_vol = Rect::from_center_size(pos2(vol_x, cy), Vec2::splat(24.0));
     let slider_rect = Rect::from_min_size(pos2(vol_x - slider_w - 6.0, cy - 8.0), vec2(slider_w, 16.0));
 
     let hover_icon = ui.input(|i| i.pointer.hover_pos()).is_some_and(|p| r_vol.contains(p));
@@ -992,54 +1050,54 @@ pub fn player_bar(app: &mut App, ui: &mut Ui, now: f64, _frosted: bool) {
 
     // ------------------------------------------------------------------ Center Zone: Art + Title/Artist + Scrubber + Options
     let center_avail = (right_boundary - left_boundary).max(80.0);
-    let center_w = center_avail.min(480.0);
+    let center_w = center_avail.min(340.0);
     let center_cx = (left_boundary + right_boundary) / 2.0;
-    let center_box = Rect::from_center_size(pos2(center_cx, cy), vec2(center_w, 42.0));
+    let center_box = Rect::from_center_size(pos2(center_cx, cy), vec2(center_w, 36.0));
 
     // Cover art (left edge of center_box)
-    let cover_size = 36.0;
-    let cover_rect = Rect::from_center_size(pos2(center_box.left() + cover_size / 2.0, center_box.center().y - 2.0), Vec2::splat(cover_size));
+    let cover_size = 30.0;
+    let cover_rect = Rect::from_center_size(pos2(center_box.left() + cover_size / 2.0, center_box.center().y - 1.5), Vec2::splat(cover_size));
     match &track {
         Some(t) => {
-            widgets::paint_cover_xfade(ui, egui::Id::unique("player-bar-art"), cover_rect, &t.thumbs, 6.0, 1.0);
+            widgets::paint_cover_xfade(ui, egui::Id::unique("player-bar-art"), cover_rect, &t.thumbs, 5.0, 1.0);
             let ar = ui.interact(cover_rect, ui.scope_id().with("bar-art"), Sense::click());
             let ar = named(ar, "Open now playing").on_hover_cursor(egui::CursorIcon::PointingHand);
             let ah = if ar.hovered() { 1.0 } else { 0.0 };
             if ah > 0.0 {
-                ui.painter().rect_filled(cover_rect, 6.0, theme::glass(0.16 * ah));
-                ui.painter().rect_filled(cover_rect, 6.0, theme::shade(0.3 * ah));
-                glyphs::draw(ui, cover_rect.center(), 14.0, glyphs::MAXIMIZE_2, theme::with_alpha(Color32::WHITE, ah));
+                ui.painter().rect_filled(cover_rect, 5.0, theme::glass(0.16 * ah));
+                ui.painter().rect_filled(cover_rect, 5.0, theme::shade(0.3 * ah));
+                glyphs::draw(ui, cover_rect.center(), 12.0, glyphs::MAXIMIZE_2, theme::with_alpha(Color32::WHITE, ah));
             }
             if ar.clicked() {
                 app.actions.push(Action::OpenNowPlaying(true));
             }
         }
         None => {
-            ui.painter().rect_filled(cover_rect, 6.0, theme::glass(0.08));
-            paint_mark(ui, cover_rect.shrink(6.0));
+            ui.painter().rect_filled(cover_rect, 5.0, theme::glass(0.08));
+            paint_mark(ui, cover_rect.shrink(5.0));
         }
     }
 
     // Options button (...) at the right edge of center_box
-    let opt_size = 24.0;
-    let r_opt = Rect::from_center_size(pos2(center_box.right() - opt_size / 2.0, center_box.center().y - 2.0), Vec2::splat(opt_size));
+    let opt_size = 20.0;
+    let r_opt = Rect::from_center_size(pos2(center_box.right() - opt_size / 2.0, center_box.center().y - 1.5), Vec2::splat(opt_size));
     if let Some(t) = &track {
         super::nowplaying::options_menu(app, ui, r_opt, t, false, Some(&ink));
     } else {
         let resp = ui.interact(r_opt, ui.scope_id().with("bar-opt-disabled"), Sense::hover());
         let _ = named(resp, &t!("options"));
-        for dx in [-5.0, 0.0, 5.0] {
-            ui.painter().circle_filled(r_opt.center() + vec2(dx, 0.0), 1.8, ink(0.0));
+        for dx in [-4.5, 0.0, 4.5] {
+            ui.painter().circle_filled(r_opt.center() + vec2(dx, 0.0), 1.6, ink(0.0));
         }
     }
 
     // Text between cover art and options button
-    let text_l = cover_rect.right() + 9.0;
+    let text_l = cover_rect.right() + 8.0;
     let text_r = r_opt.left() - 6.0;
     let text_w = (text_r - text_l).max(10.0);
 
-    let row1_y = center_box.top() + 9.0;
-    let row2_y = center_box.top() + 24.0;
+    let row1_y = center_box.top() + 7.5;
+    let row2_y = center_box.top() + 20.5;
 
     let (title, artists, album) = match &track {
         Some(t) => (t.title.clone(), t.artists.clone(), t.album.as_ref().map(|a| a.name.clone())),
@@ -1048,11 +1106,11 @@ pub fn player_bar(app: &mut App, ui: &mut Ui, now: f64, _frosted: bool) {
 
     // Row 1: Title (bold)
     let title_col = if theme::light() { Color32::BLACK } else { theme::text() };
-    let title_g = widgets::galley(ui, &title, theme::semibold(12.5), title_col, text_w);
+    let title_g = widgets::galley(ui, &title, theme::semibold(11.5), title_col, text_w);
     let title_pos = pos2(text_l, row1_y - title_g.size().y / 2.0);
     ui.painter().galley(title_pos, title_g.clone(), title_col);
 
-    let title_hit = Rect::from_min_size(title_pos, vec2(title_g.size().x.min(text_w), 14.0));
+    let title_hit = Rect::from_min_size(title_pos, vec2(title_g.size().x.min(text_w), 13.0));
     let tre = ui.interact(title_hit, ui.scope_id().with("bar-title"), Sense::click());
     if named(tre, &title).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
         app.actions.push(Action::OpenNowPlaying(true));
@@ -1067,11 +1125,11 @@ pub fn player_bar(app: &mut App, ui: &mut Ui, now: f64, _frosted: bool) {
         subtitle.push_str(alb);
     }
     let artist_col = if theme::light() { Color32::from_black_alpha(150) } else { theme::text_dim() };
-    let sub_g = widgets::galley(ui, &subtitle, theme::regular(11.0), artist_col, text_w);
+    let sub_g = widgets::galley(ui, &subtitle, theme::regular(10.0), artist_col, text_w);
     let sub_pos = pos2(text_l, row2_y - sub_g.size().y / 2.0);
     ui.painter().galley(sub_pos, sub_g.clone(), artist_col);
 
-    let sub_hit = Rect::from_min_size(sub_pos, vec2(sub_g.size().x.min(text_w), 14.0));
+    let sub_hit = Rect::from_min_size(sub_pos, vec2(sub_g.size().x.min(text_w), 12.0));
     let sub_resp = ui.interact(sub_hit, ui.scope_id().with("bar-artist"), Sense::click());
     if named(sub_resp, &subtitle).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
         if let Some(a0) = artists.first().and_then(|a| a.id.as_ref()) {
@@ -1109,8 +1167,8 @@ pub fn player_bar(app: &mut App, ui: &mut Ui, now: f64, _frosted: bool) {
 
     let sx0 = center_box.left();
     let sx1 = center_box.right();
-    let sy = center_box.bottom() + 1.0;
-    let seek_hit = Rect::from_min_max(pos2(sx0, sy - 8.0), pos2(sx1, sy + 8.0));
+    let sy = center_box.bottom() - 1.0;
+    let seek_hit = Rect::from_min_max(pos2(sx0, sy - 7.0), pos2(sx1, sy + 7.0));
     let sresp = ui.interact(seek_hit, ui.scope_id().with("bar-seek"), if held { Sense::hover() } else { Sense::click_and_drag() });
     let sresp = if total > 0.0 && !held { sresp.on_hover_cursor(egui::CursorIcon::PointingHand) } else { sresp };
     let time_label = format!("{} / {}", fmt_time(pos as u32), if total > 0.0 { fmt_time(total as u32) } else { "0:00".to_string() });
@@ -1118,7 +1176,7 @@ pub fn player_bar(app: &mut App, ui: &mut Ui, now: f64, _frosted: bool) {
     sresp.widget_info(|| egui::WidgetInfo::slider(total > 0.0 && !held, pos as f64, "Seek"));
     let focus = theme::anim_bool(&ctx, "bar-seek-h", total > 0.0 && !held && (sresp.hovered() || sresp.dragged()), 0.15);
 
-    let thick = 2.5 + 1.5 * focus;
+    let thick = 2.0 + 1.2 * focus;
     let line_r = Rect::from_min_max(pos2(sx0, sy - thick / 2.0), pos2(sx1, sy + thick / 2.0));
     ui.painter().rect_filled(line_r, thick / 2.0, theme::glass(0.18));
 
@@ -1136,7 +1194,7 @@ pub fn player_bar(app: &mut App, ui: &mut Ui, now: f64, _frosted: bool) {
         ui.painter().rect_filled(Rect::from_min_size(line_r.min, vec2(line_r.width() * frac, thick)), thick / 2.0, head_col);
         if focus > 0.0 {
             let grab_pos = pos2(sx0 + (sx1 - sx0) * frac, sy);
-            ui.painter().circle_filled(grab_pos, 3.5 + 1.0 * focus, if theme::light() { Color32::BLACK } else { Color32::WHITE });
+            ui.painter().circle_filled(grab_pos, 3.0 + 0.8 * focus, if theme::light() { Color32::BLACK } else { Color32::WHITE });
         }
     }
 
@@ -1155,7 +1213,7 @@ pub fn player_bar(app: &mut App, ui: &mut Ui, now: f64, _frosted: bool) {
     let heard = if held { track.clone() } else { app.playing_track().cloned().or_else(|| track.clone()) };
     let liked = heard.as_ref().is_some_and(|t| app.liked.contains(&t.id));
     let like_label = if liked { t!("remove_from_favourites") } else { t!("add_to_favourites") };
-    let r_star = Rect::from_center_size(pos2(star_x, cy), Vec2::splat(28.0));
+    let r_star = Rect::from_center_size(pos2(star_x, cy), Vec2::splat(24.0));
 
     // When volume is hovered, draw the volume slider to the left of the volume icon
     if v_reveal > 0.05 {
@@ -1168,7 +1226,7 @@ pub fn player_bar(app: &mut App, ui: &mut Ui, now: f64, _frosted: bool) {
     let vol_resp = named(vol_resp, "Volume").on_hover_cursor(egui::CursorIcon::PointingHand);
     let vol_h = if vol_resp.hovered() || v_reveal > 0.5 { 1.0 } else { 0.0 };
     let step = glyphs::volume_step(vol);
-    glyphs::draw(ui, r_vol.center(), 18.0, glyphs::VOLUME[step], ink(vol_h));
+    glyphs::draw(ui, r_vol.center(), 15.5, glyphs::VOLUME[step], ink(vol_h));
     if vol_resp.hovered() {
         let scroll = ui.input(|i| i.smooth_scroll_delta.y);
         if scroll != 0.0 {
@@ -1197,7 +1255,7 @@ pub fn player_bar(app: &mut App, ui: &mut Ui, now: f64, _frosted: bool) {
         let pop = heard.as_ref().map_or(0.0, |t| theme::anim_bool(&ctx, ("liked", &t.id), liked, 0.3));
         let dim = if heard.is_some() { 1.0 } else { 0.4 };
         let tint = theme::lerp_color(r_ink(star_h), accent, pop).gamma_multiply(dim);
-        let size = 18.0 * (1.0 + 0.25 * (pop * std::f32::consts::PI).sin());
+        let size = 15.5 * (1.0 + 0.25 * (pop * std::f32::consts::PI).sin());
         glyphs::draw(ui, r_star.center(), size, glyphs::STAR, tint);
         if pop > 0.0 {
             glyphs::draw(ui, r_star.center(), size, glyphs::STAR_FILLED, theme::with_alpha(tint, tint.a() as f32 / 255.0 * pop));
@@ -1208,12 +1266,12 @@ pub fn player_bar(app: &mut App, ui: &mut Ui, now: f64, _frosted: bool) {
 
         // Queue / Up Next
         let queue_open = if app.np_open { app.np_tab == NpTab::UpNext } else { app.queue_open };
-        let r_q = Rect::from_center_size(pos2(q_x, cy), Vec2::splat(28.0));
+        let r_q = Rect::from_center_size(pos2(q_x, cy), Vec2::splat(24.0));
         if r_alpha > 0.5 {
             let q_resp = ui.interact(r_q, ui.scope_id().with(("bar-r", "queue")), Sense::click());
             let q_resp = named(q_resp, &t!("up_next")).on_hover_cursor(egui::CursorIcon::PointingHand);
             let q_h = if q_resp.hovered() { 1.0 } else { 0.0 };
-            glyphs::draw(ui, r_q.center(), 18.0, glyphs::QUEUE, if queue_open { accent } else { r_ink(q_h) });
+            glyphs::draw(ui, r_q.center(), 15.5, glyphs::QUEUE, if queue_open { accent } else { r_ink(q_h) });
             if q_resp.clicked() {
                 if app.np_open {
                     app.np_tab = if queue_open { NpTab::Art } else { NpTab::UpNext };
@@ -1225,23 +1283,23 @@ pub fn player_bar(app: &mut App, ui: &mut Ui, now: f64, _frosted: bool) {
                 }
             }
         } else {
-            glyphs::draw(ui, r_q.center(), 18.0, glyphs::QUEUE, if queue_open { accent } else { r_ink(0.0) });
+            glyphs::draw(ui, r_q.center(), 15.5, glyphs::QUEUE, if queue_open { accent } else { r_ink(0.0) });
         }
 
         // Lyrics
         let lyrics_on = if app.np_open { app.np_tab == NpTab::Lyrics && !app.no_lyrics() } else { app.lyrics_drawer && !app.queue_open };
         let lyrics_label = format!("{} (⌘L)", t!("lyrics"));
-        let r_lyr = Rect::from_center_size(pos2(lyr_x, cy), Vec2::splat(28.0));
+        let r_lyr = Rect::from_center_size(pos2(lyr_x, cy), Vec2::splat(24.0));
         if r_alpha > 0.5 {
             let lyr_resp = ui.interact(r_lyr, ui.scope_id().with(("bar-r", "lyrics")), Sense::click());
             let lyr_resp = named(lyr_resp, &lyrics_label).on_hover_cursor(egui::CursorIcon::PointingHand);
             let lyr_h = if lyr_resp.hovered() { 1.0 } else { 0.0 };
-            glyphs::draw(ui, r_lyr.center(), 18.0, if lyrics_on { glyphs::LYRICS } else { glyphs::LYRICS_OFF }, if lyrics_on { accent } else { r_ink(lyr_h) });
+            glyphs::draw(ui, r_lyr.center(), 15.5, if lyrics_on { glyphs::LYRICS } else { glyphs::LYRICS_OFF }, if lyrics_on { accent } else { r_ink(lyr_h) });
             if lyr_resp.clicked() {
                 app.toggle_lyrics();
             }
         } else {
-            glyphs::draw(ui, r_lyr.center(), 18.0, if lyrics_on { glyphs::LYRICS } else { glyphs::LYRICS_OFF }, if lyrics_on { accent } else { r_ink(0.0) });
+            glyphs::draw(ui, r_lyr.center(), 15.5, if lyrics_on { glyphs::LYRICS } else { glyphs::LYRICS_OFF }, if lyrics_on { accent } else { r_ink(0.0) });
         }
     }
 }
