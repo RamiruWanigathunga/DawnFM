@@ -1400,13 +1400,14 @@ impl App {
         }
     }
 
-    /// Paint the main page section backdrop with warm blurred album artwork and alive ambient glow.
-    fn paint_page_backdrop(&mut self, ctx: &egui::Context, painter: &egui::Painter, section: egui::Rect, now: f64) {
+    /// Paint the window-wide backdrop with warm blurred artwork and alive ambient glow.
+    fn paint_page_backdrop(&mut self, ctx: &egui::Context, painter: &egui::Painter, area: egui::Rect, now: f64) {
         let base = self.page_color(ctx);
-        painter.rect_filled(section, 0.0, base);
+        painter.rect_filled(area, 0.0, base);
 
         let key = match &self.page {
             Page::Album(id) => format!("album:{id}"),
+            Page::Artist(id) => format!("artist:{id}"),
             _ => return,
         };
         let Some(&dom) = self.art_colors.get(&key) else {
@@ -1433,7 +1434,7 @@ impl App {
         }
 
         let light = theme::light();
-        let p = painter.with_clip_rect(section);
+        let p = painter.with_clip_rect(area);
 
         if let Some(tex) = self.art_blur_tex.get(&key) {
             let t = if self.playing() { (now * 0.28) as f32 } else { 0.0 };
@@ -1444,8 +1445,8 @@ impl App {
             let v0 = (0.08 + dy).clamp(0.02, 0.20);
             let v1 = (0.92 + dy).clamp(0.80, 0.98);
 
-            let glow_h = (section.height() * 0.85).clamp(480.0, 760.0).min(section.height());
-            let wash_rect = egui::Rect::from_min_max(section.min, egui::pos2(section.right(), section.top() + glow_h));
+            let glow_h = (area.height() * 0.85).clamp(480.0, 760.0).min(area.height());
+            let wash_rect = egui::Rect::from_min_max(area.min, egui::pos2(area.right(), area.top() + glow_h));
 
             let ys = [0.0f32, 0.25, 0.55, 0.80, 1.0];
             let alphas = if light {
@@ -1454,7 +1455,7 @@ impl App {
                 [0.52f32, 0.42, 0.22, 0.07, 0.0]
             };
             let xs = [0.0f32, 0.45, 1.0];
-            let x_boost = [1.12f32, 0.98, 0.86];
+            let x_boost = [1.06f32, 1.02, 0.88];
 
             let mut mesh = egui::Mesh::with_texture(tex.id());
             for (&ty, &base_a) in ys.iter().zip(alphas.iter()) {
@@ -1493,13 +1494,13 @@ impl App {
             p.add(egui::Shape::mesh(mesh));
         }
 
-        // Warm backlit ambient halo behind the album cover
+        // Warm backlit ambient halo behind the artwork, softly touching the sidebar too.
         if let Some(&acc) = self.art_accents.get(&key) {
             let breath = if self.playing() { 1.0 + 0.06 * (now as f32 * 0.8).sin() } else { 1.0 };
             let warm_acc = theme::lerp_color(acc, Color32::from_rgb(255, 224, 196), 0.16);
-            let center = egui::pos2(section.left() + 210.0, section.top() + 190.0);
-            let rad_x = (section.width() * 0.45).clamp(280.0, 460.0);
-            let rad_y = 300.0;
+            let center = egui::pos2(area.left() + shell::SIDEBAR_W + 190.0, area.top() + 190.0);
+            let rad_x = (area.width() * 0.46).clamp(320.0, 540.0);
+            let rad_y = 310.0;
             let mut halo = egui::Mesh::default();
             let halo_alpha = (if light { 0.08 } else { 0.17 }) * fade * breath;
             halo.colored_vertex(center, theme::with_alpha(warm_acc, halo_alpha));
@@ -1528,20 +1529,24 @@ impl App {
         Color32::from_rgb(ch(0, target.r()), ch(1, target.g()), ch(2, target.b()))
     }
 
-    /// Sidebar background fill: in dark mode, starts from #222629 (RGB: 34, 38, 41)
-    /// and incorporates an ultra-subtle ambient reflection (10% blend) of the active page color
-    /// so it softly harmonizes with the album/artist page without jarring color shifts.
+    /// Sidebar background fill: translucent frosted wash harmonizing with the active page
+    /// backdrop so blurred album/artist colors flow softly through the sidebar in both
+    /// light and dark modes (matching Apple Music).
     pub fn sidebar_fill(&self, ctx: &egui::Context, alpha: f32) -> Color32 {
+        let p_col = self.page_color(ctx);
         if theme::light() {
-            theme::panel(alpha)
-        } else {
-            let base = theme::SIDEBAR_BG_DARK;
-            let p_col = self.page_color(ctx);
-            let tinted = theme::lerp_color(base, p_col, 0.10);
-            if alpha < 1.0 {
-                theme::with_alpha(tinted, alpha)
-            } else {
+            let tinted = theme::lerp_color(p_col, Color32::WHITE, 0.25);
+            if alpha >= 1.0 {
                 tinted
+            } else {
+                theme::with_alpha(tinted, (alpha + 0.15).clamp(0.35, 0.65))
+            }
+        } else {
+            let tinted = theme::lerp_color(p_col, Color32::from_rgb(0x1a, 0x1e, 0x24), 0.22);
+            if alpha >= 1.0 {
+                tinted
+            } else {
+                theme::with_alpha(tinted, (alpha + 0.12).clamp(0.32, 0.60))
             }
         }
     }
@@ -1753,7 +1758,7 @@ impl eframe::App for App {
             // The playing row's bars need a steady, full rate to read as smooth; 30 fps
             // behind other windows.
             ctx.request_repaint_after(Duration::from_millis(if focused { 16 } else { 33 }));
-        } else if playing && (shell::pages_bg_moves(self.look()) || (self.look().id == crate::preset::DEFAULT_ID && matches!(self.page, Page::Album(_)))) {
+        } else if playing && (shell::pages_bg_moves(self.look()) || (self.look().id == crate::preset::DEFAULT_ID && matches!(self.page, Page::Album(_) | Page::Artist(_)))) {
             ctx.request_repaint_after(Duration::from_millis(66));
         } else if playing || self.buffering {
             ctx.request_repaint_after(Duration::from_millis(250));
@@ -1828,6 +1833,11 @@ impl eframe::App for App {
             titlebar::drag_strip(ui, side, "sidebar");
         }
         if !np_fullscreen && !covered {
+            // Paint the ambient tint and warm blurred artwork across the entire window
+            // before the sidebar so the frosted sidebar harmonizes with the backdrop.
+            if look.id == crate::preset::DEFAULT_ID {
+                self.paint_page_backdrop(&ctx, ui.painter(), screen, now);
+            }
             use crate::preset::SidebarStyle;
             let side_alpha = app_style.sidebar_alpha.clamp(0.0, 1.0);
             // The logo's row is 32 points tall.
@@ -1852,12 +1862,9 @@ impl eframe::App for App {
                 .frame(side_frame)
                 .show_separator_line(false)
                 .show(ui, |ui| shell::sidebar(self, ui));
+            ui.painter().vline(side.response.rect.right(), side.response.rect.y_range(), egui::Stroke::new(1.0, theme::glass(if light { 0.06 } else { 0.07 })));
             self.scroll_panes.push(side.response.rect);
             let section = ui.available_rect_before_wrap();
-            // The built-in look paints the page's ambient tint plus a warm blurred artwork backdrop on albums.
-            if look.id == crate::preset::DEFAULT_ID {
-                self.paint_page_backdrop(&ctx, ui.painter(), section, now);
-            }
             const DRAWER_W: f32 = 340.0;
             let q = theme::anim_bool(&ctx, "queue-drawer", self.queue_open && !self.np_open, 0.25);
             if q > 0.01 {

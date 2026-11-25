@@ -121,10 +121,6 @@ pub fn background(app: &mut App, ui: &mut Ui, screen: Rect, now: f64, only: Opti
         None => ui.painter().clone(),
     };
     painter.rect_filled(screen, 0.0, app.page_color(ui.ctx()));
-    if !light && !(app.fullscreen && app.np_open) && only.is_none() {
-        let side_rect = Rect::from_min_max(screen.min, pos2(screen.left() + SIDEBAR_W, screen.bottom()));
-        painter.rect_filled(side_rect, 0.0, app.sidebar_fill(ui.ctx(), 1.0));
-    }
     let art = matches!(mode, BgMode::Kawarp | BgMode::CoverStatic | BgMode::CoverFullbleed);
     if let Some(bg) = app.bg.as_ref().filter(|_| art) {
         let blend = theme::ease_in_out(((now - app.art_changed) / 1.4) as f32);
@@ -151,7 +147,7 @@ pub fn background(app: &mut App, ui: &mut Ui, screen: Rect, now: f64, only: Opti
     } else {
         painter.rect_filled(screen, 0.0, look.solid());
     }
-    if light {
+    if light && (art || look.id != crate::preset::DEFAULT_ID) {
         painter.rect_filled(screen, 0.0, Color32::from_white_alpha(212));
     }
 }
