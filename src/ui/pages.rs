@@ -1708,25 +1708,11 @@ pub fn artist(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
     paint_hero_gradient_dissolve(ui.painter(), hero, page_bg);
 
     let base_x = hero.left() + 28.0;
-    let btn_y = hero.bottom() - 36.0;
+    let btn_y = hero.bottom() - 38.0;
 
-    // Circle 1: ... (more options)
-    let more_rect = Rect::from_center_size(pos2(base_x + 19.0, btn_y), vec2(38.0, 38.0));
-    let more_resp = named(ui.interact(more_rect, ui.scope_id().with("hero_more"), Sense::click()), "Artist options").on_hover_cursor(egui::CursorIcon::PointingHand);
-    let more_h = more_resp.hovered();
-    ui.painter().circle_filled(more_rect.center(), 19.0, theme::glass(0.15 + 0.08 * (more_h as u8 as f32)));
-    ui.painter().circle_stroke(more_rect.center(), 19.0, egui::Stroke::new(1.0, theme::glass(0.12)));
-    widgets::paint_more_dots(ui.painter(), more_rect.center(), 4.8, 1.8, theme::text());
-    egui::Popup::menu(&more_resp).show(|ui| {
-        ui.set_width(200.0);
-        if widgets::menu_action(ui, Some(icon::LINK), "Share artist") {
-            acts.push(Action::Share(Target::Artist(id.to_owned())));
-        }
-    });
-
-    // Circle 2: Large circular Play/Pause button with red accent
+    // Large circular Play/Pause button with accent
     let gap = 14.0;
-    let play_center = pos2(base_x + 38.0 + gap + 24.0, btn_y);
+    let play_center = pos2(base_x + 24.0, btn_y);
     let play_rect = Rect::from_center_size(play_center, vec2(48.0, 48.0));
     let artist_target = Target::Artist(id.to_owned());
     let active = widgets::active_state(ui, &artist_target);
@@ -1754,8 +1740,7 @@ pub fn artist(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
         }
     }
 
-    // Circle 3: the account's YouTube subscription to this artist, as a pill: the same
-    // subscription the YouTube Music app shows, so it stays in step with it.
+    // Subscribe pill button: YouTube subscription to this artist
     if let Some(sub) = &a.following {
         let label = if sub.subscribed { "Subscribed" } else { "Subscribe" };
         let galley = ui.painter().layout_no_wrap(label.to_owned(), theme::semibold(13.5), theme::text());
@@ -1789,12 +1774,19 @@ pub fn artist(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
         }
     }
 
-    // Artist name: show special Apple wordmark logo if available and ready, otherwise keep clean bold typography
+    // Monthly audience and subscribers, placed cleanly and well-aligned above the buttons
+    let stats = [a.audience.as_deref(), a.subscribers.as_deref()].into_iter().flatten().collect::<Vec<_>>().join(" • ");
+    let stats_y = btn_y - 24.0 - 14.0;
+    if !stats.is_empty() {
+        ui.painter().text(pos2(base_x, stats_y), Align2::LEFT_BOTTOM, &stats, theme::semibold(13.5), theme::text_dim());
+    }
+
+    // Artist name: above the stats line with clean breathing room
+    let name_bottom_y = if !stats.is_empty() { stats_y - 18.0 } else { btn_y - 24.0 - 14.0 };
     let has_logo = apple.as_ref().and_then(|x| x.logo.as_ref()).is_some();
-    let name_pos = pos2(base_x, btn_y - 54.0);
+    let name_pos = pos2(base_x, name_bottom_y);
     let logo_alpha = apple.as_ref().and_then(|x| x.logo.as_ref()).and_then(|logo| {
-        let logo_base = hero.left_bottom() + vec2(28.0, -54.0);
-        wordmark(ui, logo_base, logo, w * 0.62)
+        wordmark(ui, name_pos, logo, w * 0.62)
     });
 
     if let Some(alpha) = logo_alpha {
@@ -1804,11 +1796,6 @@ pub fn artist(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
         }
     } else {
         ui.painter().text(name_pos, Align2::LEFT_BOTTOM, &name, theme::bold(52.0), theme::text());
-    }
-    // Monthly audience and subscribers, as YouTube Music writes them.
-    let stats = [a.audience.as_deref(), a.subscribers.as_deref()].into_iter().flatten().collect::<Vec<_>>().join(" • ");
-    if !stats.is_empty() {
-        ui.painter().text(pos2(base_x, btn_y - 30.0), Align2::LEFT_BOTTOM, stats, theme::regular(13.0), theme::text_dim());
     }
 
     // Content sections below the hero banner, padded to match the rest of the app.
