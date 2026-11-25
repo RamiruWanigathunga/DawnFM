@@ -336,23 +336,29 @@ pub fn chip(ui: &mut Ui, label: &str, selected: bool) -> Response {
     let s = theme::anim_bool(ui.ctx(), resp.id.with("s"), selected, 0.2);
     let radius = rect.height() / 2.0;
     let light = theme::light();
+    let accent = ui.ctx().data(|d| d.get_temp::<Color32>(egui::Id::unique("accent"))).unwrap_or(theme::RED);
 
-    // Soft drop shadow
+    // Soft drop shadow (subtle accent glow when selected)
     let shadow_alpha = if light { 20 } else { 38 };
-    ui.painter().rect_filled(rect.translate(vec2(0.0, 1.2)), radius, Color32::from_black_alpha(shadow_alpha));
+    let shadow_color = if s > 0.01 {
+        theme::lerp_color(Color32::from_black_alpha(shadow_alpha), theme::with_alpha(accent, if light { 0.18 } else { 0.25 }), s)
+    } else {
+        Color32::from_black_alpha(shadow_alpha)
+    };
+    ui.painter().rect_filled(rect.translate(vec2(0.0, 1.2)), radius, shadow_color);
 
     let (fill, stroke_color, fg) = if light {
         let off_fill = theme::lerp_color(Color32::from_black_alpha(12), Color32::from_black_alpha(22), h);
-        let on_fill = Color32::from_rgb(0x18, 0x14, 0x1c);
+        let on_fill = if h > 0.0 { theme::lerp_color(accent, Color32::BLACK, 0.08) } else { accent };
         let fill = theme::lerp_color(off_fill, on_fill, s);
-        let stroke = Color32::from_black_alpha(((25.0 + 15.0 * h) * (1.0 - s)) as u8);
+        let stroke = theme::lerp_color(Color32::from_black_alpha(((25.0 + 15.0 * h) * (1.0 - s)) as u8), theme::with_alpha(Color32::WHITE, 0.35), s);
         let text_c = theme::lerp_color(theme::text(), Color32::WHITE, s);
         (fill, stroke, text_c)
     } else {
         let off_fill = theme::glass(0.11 + 0.08 * h);
-        let on_fill = theme::glass(0.26);
+        let on_fill = if h > 0.0 { theme::lerp_color(accent, Color32::WHITE, 0.12) } else { accent };
         let fill = theme::lerp_color(off_fill, on_fill, s);
-        let stroke = theme::glass((0.15 + 0.10 * h) * (1.0 - s) + 0.22 * s);
+        let stroke = theme::lerp_color(theme::glass(0.15 + 0.10 * h), theme::with_alpha(Color32::WHITE, 0.30), s);
         let text_c = theme::lerp_color(Color32::from_white_alpha(215), Color32::WHITE, s.max(h * 0.5));
         (fill, stroke, text_c)
     };
