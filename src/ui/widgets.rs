@@ -778,9 +778,6 @@ pub fn song_menu(ui: &mut Ui, t: &Track, liked: bool, remove: Option<usize>, rem
     if menu_action(ui, Some(icon::LIST_MUSIC), "View queue") {
         acts.push(Action::ViewQueue);
     }
-    if menu_action(ui, Some(icon::RADIO), "Start radio") {
-        acts.push(Action::Radio(t.clone()));
-    }
     ui.add_space(2.0);
 }
 

@@ -1332,11 +1332,6 @@ pub fn collection(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
                     if circle_action(ui, CircleGlyph::Char(icon::SEARCH), "Search in this list", filter_on).clicked() {
                         toggle_search = true;
                     }
-                    if let Some(first) = tracks.first()
-                        && circle_action(ui, CircleGlyph::Char(icon::RADIO), "Start radio", false).clicked()
-                    {
-                        acts.push(Action::Radio(first.clone()));
-                    }
                 });
             });
             if toggle_search {
@@ -1700,11 +1695,6 @@ pub fn artist(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
     widgets::paint_more_dots(ui.painter(), more_rect.center(), 4.8, 1.8, theme::text());
     egui::Popup::menu(&more_resp).show(|ui| {
         ui.set_width(200.0);
-        if let Some(first) = top.first()
-            && widgets::menu_action(ui, Some(icon::RADIO), "Start radio")
-        {
-            acts.push(Action::Radio(first.clone()));
-        }
         if widgets::menu_action(ui, Some(icon::LINK), "Share artist") {
             acts.push(Action::Share(Target::Artist(id.to_owned())));
         }

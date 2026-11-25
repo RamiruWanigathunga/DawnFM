@@ -58,10 +58,6 @@ impl App {
             Action::Open(Target::Song(t)) | Action::Radio(t) => {
                 self.queue_source = None;
                 self.play_list(vec![t.clone()], 0);
-                if !self.radio_pending {
-                    self.radio_pending = true;
-                    self.backend.request(Req::Radio { song_of: self.song_of(&t).map(Box::new), seed: t.id });
-                }
             }
             Action::Open(Target::Album(id)) => self.go(Page::Album(id)),
             Action::Open(Target::Playlist(id)) => self.go(Page::Playlist(id)),

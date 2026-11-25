@@ -411,13 +411,15 @@ fn cover_column(app: &mut App, ui: &mut Ui, col: Rect, track: &crate::model::Tra
         ui.painter().add(s.as_shape(art, cr));
     }
     if cs.shadow > 0.0 {
+        let shadow_val = cs.shadow.max(0.4);
         let bg_light = app.bg_is_light();
         let (blur, alpha) = if bg_light {
-            (24.0, (cs.shadow * 0.25).clamp(0.05, 0.16))
+            (28.0, (shadow_val * 0.35).clamp(0.08, 0.22))
         } else {
-            (30.0, (cs.shadow * 0.40).clamp(0.08, 0.24))
+            (48.0, (shadow_val * 0.75).clamp(0.30, 0.60))
         };
         widgets::soft_shadow(ui, art, radius.min(255.0), blur, alpha);
+        widgets::soft_shadow(ui, art, radius.min(255.0), blur * 0.45, alpha * 0.75);
     }
     let tint = Color32::from_gray((cs.brightness.clamp(0.1, 1.0) * 255.0) as u8);
     if round {
@@ -511,9 +513,22 @@ fn sleeve(app: &mut App, ui: &mut Ui, x0: f32, w: f32, info_y: f32, track: &crat
         Color32::from_white_alpha(225)
     };
 
-    text_at(ui, pos2(x0, info_y), &track.title, theme::semibold(17.0), title_color, text_w);
+    let text_shadow_color = if bg_light {
+        Color32::from_black_alpha(25)
+    } else {
+        Color32::from_black_alpha(135)
+    };
+
+    let title_font = theme::semibold(17.0);
+    let gt_shadow = widgets::galley(ui, &track.title, title_font.clone(), text_shadow_color, text_w);
+    ui.painter().galley(pos2(x0, info_y + 1.2), gt_shadow, text_shadow_color);
+    text_at(ui, pos2(x0, info_y), &track.title, title_font, title_color, text_w);
+
     let line_w = text_w;
-    let line_rect = widgets::linked_text(ui, pos2(x0, info_y + 21.0), &line, &track.artists, theme::regular(15.0), artist_color, line_w, &mut app.actions);
+    let line_font = theme::regular(15.0);
+    let gl_shadow = widgets::galley(ui, &line, line_font.clone(), text_shadow_color, line_w);
+    ui.painter().galley(pos2(x0, info_y + 22.2), gl_shadow, text_shadow_color);
+    let line_rect = widgets::linked_text(ui, pos2(x0, info_y + 21.0), &line, &track.artists, line_font, artist_color, line_w, &mut app.actions);
     // The album after the em dash opens its page too, underlined like the artists.
     if let Some(album) = track.album.as_ref().filter(|a| !a.name.is_empty())
         && let Some(id) = album.id.clone()
@@ -555,6 +570,9 @@ fn sleeve(app: &mut App, ui: &mut Ui, x0: f32, w: f32, info_y: f32, track: &crat
     let tint = theme::lerp_color(theme::with_alpha(base_star, dim), app.accent_color(), pop);
     // It swells a quarter on the way, as the mini player's does.
     let size = 19.0 * (1.0 + 0.25 * (pop * std::f32::consts::PI).sin());
+    if !bg_light {
+        super::glyphs::draw(ui, star.center() + vec2(0.0, 1.2), size, super::glyphs::STAR, Color32::from_black_alpha(90));
+    }
     super::glyphs::draw(ui, star.center(), size, super::glyphs::STAR, tint);
     if pop > 0.0 {
         super::glyphs::draw(ui, star.center(), size, super::glyphs::STAR_FILLED, theme::with_alpha(app.accent_color(), pop));
@@ -625,10 +643,19 @@ fn sleeve(app: &mut App, ui: &mut Ui, x0: f32, w: f32, info_y: f32, track: &crat
     }
     let at = |p: egui::Pos2| (((p.x - x0) / w.max(1.0)).clamp(0.0, 1.0) * total).max(0.0);
     let tc = if bg_light { Color32::from_black_alpha(225) } else { Color32::from_white_alpha(225) };
-    let g = widgets::galley(ui, &super::fmt_time(pos as u32), theme::semibold(11.0), tc, 80.0);
+    let tc_shadow = if bg_light { Color32::from_black_alpha(20) } else { Color32::from_black_alpha(110) };
+    let time_font = theme::semibold(11.0);
+    let pos_str = super::fmt_time(pos as u32);
+    let g_pos_s = widgets::galley(ui, &pos_str, time_font.clone(), tc_shadow, 80.0);
+    ui.painter().galley(pos2(x0, hit.bottom() + 3.0), g_pos_s, tc_shadow);
+    let g = widgets::galley(ui, &pos_str, time_font.clone(), tc, 80.0);
     ui.painter().galley(pos2(x0, hit.bottom() + 2.0), g, tc);
+
     let left = super::fmt_time((total - pos).max(0.0) as u32);
-    let g = widgets::galley(ui, &format!("-{left}"), theme::semibold(11.0), tc, 80.0);
+    let left_str = format!("-{left}");
+    let g_left_s = widgets::galley(ui, &left_str, time_font.clone(), tc_shadow, 80.0);
+    ui.painter().galley(pos2(x0 + w - g_left_s.size().x, hit.bottom() + 3.0), g_left_s, tc_shadow);
+    let g = widgets::galley(ui, &left_str, time_font, tc, 80.0);
     ui.painter().galley(pos2(x0 + w - g.size().x, hit.bottom() + 2.0), g, tc);
     // The quality mark sits between the two times, as the reference draws it.
     let badge_w = audio_badge_width(ui, app, false);
@@ -689,13 +716,19 @@ fn sleeve(app: &mut App, ui: &mut Ui, x0: f32, w: f32, info_y: f32, track: &crat
         }
         (resp, h, p)
     };
+    let draw_np_glyph = |ui: &mut Ui, center: egui::Pos2, size: f32, glyph: &'static [u8], tint: Color32| {
+        if !bg_light {
+            super::glyphs::draw(ui, center + vec2(0.0, 1.2), size, glyph, Color32::from_black_alpha(85));
+        }
+        super::glyphs::draw(ui, center, size, glyph, tint);
+    };
     let (r, h, p) = btn(ui, 0, "shuffle", &t!("shuffle_up_next"), true);
-    super::glyphs::draw(ui, r.rect.center(), icons[0] * (1.0 - 0.1 * p), super::glyphs::SHUFFLE, ink(h, 0.90, 1.0));
+    draw_np_glyph(ui, r.rect.center(), icons[0] * (1.0 - 0.1 * p), super::glyphs::SHUFFLE, ink(h, 0.90, 1.0));
     if interactive && r.clicked() {
         app.shuffle_upcoming();
     }
     let (r, h, p) = btn(ui, 1, "prev", &t!("previous"), enabled);
-    super::glyphs::draw(ui, r.rect.center(), icons[1] * (1.0 - 0.1 * p), super::glyphs::PREVIOUS, ink(h, 1.0, dim));
+    draw_np_glyph(ui, r.rect.center(), icons[1] * (1.0 - 0.1 * p), super::glyphs::PREVIOUS, ink(h, 1.0, dim));
     if interactive && r.clicked() && enabled {
         app.prev();
     }
@@ -714,17 +747,17 @@ fn sleeve(app: &mut App, ui: &mut Ui, x0: f32, w: f32, info_y: f32, track: &crat
         // The two marks cross-fade: the reference keeps its pause up through a buffer,
         // and a hard cut between them flickers.
         if morph < 1.0 {
-            super::glyphs::draw(ui, c, size, super::glyphs::PLAY, theme::with_alpha(mark, 1.0 - morph));
+            draw_np_glyph(ui, c, size, super::glyphs::PLAY, theme::with_alpha(mark, 1.0 - morph));
         }
         if morph > 0.0 {
-            super::glyphs::draw(ui, c, size, super::glyphs::PAUSE, theme::with_alpha(mark, morph));
+            draw_np_glyph(ui, c, size, super::glyphs::PAUSE, theme::with_alpha(mark, morph));
         }
     }
     if interactive && r.clicked() && enabled {
         app.toggle();
     }
     let (r, h, p) = btn(ui, 3, "next", &t!("next"), enabled);
-    super::glyphs::draw(ui, r.rect.center(), icons[3] * (1.0 - 0.1 * p), super::glyphs::NEXT, ink(h, 1.0, dim));
+    draw_np_glyph(ui, r.rect.center(), icons[3] * (1.0 - 0.1 * p), super::glyphs::NEXT, ink(h, 1.0, dim));
     if interactive && r.clicked() && enabled {
         app.next();
     }
@@ -734,7 +767,7 @@ fn sleeve(app: &mut App, ui: &mut Ui, x0: f32, w: f32, info_y: f32, track: &crat
         Repeat::One => (super::glyphs::REPEAT_ONE, true),
     };
     let (r, h, p) = btn(ui, 4, "repeat", &t!("repeat"), true);
-    super::glyphs::draw(ui, r.rect.center(), icons[4] * (1.0 - 0.1 * p), glyph, if on { app.accent_color() } else { ink(h, 0.90, 1.0) });
+    draw_np_glyph(ui, r.rect.center(), icons[4] * (1.0 - 0.1 * p), glyph, if on { app.accent_color() } else { ink(h, 0.90, 1.0) });
     if interactive && r.clicked() {
         app.queue.repeat = match app.queue.repeat {
             Repeat::Off => Repeat::All,
@@ -1054,6 +1087,11 @@ pub(crate) fn options_menu(
         let base = if bg_light { Color32::BLACK } else { Color32::WHITE };
         theme::with_alpha(base, 0.90 + 0.10 * h)
     };
+    if !app.bg_is_light() {
+        for dx in [-5.0, 0.0, 5.0] {
+            ui.painter().circle_filled(rect.center() + vec2(dx, 1.2), 1.8, Color32::from_black_alpha(85));
+        }
+    }
     for dx in [-5.0, 0.0, 5.0] {
         ui.painter().circle_filled(rect.center() + vec2(dx, 0.0), 1.8, dot_col);
     }
@@ -1079,9 +1117,6 @@ pub(crate) fn options_menu(
         let queue = app.np_tab == NpTab::UpNext;
         if widgets::menu_action(ui, Some(icon::LIST_MUSIC), if queue { "View lyrics" } else { "View queue" }) {
             app.np_tab = if queue { NpTab::Lyrics } else { NpTab::UpNext };
-        }
-        if widgets::menu_action(ui, Some(icon::RADIO), "Start radio") {
-            app.actions.push(Action::Radio(track.clone()));
         }
         menu_divider(ui);
         sleep_options(app, ui);
