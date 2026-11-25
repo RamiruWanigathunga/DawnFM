@@ -73,55 +73,10 @@ pub fn overlay(app: &mut App, ctx: &egui::Context, now: f64, screen: Rect) {
         });
 }
 
-fn np_header_button(
-    ui: &mut Ui,
-    glyph: char,
-    size: f32,
-    name: &str,
-    active: bool,
-    bg_light: bool,
-    accent: Color32,
-) -> egui::Response {
-    let d = 34.0;
-    let (rect, resp) = ui.allocate_exact_size(Vec2::splat(d), Sense::click());
-    let resp = named(resp, name).on_hover_text(name).on_hover_cursor(egui::CursorIcon::PointingHand);
-    let h = theme::anim_bool(ui.ctx(), resp.id.with("h"), resp.hovered(), 0.15);
-    let p = if resp.is_pointer_button_down_on() { 0.92 } else { 1.0 };
-    np_header_button_paint(ui, rect, glyph, size * p, active, h, bg_light, accent);
-    resp
-}
-
-fn np_header_button_paint(
-    ui: &Ui,
-    rect: Rect,
-    glyph: char,
-    size: f32,
-    active: bool,
-    h: f32,
-    bg_light: bool,
-    accent: Color32,
-) {
-    let center = rect.center();
-    // Soft transparent glass fill: no borders, no solid white or solid black
-    let fill = if bg_light {
-        theme::glass(0.12 + 0.10 * h)
-    } else {
-        theme::glass(0.14 + 0.10 * h)
-    };
-    ui.painter().circle_filled(center, 16.0, fill);
-
-    let base_color = if bg_light {
-        Color32::from_rgb(0x18, 0x14, 0x1c)
-    } else {
-        Color32::WHITE
-    };
-    let color = if active {
-        accent
-    } else {
-        let alpha = 0.82 + 0.18 * h;
-        theme::with_alpha(base_color, alpha)
-    };
-    icon_at(ui, center, glyph, size, color);
+fn paint_np_capsule(ui: &Ui, rect: Rect) {
+    let r = rect.height() / 2.0;
+    ui.painter().rect_filled(rect, r, theme::glass(0.14));
+    ui.painter().rect_stroke(rect, r, egui::Stroke::new(1.0, theme::glass(0.22)), egui::StrokeKind::Inside);
 }
 
 fn body(app: &mut App, ui: &mut Ui, now: f64) {
@@ -144,12 +99,18 @@ fn body(app: &mut App, ui: &mut Ui, now: f64) {
     let narrow = area.width() - 64.0 < 860.0;
     // Header: on the window buttons' line, when the app draws them.
     let is_fullscreen = app.fullscreen || ui.input(|i| i.viewport().fullscreen.unwrap_or(false));
-    let header_top = area.top() + if is_fullscreen { 16.0 } else { 12.0 };
-    let header = Rect::from_min_size(pos2(area.left() + 20.0, header_top), vec2(area.width() - 40.0, 44.0));
+    let header_top = area.top() + if is_fullscreen { 16.0 } else { 11.0 };
+    let header = Rect::from_min_size(pos2(area.left() + 20.0, header_top), vec2(area.width() - 40.0, 42.0));
 
-    // Fullscreen auto-hide after 5.0s of mouse inactivity: top buttons and controls disappear together
+    // Fullscreen auto-hide after 5.0s of mouse inactivity: top pills, bottom-right pill, and controls disappear together
     let controls_rect: Rect = ui.ctx().data(|d| d.get_temp(egui::Id::unique("np-controls-rect"))).unwrap_or(Rect::NOTHING);
-    let controls_hovered = ui.rect_contains_pointer(controls_rect) || ui.rect_contains_pointer(header);
+    let tl_rect: Rect = ui.ctx().data(|d| d.get_temp(egui::Id::unique("np-top-left-rect"))).unwrap_or(Rect::NOTHING);
+    let tr_rect: Rect = ui.ctx().data(|d| d.get_temp(egui::Id::unique("np-top-right-rect"))).unwrap_or(Rect::NOTHING);
+    let br_rect: Rect = ui.ctx().data(|d| d.get_temp(egui::Id::unique("np-bottom-right-rect"))).unwrap_or(Rect::NOTHING);
+    let controls_hovered = ui.rect_contains_pointer(controls_rect)
+        || ui.rect_contains_pointer(tl_rect)
+        || ui.rect_contains_pointer(tr_rect)
+        || ui.rect_contains_pointer(br_rect);
     let busy = app.seek_drag.is_some() || egui::Popup::is_any_open(ui.ctx());
     let idle = now - app.mouse_last_moved >= 5.0;
     let active = !is_fullscreen || !idle || busy || controls_hovered;
@@ -172,79 +133,10 @@ fn body(app: &mut App, ui: &mut Ui, now: f64) {
     };
     let fullbleed_lyrics_view = !no_lyrics && cs.layout == Layout::LyricsOnly && look.background.mode == crate::preset::BgMode::CoverFullbleed;
     let split_queue = !narrow && !fullbleed_lyrics_view && (app.np_tab == NpTab::UpNext || panel_tab == NpTab::UpNext);
+    let beside = !narrow && cs.layout == Layout::LyricsOnly && !split_queue && look.background.mode == crate::preset::BgMode::CoverFullbleed;
+    let cover_hidden = (narrow || (cs.layout == Layout::LyricsOnly && !split_queue)) && !beside && app.np_tab != NpTab::Art && !no_lyrics;
 
     let mut close = false;
-    if controls_alpha > 0.001 {
-        let mut hui = ui.new_child(egui::UiBuilder::new().max_rect(header).layout(egui::Layout::left_to_right(egui::Align::Center)));
-        hui.multiply_opacity(controls_alpha);
-        let interactive = controls_alpha > 0.05;
-        let bg_light = app.bg_is_light();
-        let accent = app.accent_color();
-        hui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            ui.add_space(super::titlebar::right_gap(ui.ctx(), ui.max_rect(), 0.0));
-            // The player's own close (minimise back to the pages), top right: the macOS
-            // window buttons have the top left.
-            if interactive {
-                close = np_header_button(ui, icon::CHEVRON_DOWN, 20.0, &t!("minimise_now_playing"), false, bg_light, accent).clicked();
-            } else {
-                let (r, _) = ui.allocate_exact_size(vec2(34.0, 34.0), Sense::hover());
-                np_header_button_paint(ui, r, icon::CHEVRON_DOWN, 20.0, false, 0.0, bg_light, accent);
-            }
-
-            // Direct Full Screen toggle button (omitted on Windows since titlebar already has native fullscreen/maximize buttons)
-            if !cfg!(windows) {
-                let fs_label = if is_fullscreen { t!("exit_full_screen") } else { t!("full_screen") };
-                if interactive {
-                    if np_header_button(ui, icon::MAXIMIZE_2, 17.0, &fs_label, is_fullscreen, bg_light, accent).clicked() {
-                        app.set_fullscreen(ui.ctx(), !is_fullscreen);
-                    }
-                } else {
-                    let (r, _) = ui.allocate_exact_size(vec2(34.0, 34.0), Sense::hover());
-                    np_header_button_paint(ui, r, icon::MAXIMIZE_2, 17.0, is_fullscreen, 0.0, bg_light, accent);
-                }
-            }
-
-            // Direct Queue toggle button in fullscreen header
-            let queue_open = app.np_tab == NpTab::UpNext;
-            if interactive {
-                if np_header_button(ui, icon::LIST_MUSIC, 19.0, &t!("view_queue"), queue_open, bg_light, accent).clicked() {
-                    app.np_tab = if queue_open {
-                        let prev = ui.ctx().data(|d| d.get_temp(egui::Id::unique("np-last-tab-prior"))).unwrap_or(if no_lyrics { NpTab::Art } else { NpTab::Lyrics });
-                        if prev == NpTab::UpNext {
-                            if no_lyrics { NpTab::Art } else { NpTab::Lyrics }
-                        } else {
-                            prev
-                        }
-                    } else {
-                        ui.ctx().data_mut(|d| d.insert_temp(egui::Id::unique("np-last-tab-prior"), app.np_tab));
-                        NpTab::UpNext
-                    };
-                }
-            } else {
-                let (r, _) = ui.allocate_exact_size(vec2(34.0, 34.0), Sense::hover());
-                np_header_button_paint(ui, r, icon::LIST_MUSIC, 19.0, queue_open, 0.0, bg_light, accent);
-            }
-
-            // Its actions (like, download, share…) are for what's heard: a song version
-            // standing in for the music video. It lives beside the star under the cover;
-            // only when the cover column is hidden (a narrow window showing lyrics) does
-            // it stay up here.
-            let beside = !narrow && cs.layout == Layout::LyricsOnly && !split_queue && look.background.mode == crate::preset::BgMode::CoverFullbleed;
-            let cover_hidden = (narrow || (cs.layout == Layout::LyricsOnly && !split_queue)) && !beside && app.np_tab != NpTab::Art && !no_lyrics;
-            if cover_hidden {
-                let (r, _) = ui.allocate_exact_size(vec2(34.0, 34.0), Sense::hover());
-                if interactive {
-                    options_menu(app, ui, r, &heard, app.np_tab == NpTab::Lyrics && !no_lyrics, None);
-                }
-            }
-        });
-    }
-    if close {
-        app.np_open = false;
-        if app.fullscreen || ui.input(|i| i.viewport().fullscreen.unwrap_or(false)) {
-            app.set_fullscreen(ui.ctx(), false);
-        }
-    }
 
     let content = Rect::from_min_max(pos2(area.left() + 32.0, header.bottom() + 12.0), pos2(area.right() - 32.0, area.bottom() - 24.0));
     // Linear 0..1 over the transition; each part eases its own slice of it.
@@ -383,6 +275,180 @@ fn body(app: &mut App, ui: &mut Ui, now: f64) {
                 NpTab::Lyrics => lyrics_panel(app, &mut rui, r, now, centered),
                 _ => super::shell::queue_list(app, &mut rui, "np"),
             }
+        }
+    }
+
+    // ------------------------------------------------------------------ Apple Music Floating Corner Pills
+    if controls_alpha > 0.001 {
+        let mut cui = ui.new_child(egui::UiBuilder::new().max_rect(area));
+        cui.multiply_opacity(controls_alpha);
+        let ui = &mut cui;
+        let interactive = controls_alpha > 0.05;
+        let bg_light = app.bg_is_light();
+        let accent = app.accent_color();
+        let fg_base = if bg_light { Color32::from_rgb(0x18, 0x14, 0x1c) } else { Color32::WHITE };
+
+        // 1. Top-left pill beside macOS traffic lights: [ Close (X) | Fullscreen ]
+        let tl_x = area.left() + if is_fullscreen || cfg!(windows) { 20.0 } else { 86.0 };
+        let tl_w = if cfg!(windows) { 32.0 } else { 68.0 };
+        let tl_rect = Rect::from_min_size(pos2(tl_x, header_top), vec2(tl_w, 30.0));
+        ui.ctx().data_mut(|d| d.insert_temp(egui::Id::unique("np-top-left-rect"), tl_rect));
+        paint_np_capsule(ui, tl_rect);
+
+        let close_rect = if cfg!(windows) {
+            tl_rect
+        } else {
+            Rect::from_min_max(tl_rect.min, pos2(tl_rect.min.x + 34.0, tl_rect.max.y))
+        };
+        let close_sense = if interactive { Sense::click() } else { Sense::hover() };
+        let close_resp = named(ui.interact(close_rect, ui.scope_id().with("np-close"), close_sense), &t!("minimise_now_playing"))
+            .on_hover_text(&t!("minimise_now_playing"));
+        let close_resp = if interactive { close_resp.on_hover_cursor(egui::CursorIcon::PointingHand) } else { close_resp };
+        if close_resp.hovered() && interactive {
+            let cr = if cfg!(windows) {
+                egui::CornerRadius::same(15)
+            } else {
+                egui::CornerRadius { nw: 15, ne: 0, sw: 15, se: 0 }
+            };
+            ui.painter().rect_filled(close_rect, cr, theme::glass(0.12));
+        }
+        icon_at(ui, close_rect.center(), icon::X, 14.5, theme::with_alpha(fg_base, if close_resp.hovered() { 1.0 } else { 0.88 }));
+        if interactive && close_resp.clicked() {
+            close = true;
+        }
+
+        if !cfg!(windows) {
+            let fs_rect = Rect::from_min_max(pos2(tl_rect.min.x + 34.0, tl_rect.min.y), tl_rect.max);
+            let fs_label = if is_fullscreen { t!("exit_full_screen") } else { t!("full_screen") };
+            let fs_sense = if interactive { Sense::click() } else { Sense::hover() };
+            let fs_resp = named(ui.interact(fs_rect, ui.scope_id().with("np-fs"), fs_sense), &fs_label).on_hover_text(&fs_label);
+            let fs_resp = if interactive { fs_resp.on_hover_cursor(egui::CursorIcon::PointingHand) } else { fs_resp };
+            if fs_resp.hovered() && interactive {
+                ui.painter().rect_filled(fs_rect, egui::CornerRadius { nw: 0, ne: 15, sw: 0, se: 15 }, theme::glass(0.12));
+            }
+            let fs_col = if is_fullscreen { accent } else { theme::with_alpha(fg_base, if fs_resp.hovered() { 1.0 } else { 0.88 }) };
+            icon_at(ui, fs_rect.center(), icon::MAXIMIZE_2, 14.0, fs_col);
+            if interactive && fs_resp.clicked() {
+                app.set_fullscreen(ui.ctx(), !is_fullscreen);
+            }
+        }
+
+        // 2. Top-right Sound Level / Volume pill: [ ───●  🔊 ]
+        let r_gap = super::titlebar::right_gap(ui.ctx(), header, 0.0);
+        let tr_right = area.right() - 20.0 - r_gap;
+        let tr_rect = Rect::from_min_size(pos2(tr_right - 144.0, header_top), vec2(144.0, 30.0));
+        ui.ctx().data_mut(|d| d.insert_temp(egui::Id::unique("np-top-right-rect"), tr_rect));
+        paint_np_capsule(ui, tr_rect);
+
+        let slider_rect = Rect::from_min_max(pos2(tr_rect.left() + 14.0, tr_rect.top()), pos2(tr_rect.right() - 34.0, tr_rect.bottom()));
+        let vol = app.audio.volume();
+        let vsense = if interactive { Sense::click_and_drag() } else { Sense::hover() };
+        let vresp = named(ui.interact(slider_rect, ui.scope_id().with("np-vol-slider"), vsense), "Volume");
+        let vresp = if interactive { vresp.on_hover_cursor(egui::CursorIcon::PointingHand) } else { vresp };
+        vresp.widget_info(|| egui::WidgetInfo::slider(interactive, vol as f64, "Volume"));
+        let vh = theme::anim_bool(ui.ctx(), ui.scope_id().with("np-vol-h"), interactive && (vresp.hovered() || vresp.dragged()), 0.15);
+        let track_r = Rect::from_center_size(slider_rect.center(), vec2(slider_rect.width(), 4.0));
+        ui.painter().rect_filled(track_r, 2.0, theme::glass(0.22));
+        let fill_r = Rect::from_min_size(track_r.min, vec2(track_r.width() * vol, 4.0));
+        ui.painter().rect_filled(fill_r, 2.0, fg_base);
+        ui.painter().circle_filled(pos2(fill_r.right(), track_r.center().y), 5.0 + 1.5 * vh, fg_base);
+        if interactive
+            && let Some(p) = vresp.interact_pointer_pos()
+            && (vresp.dragged() || vresp.clicked())
+        {
+            app.audio.set_volume(((p.x - track_r.left()) / track_r.width()).clamp(0.0, 1.0));
+        }
+
+        let icon_rect = Rect::from_min_max(pos2(tr_rect.right() - 32.0, tr_rect.top()), pos2(tr_rect.right() - 4.0, tr_rect.bottom()));
+        let vol_btn = named(ui.interact(icon_rect, ui.scope_id().with("np-vol-mute"), if interactive { Sense::click() } else { Sense::hover() }), "Volume");
+        let vol_btn = if interactive { vol_btn.on_hover_cursor(egui::CursorIcon::PointingHand) } else { vol_btn };
+        let step = super::glyphs::volume_step(vol);
+        super::glyphs::draw(ui, icon_rect.center(), 15.0, super::glyphs::VOLUME[step], theme::with_alpha(fg_base, if vol_btn.hovered() { 1.0 } else { 0.88 }));
+        if interactive && vol_btn.clicked() {
+            let stash = super::shell::unmute_id();
+            if vol > 0.0 {
+                ui.data_mut(|d| d.insert_temp(stash, vol));
+                app.audio.set_volume(0.0);
+            } else {
+                app.audio.set_volume(ui.data(|d| d.get_temp::<f32>(stash)).unwrap_or(0.6));
+            }
+        }
+        if interactive && ui.rect_contains_pointer(tr_rect) {
+            let scroll = ui.input(|i| i.smooth_scroll_delta.y);
+            if scroll != 0.0 {
+                app.audio.set_volume((vol + scroll / 600.0).clamp(0.0, 1.0));
+            }
+        }
+
+        if cover_hidden {
+            let opt_r = Rect::from_center_size(pos2(tr_rect.left() - 24.0, tr_rect.center().y), Vec2::splat(30.0));
+            if interactive {
+                options_menu(app, ui, opt_r, &heard, app.np_tab == NpTab::Lyrics && !no_lyrics, None);
+            }
+        }
+
+        // 3. Bottom-right segmented capsule: [ Lyrics | Queue ]
+        let br_rect = Rect::from_min_size(pos2(area.right() - 24.0 - 72.0, area.bottom() - 18.0 - 32.0), vec2(72.0, 32.0));
+        ui.ctx().data_mut(|d| d.insert_temp(egui::Id::unique("np-bottom-right-rect"), br_rect));
+        paint_np_capsule(ui, br_rect);
+
+        let lyr_rect = Rect::from_min_max(br_rect.min, pos2(br_rect.center().x, br_rect.max.y));
+        let q_rect = Rect::from_min_max(pos2(br_rect.center().x, br_rect.min.y), br_rect.max);
+
+        let lyr_active = app.np_tab == NpTab::Lyrics && !no_lyrics;
+        let q_active = app.np_tab == NpTab::UpNext;
+        let inv_fg = if bg_light { Color32::WHITE } else { Color32::from_rgb(0x18, 0x14, 0x1c) };
+
+        let lyr_sense = if interactive && !no_lyrics { Sense::click() } else { Sense::hover() };
+        let lyr_resp = named(ui.interact(lyr_rect, ui.scope_id().with("np-br-lyrics"), lyr_sense), &t!("lyrics"))
+            .on_hover_text(&t!("lyrics"));
+        let lyr_resp = if interactive && !no_lyrics { lyr_resp.on_hover_cursor(egui::CursorIcon::PointingHand) } else { lyr_resp };
+        if lyr_active {
+            ui.painter().circle_filled(lyr_rect.center(), 12.5, fg_base);
+        } else if lyr_resp.hovered() && interactive && !no_lyrics {
+            ui.painter().circle_filled(lyr_rect.center(), 12.5, theme::glass(0.14));
+        }
+        let lyr_col = if no_lyrics {
+            theme::with_alpha(fg_base, 0.35)
+        } else if lyr_active {
+            inv_fg
+        } else {
+            theme::with_alpha(fg_base, if lyr_resp.hovered() { 1.0 } else { 0.85 })
+        };
+        super::glyphs::draw(ui, lyr_rect.center(), 15.0, super::glyphs::LYRICS, lyr_col);
+        if interactive && !no_lyrics && lyr_resp.clicked() {
+            app.np_tab = if lyr_active { NpTab::Art } else { NpTab::Lyrics };
+        }
+
+        let q_sense = if interactive { Sense::click() } else { Sense::hover() };
+        let q_resp = named(ui.interact(q_rect, ui.scope_id().with("np-br-queue"), q_sense), &t!("view_queue"))
+            .on_hover_text(&t!("view_queue"));
+        let q_resp = if interactive { q_resp.on_hover_cursor(egui::CursorIcon::PointingHand) } else { q_resp };
+        if q_active {
+            ui.painter().circle_filled(q_rect.center(), 12.5, fg_base);
+        } else if q_resp.hovered() && interactive {
+            ui.painter().circle_filled(q_rect.center(), 12.5, theme::glass(0.14));
+        }
+        let q_col = if q_active { inv_fg } else { theme::with_alpha(fg_base, if q_resp.hovered() { 1.0 } else { 0.85 }) };
+        super::glyphs::draw(ui, q_rect.center(), 15.0, super::glyphs::QUEUE, q_col);
+        if interactive && q_resp.clicked() {
+            app.np_tab = if q_active {
+                let prev = ui.ctx().data(|d| d.get_temp(egui::Id::unique("np-last-tab-prior"))).unwrap_or(if no_lyrics { NpTab::Art } else { NpTab::Lyrics });
+                if prev == NpTab::UpNext {
+                    if no_lyrics { NpTab::Art } else { NpTab::Lyrics }
+                } else {
+                    prev
+                }
+            } else {
+                ui.ctx().data_mut(|d| d.insert_temp(egui::Id::unique("np-last-tab-prior"), app.np_tab));
+                NpTab::UpNext
+            };
+        }
+    }
+    if close {
+        app.np_open = false;
+        if app.fullscreen || ui.input(|i| i.viewport().fullscreen.unwrap_or(false)) {
+            app.set_fullscreen(ui.ctx(), false);
         }
     }
 }
