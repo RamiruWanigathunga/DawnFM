@@ -235,6 +235,8 @@ pub struct ArtistPage {
     pub audience: Option<String>,
     /// "304K subscribers", as YouTube Music writes it.
     pub subscribers: Option<String>,
+    /// Total artist channel views shown under the About section (e.g. "11,248,625,355 views").
+    pub views: Option<String>,
     pub description: Option<String>,
     pub top: Vec<Track>,
     /// "Top songs" playlist behind the shelf's Show all button.

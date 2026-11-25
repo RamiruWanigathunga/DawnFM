@@ -609,6 +609,7 @@ fn parse_artist(v: &Value, id: &str) -> Option<ArtistPage> {
         banner: thumbs(&h["thumbnail"]["musicThumbnailRenderer"]),
         audience,
         subscribers,
+        views: None,
         description: text(&h["description"]),
         top: Vec::new(),
         top_playlist: None,
@@ -627,8 +628,14 @@ fn parse_artist(v: &Value, id: &str) -> Option<ArtistPage> {
             page.top_playlist = ep["browseEndpoint"]["browseId"].as_str().map(|b| b.strip_prefix("VL").unwrap_or(b).to_owned());
             continue;
         }
-        if page.description.is_none() {
-            page.description = text(&s["musicDescriptionShelfRenderer"]["description"]);
+        let desc_shelf = &s["musicDescriptionShelfRenderer"];
+        if !desc_shelf.is_null() {
+            if page.description.is_none() {
+                page.description = text(&desc_shelf["description"]);
+            }
+            if page.views.is_none() {
+                page.views = text(&desc_shelf["subheader"]);
+            }
         }
         let carousel = &s["musicCarouselShelfRenderer"];
         let title = text(&carousel["header"]["musicCarouselShelfBasicHeaderRenderer"]["title"]).unwrap_or_default();

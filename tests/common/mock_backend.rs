@@ -72,6 +72,7 @@ impl MockCatalog {
             banner: sample_thumbs(),
             audience: Some("25.5M monthly audience".into()),
             subscribers: Some("15.4M subscribers".into()),
+            views: None,
             description: Some(format!("Biography and career overview of {}.", name)),
             top: sample_tracks(top_song_count),
             top_playlist: Some(format!("VL_top_{}", id)),

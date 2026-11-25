@@ -1979,32 +1979,42 @@ pub fn artist(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
         card_row(ui, &id_pl, "Featured on", &a.playlists, acts);
         let id_sim = format!("a-sim-{}", app.page_visit);
         card_row(ui, &id_sim, "Fans might also like", &a.similar, acts);
-        if let Some(d) = a.description.as_deref().filter(|d| !d.trim().is_empty()) {
+        let desc = a.description.as_deref().map(str::trim).filter(|d| !d.is_empty());
+        let views = a.views.as_deref().map(str::trim).filter(|v| !v.is_empty());
+        if desc.is_some() || views.is_some() {
             shelf_header(ui, "", "About", None, None, false);
-            let full = ui.available_width().min(820.0);
-            let beside = has_logo.then_some(signature.as_ref()).flatten();
-            if let Some(tex) = beside {
-                ui.horizontal_top(|ui| {
-                    let sig_w = (full * 0.28).clamp(120.0, 210.0);
-                    let text_w = (full - sig_w - 32.0).max(220.0);
-                    let g = widgets::galley_wrapped(ui, d.trim(), theme::regular(14.5), theme::text_dim(), text_w, usize::MAX);
+            if let Some(v) = views {
+                ui.label(RichText::new(v).font(theme::semibold(14.5)).color(theme::text_dim()));
+                if desc.is_some() {
+                    ui.add_space(10.0);
+                }
+            }
+            if let Some(d) = desc {
+                let full = ui.available_width().min(820.0);
+                let beside = has_logo.then_some(signature.as_ref()).flatten();
+                if let Some(tex) = beside {
+                    ui.horizontal_top(|ui| {
+                        let sig_w = (full * 0.28).clamp(120.0, 210.0);
+                        let text_w = (full - sig_w - 32.0).max(220.0);
+                        let g = widgets::galley_wrapped(ui, d, theme::regular(14.5), theme::text_dim(), text_w, usize::MAX);
+                        ui.label(g);
+                        ui.add_space(32.0);
+                        let tex_size = tex.size_vec2();
+                        let aspect = tex_size.x / tex_size.y.max(1.0);
+                        let mut size = vec2(sig_w, sig_w / aspect);
+                        if size.y > 140.0 {
+                            size = vec2(140.0 * aspect, 140.0);
+                        }
+                        let (rect, _) = ui.allocate_exact_size(vec2(size.x, size.y + 22.0), Sense::hover());
+                        ui.painter().text(rect.left_top(), Align2::LEFT_TOP, format!("Signed by {name}"), theme::regular(12.0), theme::text_dim());
+                        let img = Rect::from_min_size(pos2(rect.left(), rect.top() + 22.0), size);
+                        let tex = egui::load::SizedTexture::from_handle(tex);
+                        egui::Image::from_texture(tex).uv(Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0))).paint_at(ui, img);
+                    });
+                } else {
+                    let g = widgets::galley_wrapped(ui, d, theme::regular(14.5), theme::text_dim(), full, usize::MAX);
                     ui.label(g);
-                    ui.add_space(32.0);
-                    let tex_size = tex.size_vec2();
-                    let aspect = tex_size.x / tex_size.y.max(1.0);
-                    let mut size = vec2(sig_w, sig_w / aspect);
-                    if size.y > 140.0 {
-                        size = vec2(140.0 * aspect, 140.0);
-                    }
-                    let (rect, _) = ui.allocate_exact_size(vec2(size.x, size.y + 22.0), Sense::hover());
-                    ui.painter().text(rect.left_top(), Align2::LEFT_TOP, format!("Signed by {name}"), theme::regular(12.0), theme::text_dim());
-                    let img = Rect::from_min_size(pos2(rect.left(), rect.top() + 22.0), size);
-                    let tex = egui::load::SizedTexture::from_handle(tex);
-                    egui::Image::from_texture(tex).uv(Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0))).paint_at(ui, img);
-                });
-            } else {
-                let g = widgets::galley_wrapped(ui, d.trim(), theme::regular(14.5), theme::text_dim(), full, usize::MAX);
-                ui.label(g);
+                }
             }
         }
     });
