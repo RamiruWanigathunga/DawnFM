@@ -428,7 +428,7 @@ pub fn sidebar(app: &mut App, ui: &mut Ui) {
                     let is_liked = id == super::LIKED_MUSIC
                         || id == "LM"
                         || id == "VLLM"
-                        || c.thumbs.iter().any(|t| t.url.contains("/images/pbg/liked-songs") || t.url.contains("liked.png"));
+                        || c.thumbs.iter().any(|t| t.url.contains("/images/pbg/liked-songs"));
                     if is_liked {
                         let icon_fg = if selected {
                             look.accent

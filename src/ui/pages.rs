@@ -1229,19 +1229,22 @@ pub fn collection(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
     let mut start_select = false;
     let mut stop_select = false;
     let photo = artist_id.as_ref().and_then(|a| app.artist_photos.get(a)).filter(|t| !t.is_empty());
+    let is_liked = id == "LM" || id == super::LIKED_MUSIC || id == "VLLM";
     ui.add_space(18.0);
     ui.horizontal_top(|ui| {
-        let (img, _) = ui.allocate_exact_size(Vec2::splat(side), Sense::hover());
-        let radius = theme::card_radius() + 2.0;
-        // Light mode needs a far softer shadow: the dark one reads as a grey halo.
-        let (blur, alpha) = if theme::light() { (26.0, 0.14) } else { (40.0, 0.5) };
-        widgets::soft_shadow(ui, img, radius, blur, alpha);
-        paint_cover(ui, img, &c.thumbs, radius, 1.0);
-        if let Some(s) = &sprite {
-            widgets::paint_motion(ui, img, radius, s);
+        if !is_liked {
+            let (img, _) = ui.allocate_exact_size(Vec2::splat(side), Sense::hover());
+            let radius = theme::card_radius() + 2.0;
+            // Light mode needs a far softer shadow: the dark one reads as a grey halo.
+            let (blur, alpha) = if theme::light() { (26.0, 0.14) } else { (40.0, 0.5) };
+            widgets::soft_shadow(ui, img, radius, blur, alpha);
+            paint_cover(ui, img, &c.thumbs, radius, 1.0);
+            if let Some(s) = &sprite {
+                widgets::paint_motion(ui, img, radius, s);
+            }
+            ui.painter().rect_stroke(img, radius, egui::Stroke::new(1.0, theme::glass(0.08)), egui::StrokeKind::Inside);
+            ui.add_space(28.0);
         }
-        ui.painter().rect_stroke(img, radius, egui::Stroke::new(1.0, theme::glass(0.08)), egui::StrokeKind::Inside);
-        ui.add_space(28.0);
         ui.vertical(|ui| {
             let target = if is_album { Target::Album(id.to_owned()) } else { Target::Playlist(id.to_owned()) };
             // Liked Music and Episodes for later are the account's own lists: they can't be
@@ -1257,7 +1260,9 @@ pub fn collection(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
             // Bottom-aligned with the cover, as in Music: title, artist, kind and year, buttons.
             // The account's own lists have no byline row (it'd only name the listener), so
             // the rest sits lower by its height to stay bottom-aligned.
-            ui.add_space((side - 200.0).max(6.0) + if auto { 42.0 } else { 0.0 });
+            if !is_liked {
+                ui.add_space((side - 200.0).max(6.0) + if auto { 42.0 } else { 0.0 });
+            }
             let title = widgets::galley_wrapped(ui, &c.title, theme::bold(34.0), theme::text(), ui.available_width(), 2);
             ui.label(title);
             if !auto {
