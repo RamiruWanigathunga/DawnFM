@@ -2993,7 +2993,7 @@ pub(super) fn divider(ui: &mut Ui) {
     ui.painter().rect_filled(rect, 0.0, theme::glass(0.07));
 }
 
-/// On/off switch tinted with the accent.
+/// Monochrome high-contrast on/off switch.
 pub(super) fn toggle(ui: &mut Ui, on: &mut bool, name: &str) -> egui::Response {
     let (rect, mut resp) = ui.allocate_exact_size(vec2(46.0, 22.0), Sense::click());
     if resp.clicked() {
@@ -3005,14 +3005,14 @@ pub(super) fn toggle(ui: &mut Ui, on: &mut bool, name: &str) -> egui::Response {
     let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
     let t = theme::anim_bool(ui.ctx(), resp.id.with("t"), value, 0.16);
     let h = if resp.hovered() { 1.0 } else { 0.0 };
-    let accent = ui.ctx().data(|d| d.get_temp::<Color32>(egui::Id::unique("accent"))).unwrap_or(theme::RED);
     let fade = if ui.is_enabled() { 1.0 } else { 0.4 };
     let off = theme::glass(0.16 + 0.06 * h);
     let on_track = if theme::light() { Color32::from_rgb(0x22, 0x22, 0x28) } else { Color32::from_rgb(0xf2, 0xf2, 0xf6) };
     ui.painter().rect_filled(rect, 11.0, theme::with_alpha(theme::lerp_color(off, on_track, t), fade));
     let knob = pos2(egui::lerp(rect.left() + 11.0..=rect.right() - 11.0, t), rect.center().y);
     ui.painter().circle_filled(knob + vec2(0.0, 1.0), 8.0, theme::shade(0.25 * fade));
-    let knob_col = theme::lerp_color(Color32::WHITE, accent, t);
+    let on_knob = if theme::light() { Color32::WHITE } else { Color32::from_rgb(0x18, 0x18, 0x1e) };
+    let knob_col = theme::lerp_color(Color32::WHITE, on_knob, t);
     ui.painter().circle_filled(knob, 8.0, theme::with_alpha(knob_col, fade));
     resp
 }
