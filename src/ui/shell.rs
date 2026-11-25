@@ -425,8 +425,21 @@ pub fn sidebar(app: &mut App, ui: &mut Ui) {
                     let selected = matches!(&c.target, Target::Playlist(id) if app.page == Page::Playlist(id.clone()));
                     let lift = if is_dragged { 0.10 } else { 0.0 };
                     ui.painter().rect_filled(rect, look.radius, theme::glass(0.05 * h + if selected { 0.08 } else { 0.0 } + lift));
-                    let img = Rect::from_center_size(pos2(rect.left() + ICON_X, rect.center().y), Vec2::splat(22.0));
-                    paint_cover(ui, img, &c.thumbs, theme::thumb_radius(), 1.0);
+                    let is_liked = id == super::LIKED_MUSIC
+                        || id == "LM"
+                        || id == "VLLM"
+                        || c.thumbs.iter().any(|t| t.url.contains("/images/pbg/liked-songs") || t.url.contains("liked.png"));
+                    if is_liked {
+                        let icon_fg = if selected {
+                            look.accent
+                        } else {
+                            theme::lerp_color(theme::text_dim(), theme::text(), h)
+                        };
+                        icon_at(ui, pos2(rect.left() + ICON_X, rect.center().y), icon::HEART, 15.0, icon_fg);
+                    } else {
+                        let img = Rect::from_center_size(pos2(rect.left() + ICON_X, rect.center().y), Vec2::splat(22.0));
+                        paint_cover(ui, img, &c.thumbs, theme::thumb_radius(), 1.0);
+                    }
                     let w = full_w - 54.0;
                     let fg = theme::label();
                     text_at(ui, pos2(rect.left() + 44.0, rect.center().y - 8.5), &c.title, theme::regular(13.0), fg, w);
