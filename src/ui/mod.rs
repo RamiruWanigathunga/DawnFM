@@ -1300,6 +1300,35 @@ impl App {
             self.backend.request(crate::backend::Req::Art { key, url: t.url.clone() });
         }
     }
+
+    pub(super) fn home_art_source(&self) -> Option<(String, String)> {
+        let h = self.home.as_ref()?;
+        for s in &h.shelves {
+            let thumbs = match &s.kind {
+                crate::model::ShelfKind::Cards(cards) => {
+                    cards.iter().find_map(|c| (!c.thumbs.is_empty()).then_some(c.thumbs.as_slice()))
+                }
+                crate::model::ShelfKind::Songs { tracks, .. } => {
+                    tracks.iter().find_map(|t| (!t.thumbs.is_empty()).then_some(t.thumbs.as_slice()))
+                }
+            };
+            if let Some(thumbs) = thumbs
+                && let Some(t) = crate::model::pick_thumb(thumbs, 544).or_else(|| thumbs.first())
+            {
+                return Some((format!("home:{}", t.url), t.url.clone()));
+            }
+        }
+        None
+    }
+
+    pub(super) fn request_home_art(&mut self) {
+        if let Some((key, url)) = self.home_art_source() {
+            if !self.art_colors.contains_key(&key) && !self.art_waiting.contains(&key) {
+                self.art_waiting.insert(key.clone());
+                self.backend.request(crate::backend::Req::Art { key, url });
+            }
+        }
+    }
 }
 
 fn rgb_to_hsv(r: f32, g: f32, b: f32) -> (f32, f32, f32) {
@@ -1419,25 +1448,45 @@ impl App {
         let base = self.page_color(ctx);
         painter.rect_filled(area, 0.0, base);
 
+        let is_home = matches!(self.page, Page::Home);
+        let home_vis = theme::anim_bool(ctx, "page-backdrop-home", is_home, 0.70);
+
         let key = match &self.page {
             Page::Album(id) => format!("album:{id}"),
             Page::Artist(id) => format!("artist:{id}"),
+            Page::Home => {
+                self.request_home_art();
+                if let Some((k, _)) = self.home_art_source() {
+                    if self.art_blurs.contains_key(&k) {
+                        k
+                    } else if let Some(pk) = self.art_key.clone().filter(|k| self.art_blurs.contains_key(k)) {
+                        pk
+                    } else {
+                        k
+                    }
+                } else if let Some(pk) = self.art_key.clone() {
+                    pk
+                } else {
+                    return;
+                }
+            }
             _ => return,
         };
         let Some(&dom) = self.art_colors.get(&key) else {
             return;
         };
         let (_, s, v) = rgb_to_hsv(dom.r() as f32 / 255.0, dom.g() as f32 / 255.0, dom.b() as f32 / 255.0);
-        if s < 0.17 || v < 0.08 {
+        if !is_home && (s < 0.17 || v < 0.08) {
             return;
         }
 
         let blur_tex = self.blurred_art_tex(ctx, &key);
 
         let loaded_t = self.art_loaded_at.get(&key).copied().unwrap_or(now);
-        let fade = theme::ease_out(((now - loaded_t) / 0.65).clamp(0.0, 1.0) as f32);
-        if fade < 1.0 {
-            ctx.request_repaint_after(Duration::from_millis(33));
+        let load_fade = theme::ease_out(((now - loaded_t) / 0.65).clamp(0.0, 1.0) as f32);
+        let fade = load_fade * if is_home { theme::ease_out(home_vis) } else { 1.0 };
+        if fade > 0.0 && fade < 1.0 {
+            ctx.request_repaint_after(Duration::from_millis(16));
         }
 
         let light = theme::light();
@@ -1455,11 +1504,12 @@ impl App {
             let glow_h = (area.height() * 0.85).clamp(480.0, 760.0).min(area.height());
             let wash_rect = egui::Rect::from_min_max(area.min, egui::pos2(area.right(), area.top() + glow_h));
 
-            let ys = [0.0f32, 0.25, 0.55, 0.80, 1.0];
-            let alphas = if light {
-                [0.20f32, 0.14, 0.06, 0.02, 0.0]
-            } else {
-                [0.52f32, 0.42, 0.22, 0.07, 0.0]
+            let ys = [0.0f32, 0.18, 0.38, 0.60, 0.82, 1.0];
+            let alphas = match (is_home, light) {
+                (true, true) => [0.30f32, 0.22, 0.13, 0.06, 0.02, 0.0],
+                (true, false) => [0.56f32, 0.44, 0.25, 0.11, 0.03, 0.0],
+                (false, true) => [0.20f32, 0.15, 0.08, 0.03, 0.01, 0.0],
+                (false, false) => [0.52f32, 0.42, 0.22, 0.08, 0.02, 0.0],
             };
             let xs = [0.0f32, 0.45, 1.0];
             let x_boost = [1.06f32, 1.02, 0.88];
