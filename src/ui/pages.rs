@@ -436,6 +436,7 @@ fn placeholder_grid(app: &mut App, ui: &mut Ui, now: f64, card: f32, circle: boo
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum CircleGlyph {
     Char(char),
+    Plus,
     More,
 }
 
@@ -498,6 +499,13 @@ pub fn circle_action(ui: &mut Ui, glyph: CircleGlyph, name: &str, active: bool) 
     };
     match glyph {
         CircleGlyph::Char(g) => widgets::icon_at(ui, rect.center(), g, 16.0, color),
+        CircleGlyph::Plus => {
+            let c = rect.center();
+            let half = 5.0;
+            let stroke = egui::Stroke::new(1.8, color);
+            ui.painter().line_segment([pos2(c.x - half, c.y), pos2(c.x + half, c.y)], stroke);
+            ui.painter().line_segment([pos2(c.x, c.y - half), pos2(c.x, c.y + half)], stroke);
+        }
         CircleGlyph::More => {
             for i in -1..=1 {
                 ui.painter().circle_filled(rect.center() + vec2(i as f32 * 5.2, 0.0), 1.8, color);
@@ -558,6 +566,13 @@ pub fn peach_circle(ui: &mut Ui, name: &str, glyph: CircleGlyph) -> egui::Respon
     ui.painter().circle_filled(rect.center(), 18.0 - shrink, bg);
     match glyph {
         CircleGlyph::Char(g) => widgets::icon_at(ui, rect.center(), g, 16.0, PEACH_TEXT),
+        CircleGlyph::Plus => {
+            let c = rect.center();
+            let half = 5.0;
+            let stroke = egui::Stroke::new(1.8, PEACH_TEXT);
+            ui.painter().line_segment([pos2(c.x - half, c.y), pos2(c.x + half, c.y)], stroke);
+            ui.painter().line_segment([pos2(c.x, c.y - half), pos2(c.x, c.y + half)], stroke);
+        }
         CircleGlyph::More => {
             widgets::paint_more_dots(ui.painter(), rect.center(), 5.0, 1.8, PEACH_TEXT);
         }
@@ -1292,18 +1307,6 @@ pub fn collection(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
                     } else {
                         ui.label(RichText::new(c.byline()).font(theme::semibold(18.0)).color(theme::text_dim()));
                     }
-                    // Saved to the library: a tick; otherwise a plus to save it.
-                    if let Some(save_id) = save_id.clone() {
-                        let (r, resp) = ui.allocate_exact_size(Vec2::splat(34.0), Sense::click());
-                        let name = if saved { "Remove from library" } else { "Save to library" };
-                        let resp = named(resp, name).on_hover_text(name).on_hover_cursor(egui::CursorIcon::PointingHand);
-                        let h = if resp.hovered() { 1.0 } else { 0.0 };
-                        ui.painter().rect_filled(r, 8.0, theme::glass(0.10 + 0.08 * h));
-                        widgets::icon_at(ui, r.center(), if saved { icon::CHECK } else { icon::LIST_PLUS }, 17.0, theme::text());
-                        if resp.clicked() {
-                            acts.push(Action::SaveCollection(save_id, !saved));
-                        }
-                    }
                 });
             }
             ui.add_space(8.0);
@@ -1311,11 +1314,20 @@ pub fn collection(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
             ui.add_space(16.0);
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing = vec2(10.0, 0.0);
-                play_pill(ui, acts, &target, tracks);
-                if pill(ui, &t!("shuffle"), Some(icon::SHUFFLE), true).clicked() && !tracks.is_empty() {
+                let shuf_resp = circle_action(ui, CircleGlyph::Char(icon::SHUFFLE), &t!("shuffle"), false);
+                if shuf_resp.clicked() && !tracks.is_empty() {
                     let mut t = tracks.clone();
                     super::shuffle(&mut t);
                     acts.push(Action::Play(t, 0));
+                }
+                play_pill(ui, acts, &target, tracks);
+                if let Some(save_id) = save_id.clone() {
+                    let glyph = if saved { CircleGlyph::Char(icon::CHECK) } else { CircleGlyph::Plus };
+                    let tip = if saved { "Remove from library" } else { "Add to library" };
+                    let add_resp = circle_action(ui, glyph, tip, saved);
+                    if add_resp.clicked() {
+                        acts.push(Action::SaveCollection(save_id, !saved));
+                    }
                 }
                 // Round actions at the right end of the row.
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {

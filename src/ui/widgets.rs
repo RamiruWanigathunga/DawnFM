@@ -235,9 +235,9 @@ pub fn pill(ui: &mut Ui, label: &str, glyph: Option<char>, primary: bool) -> Res
     let light = theme::light();
     let (fill, stroke_color, fg, icon_col) = if light {
         if primary {
-            let bg = theme::lerp_color(Color32::from_white_alpha(235), Color32::WHITE, h);
-            let stroke = Color32::from_black_alpha((30.0 + 20.0 * h) as u8);
-            let text_c = Color32::from_rgb(0x18, 0x14, 0x1c);
+            let bg = theme::lerp_color(Color32::from_rgb(0x28, 0x24, 0x2c), Color32::from_rgb(0x18, 0x14, 0x1c), h);
+            let stroke = Color32::TRANSPARENT;
+            let text_c = Color32::WHITE;
             let ic = text_c;
             (bg, stroke, text_c, ic)
         } else {
@@ -248,10 +248,10 @@ pub fn pill(ui: &mut Ui, label: &str, glyph: Option<char>, primary: bool) -> Res
         }
     } else {
         if primary {
-            let bg = theme::glass(0.16 + 0.08 * h);
-            let stroke = theme::glass(0.18 + 0.12 * h);
-            let text_c = theme::lerp_color(Color32::from_white_alpha(225), Color32::WHITE, h);
-            let ic = Color32::WHITE;
+            let bg = theme::lerp_color(Color32::from_white_alpha(240), Color32::WHITE, h);
+            let stroke = Color32::TRANSPARENT;
+            let text_c = Color32::from_rgb(0x18, 0x14, 0x1c);
+            let ic = text_c;
             (bg, stroke, text_c, ic)
         } else {
             let bg = theme::glass(0.12 + 0.08 * h);
