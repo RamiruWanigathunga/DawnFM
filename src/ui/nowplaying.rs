@@ -162,6 +162,16 @@ fn body(app: &mut App, ui: &mut Ui, now: f64) {
         super::animate(ui.ctx());
     }
 
+    // The side panel (lyrics / up next) slides in and out when its chip is toggled.
+    let last_id = egui::Id::unique("np-last-panel");
+    let panel_tab = if app.np_tab == NpTab::Art {
+        ui.ctx().data(|d| d.get_temp(last_id)).unwrap_or(if no_lyrics { NpTab::UpNext } else { NpTab::Lyrics })
+    } else {
+        ui.ctx().data_mut(|d| d.insert_temp(last_id, app.np_tab));
+        app.np_tab
+    };
+    let split_queue = !narrow && (app.np_tab == NpTab::UpNext || panel_tab == NpTab::UpNext);
+
     let mut close = false;
     if controls_alpha > 0.001 {
         let mut hui = ui.new_child(egui::UiBuilder::new().max_rect(header).layout(egui::Layout::left_to_right(egui::Align::Center)));
@@ -218,8 +228,8 @@ fn body(app: &mut App, ui: &mut Ui, now: f64) {
             // standing in for the music video. It lives beside the star under the cover;
             // only when the cover column is hidden (a narrow window showing lyrics) does
             // it stay up here.
-            let beside = !narrow && cs.layout == Layout::LyricsOnly && look.background.mode == crate::preset::BgMode::CoverFullbleed;
-            let cover_hidden = (narrow || cs.layout == Layout::LyricsOnly) && !beside && app.np_tab != NpTab::Art && !no_lyrics;
+            let beside = !narrow && cs.layout == Layout::LyricsOnly && !split_queue && look.background.mode == crate::preset::BgMode::CoverFullbleed;
+            let cover_hidden = (narrow || (cs.layout == Layout::LyricsOnly && !split_queue)) && !beside && app.np_tab != NpTab::Art && !no_lyrics;
             if cover_hidden {
                 let (r, _) = ui.allocate_exact_size(vec2(34.0, 34.0), Sense::hover());
                 if interactive {
@@ -236,15 +246,6 @@ fn body(app: &mut App, ui: &mut Ui, now: f64) {
     }
 
     let content = Rect::from_min_max(pos2(area.left() + 32.0, header.bottom() + 12.0), pos2(area.right() - 32.0, area.bottom() - 24.0));
-    // The side panel (lyrics / up next) slides in and out when its chip is toggled.
-    // A song without lyrics shows just the artwork, with no transition.
-    let last_id = egui::Id::unique("np-last-panel");
-    let panel_tab = if app.np_tab == NpTab::Art {
-        ui.ctx().data(|d| d.get_temp(last_id)).unwrap_or(NpTab::Lyrics)
-    } else {
-        ui.ctx().data_mut(|d| d.insert_temp(last_id, app.np_tab));
-        app.np_tab
-    };
     // Linear 0..1 over the transition; each part eases its own slice of it.
     let shown = ui.ctx().animate_bool_with_time(egui::Id::unique("np-panel"), app.np_tab != NpTab::Art, 0.6 * theme::SPEED);
     if shown > 0.0 && shown < 1.0 {
@@ -263,9 +264,9 @@ fn body(app: &mut App, ui: &mut Ui, now: f64) {
     };
     // The cover gliding between its two places (wide layouts): a gentle S-curve.
     let glide = p * p * (3.0 - 2.0 * p);
-    let lyrics_only = narrow || cs.layout == Layout::LyricsOnly;
+    let lyrics_only = narrow || (cs.layout == Layout::LyricsOnly && !split_queue);
     // reCover: the backdrop cover sits on the left, so the lyrics take the right side.
-    let beside_cover = !narrow && cs.layout == Layout::LyricsOnly && look.background.mode == crate::preset::BgMode::CoverFullbleed;
+    let beside_cover = !narrow && cs.layout == Layout::LyricsOnly && !split_queue && look.background.mode == crate::preset::BgMode::CoverFullbleed;
     let centered = lyrics_only && !beside_cover;
     // Artwork alone: centered.
     let col_art = Rect::from_center_size(content.center(), vec2(content.width().min(content.height() * 0.9), content.height()));
