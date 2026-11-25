@@ -1508,14 +1508,14 @@ impl eframe::App for App {
 
         let in_fullscreen_np = (self.fullscreen || ctx.input(|i| i.viewport().fullscreen.unwrap_or(false))) && self.np_open;
         if in_fullscreen_np {
-            if now - self.mouse_last_moved >= 3.5 {
+            if now - self.mouse_last_moved >= 5.0 {
                 if !self.mouse_hidden {
                     self.mouse_hidden = true;
                     ctx.send_viewport_cmd(egui::ViewportCommand::CursorVisible(false));
                 }
                 ctx.set_cursor_icon(egui::CursorIcon::None);
             } else {
-                let remaining = 3.5 - (now - self.mouse_last_moved);
+                let remaining = 5.0 - (now - self.mouse_last_moved);
                 ctx.request_repaint_after(std::time::Duration::from_secs_f64(remaining.max(0.05)));
             }
         } else if self.mouse_hidden {
