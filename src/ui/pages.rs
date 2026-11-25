@@ -1720,9 +1720,13 @@ pub fn artist(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
     let play_name = if playing { "Pause artist" } else { "Play artist" };
     let play_resp = named(ui.interact(play_rect, ui.scope_id().with("hero_play"), Sense::click()), play_name).on_hover_cursor(egui::CursorIcon::PointingHand);
     let play_h = play_resp.hovered();
-    let play_bg = if play_h { Color32::from_rgb(0xFA, 0x48, 0x5E) } else { theme::RED };
+    let (play_bg, glyph_col) = if theme::light() {
+        (theme::lerp_color(Color32::from_rgb(0x22, 0x22, 0x28), Color32::from_rgb(0x18, 0x18, 0x1e), play_h as u8 as f32), accent)
+    } else {
+        (theme::lerp_color(Color32::from_rgb(0xf2, 0xf2, 0xf6), Color32::WHITE, play_h as u8 as f32), accent)
+    };
     ui.painter().circle_filled(play_center, 24.0, play_bg);
-    widgets::play_pause_glyph(ui, play_center, 8.5, Color32::WHITE, playing);
+    widgets::play_pause_glyph(ui, play_center, 8.5, glyph_col, playing);
     if play_resp.clicked() {
         if active.is_some() {
             acts.push(Action::TogglePlay);
@@ -2881,10 +2885,12 @@ pub(super) fn toggle(ui: &mut Ui, on: &mut bool, name: &str) -> egui::Response {
     let accent = ui.ctx().data(|d| d.get_temp::<Color32>(egui::Id::unique("accent"))).unwrap_or(theme::RED);
     let fade = if ui.is_enabled() { 1.0 } else { 0.4 };
     let off = theme::glass(0.16 + 0.06 * h);
-    ui.painter().rect_filled(rect, 11.0, theme::with_alpha(theme::lerp_color(off, accent, t), fade));
+    let on_track = if theme::light() { Color32::from_rgb(0x22, 0x22, 0x28) } else { Color32::from_rgb(0xf2, 0xf2, 0xf6) };
+    ui.painter().rect_filled(rect, 11.0, theme::with_alpha(theme::lerp_color(off, on_track, t), fade));
     let knob = pos2(egui::lerp(rect.left() + 11.0..=rect.right() - 11.0, t), rect.center().y);
     ui.painter().circle_filled(knob + vec2(0.0, 1.0), 8.0, theme::shade(0.25 * fade));
-    ui.painter().circle_filled(knob, 8.0, theme::with_alpha(Color32::WHITE, fade));
+    let knob_col = theme::lerp_color(Color32::WHITE, accent, t);
+    ui.painter().circle_filled(knob, 8.0, theme::with_alpha(knob_col, fade));
     resp
 }
 

@@ -232,11 +232,18 @@ pub fn pill(ui: &mut Ui, label: &str, glyph: Option<char>, primary: bool) -> Res
     let (rect, resp) = ui.allocate_exact_size(vec2(text.size().x + icon_w + 36.0, 38.0), Sense::click());
     let resp = named(resp, label).on_hover_cursor(egui::CursorIcon::PointingHand);
     let h = if resp.hovered() { 1.0 } else { 0.0 };
-    // Themes with accent chips fill primary buttons with the accent, in rounded squares.
+    // Themes with accent chips: main bg color is white (dark mode) or dark grey (light mode),
+    // with the accent/appearance red color for icons and text.
     let accented = primary && crate::preset::active().app.chip == crate::preset::ChipStyle::Accent;
     let (fill, fg) = if accented {
         let a = ui.ctx().data(|d| d.get_temp::<Color32>(egui::Id::unique("accent"))).unwrap_or(theme::RED);
-        (theme::lerp_color(a, Color32::WHITE, 0.12 * h), Color32::WHITE)
+        if theme::light() {
+            let bg = theme::lerp_color(Color32::from_rgb(0x22, 0x22, 0x28), Color32::from_rgb(0x18, 0x18, 0x1e), h);
+            (bg, a)
+        } else {
+            let bg = theme::lerp_color(Color32::from_rgb(0xf2, 0xf2, 0xf6), Color32::WHITE, h);
+            (bg, a)
+        }
     } else if primary {
         if theme::light() { (theme::lerp_color(theme::text(), Color32::BLACK, h), Color32::WHITE) } else { (theme::lerp_color(Color32::from_gray(240), Color32::WHITE, h), Color32::from_gray(12)) }
     } else {
@@ -293,7 +300,11 @@ pub fn chip(ui: &mut Ui, label: &str, selected: bool) -> Response {
     let (on_fill, on_fg) = match style {
         ChipStyle::Accent => {
             let a = ui.ctx().data(|d| d.get_temp::<Color32>(egui::Id::unique("accent"))).unwrap_or(theme::RED);
-            (a, if a.r() as u32 + a.g() as u32 + a.b() as u32 > 480 { Color32::from_gray(15) } else { Color32::WHITE })
+            if theme::light() {
+                (Color32::from_rgb(0x22, 0x22, 0x28), a)
+            } else {
+                (Color32::from_rgb(0xf2, 0xf2, 0xf6), a)
+            }
         }
         _ => (theme::text(), theme::on_text()),
     };
