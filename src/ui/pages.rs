@@ -470,8 +470,27 @@ pub fn circle_action(ui: &mut Ui, glyph: CircleGlyph, name: &str, active: bool) 
     let resp = named(resp, name).on_hover_text(name).on_hover_cursor(egui::CursorIcon::PointingHand);
     let open = egui::Popup::is_id_open(ui.ctx(), egui::Popup::default_response_id(&resp));
     let h = theme::anim_bool(ui.ctx(), resp.id.with("h"), resp.hovered() || open, 0.15);
-    let press = if resp.is_pointer_button_down_on() { 18.3 } else { 19.0 };
-    ui.painter().circle_filled(rect.center(), press, theme::glass(0.10 + 0.09 * h));
+    let press = if resp.is_pointer_button_down_on() { 18.0 } else { 19.0 };
+    let light = theme::light();
+
+    // Soft drop shadow matching resume autoscroll button
+    let shadow_alpha = if light { (25.0 + 10.0 * h) as u8 } else { (42.0 + 14.0 * h) as u8 };
+    ui.painter().circle_filled(rect.center() + vec2(0.0, 1.5), press, Color32::from_black_alpha(shadow_alpha));
+
+    // Frosted glass fill & inside stroke
+    let fill = if light {
+        theme::lerp_color(Color32::from_black_alpha(15), Color32::from_black_alpha(28), h)
+    } else {
+        theme::glass(0.12 + 0.08 * h)
+    };
+    let stroke_col = if light {
+        Color32::from_black_alpha((25.0 + 18.0 * h) as u8)
+    } else {
+        theme::glass(0.16 + 0.12 * h)
+    };
+    ui.painter().circle_filled(rect.center(), press, fill);
+    ui.painter().circle_stroke(rect.center(), press, egui::Stroke::new(1.0, stroke_col));
+
     let base = if crate::preset::active().app.chip == crate::preset::ChipStyle::Accent { app_accent(ui) } else { theme::text_dim() };
     let color = theme::lerp_color(base, theme::text(), h.max(active as u8 as f32));
     match glyph {
@@ -1710,12 +1729,17 @@ pub fn artist(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
     let play_name = if playing { "Pause artist" } else { "Play artist" };
     let play_resp = named(ui.interact(play_rect, ui.scope_id().with("hero_play"), Sense::click()), play_name).on_hover_cursor(egui::CursorIcon::PointingHand);
     let play_h = play_resp.hovered();
-    let (play_bg, glyph_col) = if theme::light() {
-        (theme::lerp_color(Color32::from_rgb(0x22, 0x22, 0x28), Color32::from_rgb(0x18, 0x18, 0x1e), play_h as u8 as f32), accent)
+    let h_val = play_h as u8 as f32;
+    let light = theme::light();
+    let (play_bg, stroke_col, glyph_col) = if light {
+        (theme::lerp_color(Color32::from_white_alpha(235), Color32::WHITE, h_val), Color32::from_black_alpha(35), accent)
     } else {
-        (theme::lerp_color(Color32::from_rgb(0xf2, 0xf2, 0xf6), Color32::WHITE, play_h as u8 as f32), accent)
+        (theme::glass(0.18 + 0.10 * h_val), theme::glass(0.22 + 0.12 * h_val), accent)
     };
+    // Soft drop shadow
+    ui.painter().circle_filled(play_center + vec2(0.0, 1.5), 24.0, Color32::from_black_alpha(if light { 25 } else { 45 }));
     ui.painter().circle_filled(play_center, 24.0, play_bg);
+    ui.painter().circle_stroke(play_center, 24.0, egui::Stroke::new(1.0, stroke_col));
     widgets::play_pause_glyph(ui, play_center, 8.5, glyph_col, playing);
     if play_resp.clicked() {
         if active.is_some() {
@@ -1735,8 +1759,20 @@ pub fn artist(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
         let pill = Rect::from_min_size(pos2(play_center.x + 24.0 + gap, btn_y - 17.0), vec2(w, 34.0));
         let resp = named(ui.interact(pill, ui.scope_id().with("hero_sub"), Sense::click()), label).on_hover_cursor(egui::CursorIcon::PointingHand);
         let h = resp.hovered() as u8 as f32;
-        ui.painter().rect_filled(pill, 17.0, theme::glass(0.14 + 0.09 * h));
-        ui.painter().rect_stroke(pill, 17.0, egui::Stroke::new(1.0, theme::glass(0.16 + 0.08 * h)), egui::StrokeKind::Inside);
+        // Soft drop shadow
+        ui.painter().rect_filled(pill.translate(vec2(0.0, 1.5)), 17.0, Color32::from_black_alpha(if light { 25 } else { 42 }));
+        let fill = if light {
+            theme::lerp_color(Color32::from_black_alpha(15), Color32::from_black_alpha(28), h)
+        } else {
+            theme::glass(0.14 + 0.09 * h)
+        };
+        let stroke_col = if light {
+            Color32::from_black_alpha(30)
+        } else {
+            theme::glass(0.16 + 0.08 * h)
+        };
+        ui.painter().rect_filled(pill, 17.0, fill);
+        ui.painter().rect_stroke(pill, 17.0, egui::Stroke::new(1.0, stroke_col), egui::StrokeKind::Inside);
         let mut x = pill.left() + 16.0;
         if sub.subscribed {
             widgets::icon_at(ui, pos2(x + 4.0, btn_y), icon::CHECK, 14.0, theme::text());

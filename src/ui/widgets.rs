@@ -224,37 +224,59 @@ pub fn icon_button(ui: &mut Ui, glyph: char, size: f32, name: &str, active: bool
     resp
 }
 
-/// Rounded pill button. `primary` = white with dark text (YouTube Music's Play button).
+/// Rounded pill button with frosted glass blur look and smooth capsule curvature.
 pub fn pill(ui: &mut Ui, label: &str, glyph: Option<char>, primary: bool) -> Response {
     // Laid out once; the colour is given when it's painted.
     let text = ui.painter().layout_no_wrap(label.to_owned(), theme::semibold(14.0), Color32::PLACEHOLDER);
     let icon_w = if glyph.is_some() { 24.0 } else { 0.0 };
     let (rect, resp) = ui.allocate_exact_size(vec2(text.size().x + icon_w + 36.0, 38.0), Sense::click());
     let resp = named(resp, label).on_hover_cursor(egui::CursorIcon::PointingHand);
-    let h = if resp.hovered() { 1.0 } else { 0.0 };
-    // Themes with accent chips: main bg color is white (dark mode) or dark grey (light mode),
-    // with the accent/appearance red color for icons and text.
+    let h = theme::anim_bool(ui.ctx(), resp.id.with("h"), resp.hovered(), 0.15);
+    let light = theme::light();
     let accented = primary && crate::preset::active().app.chip == crate::preset::ChipStyle::Accent;
-    let (fill, fg) = if accented {
-        let a = ui.ctx().data(|d| d.get_temp::<Color32>(egui::Id::unique("accent"))).unwrap_or(theme::RED);
-        if theme::light() {
-            let bg = theme::lerp_color(Color32::from_rgb(0x22, 0x22, 0x28), Color32::from_rgb(0x18, 0x18, 0x1e), h);
-            (bg, a)
+    let accent_color = ui.ctx().data(|d| d.get_temp::<Color32>(egui::Id::unique("accent"))).unwrap_or(theme::RED);
+
+    let (fill, stroke_color, fg, icon_col) = if light {
+        if primary {
+            let bg = theme::lerp_color(Color32::from_white_alpha(235), Color32::WHITE, h);
+            let stroke = Color32::from_black_alpha((30.0 + 20.0 * h) as u8);
+            let text_c = Color32::from_rgb(0x18, 0x14, 0x1c);
+            let ic = if accented { accent_color } else { text_c };
+            (bg, stroke, text_c, ic)
         } else {
-            let bg = theme::lerp_color(Color32::from_rgb(0xf2, 0xf2, 0xf6), Color32::WHITE, h);
-            (bg, a)
+            let bg = theme::lerp_color(Color32::from_black_alpha(15), Color32::from_black_alpha(28), h);
+            let stroke = Color32::from_black_alpha((25.0 + 18.0 * h) as u8);
+            (bg, stroke, theme::text(), theme::text())
         }
-    } else if primary {
-        if theme::light() { (theme::lerp_color(theme::text(), Color32::BLACK, h), Color32::WHITE) } else { (theme::lerp_color(Color32::from_gray(240), Color32::WHITE, h), Color32::from_gray(12)) }
     } else {
-        (theme::glass(0.10 + 0.08 * h), theme::text())
+        if primary {
+            let bg = theme::glass(0.16 + 0.08 * h);
+            let stroke = theme::glass(0.18 + 0.12 * h);
+            let text_c = theme::lerp_color(Color32::from_white_alpha(225), Color32::WHITE, h);
+            let ic = if accented { accent_color } else { Color32::WHITE };
+            (bg, stroke, text_c, ic)
+        } else {
+            let bg = theme::glass(0.12 + 0.08 * h);
+            let stroke = theme::glass(0.15 + 0.10 * h);
+            let text_c = theme::lerp_color(theme::text_dim(), theme::text(), h);
+            (bg, stroke, text_c, text_c)
+        }
     };
-    let radius = if accented { (crate::preset::active().chrome.radius * 0.8).clamp(6.0, 19.0) } else { 19.0 };
+
     let r = rect.shrink(if resp.is_pointer_button_down_on() { 1.0 } else { 0.0 });
+    let radius = r.height() / 2.0;
+
+    // Soft drop shadow matching resume autoscroll button
+    let shadow_alpha = if light { (25.0 + 10.0 * h) as u8 } else { (42.0 + 14.0 * h) as u8 };
+    ui.painter().rect_filled(r.translate(vec2(0.0, 1.5)), radius, Color32::from_black_alpha(shadow_alpha));
+
+    // Frosted capsule fill and subtle inside stroke
     ui.painter().rect_filled(r, radius, fill);
+    ui.painter().rect_stroke(r, radius, egui::Stroke::new(1.0, stroke_color), egui::StrokeKind::Inside);
+
     let mut x = r.left() + 18.0;
     if let Some(g) = glyph {
-        icon_at(ui, pos2(x + 8.0, r.center().y), g, 17.0, fg);
+        icon_at(ui, pos2(x + 8.0, r.center().y), g, 17.0, icon_col);
         x += icon_w;
     }
     ui.painter().galley(pos2(x, r.center().y - text.size().y / 2.0), text, fg);
@@ -268,16 +290,34 @@ pub fn pill_destructive(ui: &mut Ui, label: &str, glyph: Option<char>) -> Respon
     let (rect, resp) = ui.allocate_exact_size(vec2(text.size().x + icon_w + 36.0, 38.0), Sense::click());
     let resp = named(resp, label).on_hover_cursor(egui::CursorIcon::PointingHand);
     let h = theme::anim_bool(ui.ctx(), resp.id.with("h"), resp.hovered(), 0.15);
-    let fill = if resp.is_pointer_button_down_on() && resp.hovered() {
-        Color32::from_rgb(0xD8, 0x24, 0x3B)
+    let light = theme::light();
+
+    let (fill, stroke_color, fg) = if light {
+        let base_bg = Color32::from_black_alpha(15);
+        let hover_bg = Color32::from_rgb(0xD8, 0x24, 0x3B);
+        let bg = theme::lerp_color(base_bg, hover_bg, h);
+        let stroke = theme::lerp_color(Color32::from_black_alpha(25), hover_bg, h);
+        let text_c = theme::lerp_color(theme::text(), Color32::WHITE, h);
+        (bg, stroke, text_c)
     } else {
-        theme::lerp_color(theme::glass(0.10), theme::RED, h)
+        let base_bg = theme::glass(0.12);
+        let hover_bg = Color32::from_rgb(0xD8, 0x24, 0x3B);
+        let bg = theme::lerp_color(base_bg, hover_bg, h);
+        let stroke = theme::lerp_color(theme::glass(0.16), hover_bg, h);
+        let text_c = theme::lerp_color(Color32::from_white_alpha(225), Color32::WHITE, h);
+        (bg, stroke, text_c)
     };
-    let fg = theme::lerp_color(theme::text(), Color32::WHITE, h);
-    let accented = crate::preset::active().app.chip == crate::preset::ChipStyle::Accent;
-    let radius = if accented { (crate::preset::active().chrome.radius * 0.8).clamp(6.0, 19.0) } else { 19.0 };
+
     let r = rect.shrink(if resp.is_pointer_button_down_on() { 1.0 } else { 0.0 });
+    let radius = r.height() / 2.0;
+
+    // Soft drop shadow
+    let shadow_alpha = if light { (25.0 + 10.0 * h) as u8 } else { (42.0 + 14.0 * h) as u8 };
+    ui.painter().rect_filled(r.translate(vec2(0.0, 1.5)), radius, Color32::from_black_alpha(shadow_alpha));
+
     ui.painter().rect_filled(r, radius, fill);
+    ui.painter().rect_stroke(r, radius, egui::Stroke::new(1.0, stroke_color), egui::StrokeKind::Inside);
+
     let mut x = r.left() + 18.0;
     if let Some(g) = glyph {
         icon_at(ui, pos2(x + 8.0, r.center().y), g, 17.0, fg);
@@ -294,27 +334,31 @@ pub fn chip(ui: &mut Ui, label: &str, selected: bool) -> Response {
     let resp = named(resp, label).on_hover_cursor(egui::CursorIcon::PointingHand);
     let h = if resp.hovered() { 1.0 } else { 0.0 };
     let s = theme::anim_bool(ui.ctx(), resp.id.with("s"), selected, 0.2);
-    use crate::preset::ChipStyle;
-    let style = crate::preset::active().app.chip;
-    let radius = (crate::preset::active().chrome.radius * 0.55).clamp(4.0, 17.0);
-    let (on_fill, on_fg) = match style {
-        ChipStyle::Accent => {
-            let a = ui.ctx().data(|d| d.get_temp::<Color32>(egui::Id::unique("accent"))).unwrap_or(theme::RED);
-            if theme::light() {
-                (Color32::from_rgb(0x22, 0x22, 0x28), a)
-            } else {
-                (Color32::from_rgb(0xf2, 0xf2, 0xf6), a)
-            }
-        }
-        _ => (theme::text(), theme::on_text()),
+    let radius = rect.height() / 2.0;
+    let light = theme::light();
+
+    // Soft drop shadow
+    let shadow_alpha = if light { 20 } else { 38 };
+    ui.painter().rect_filled(rect.translate(vec2(0.0, 1.2)), radius, Color32::from_black_alpha(shadow_alpha));
+
+    let (fill, stroke_color, fg) = if light {
+        let off_fill = theme::lerp_color(Color32::from_black_alpha(12), Color32::from_black_alpha(22), h);
+        let on_fill = Color32::from_rgb(0x18, 0x14, 0x1c);
+        let fill = theme::lerp_color(off_fill, on_fill, s);
+        let stroke = Color32::from_black_alpha(((25.0 + 15.0 * h) * (1.0 - s)) as u8);
+        let text_c = theme::lerp_color(theme::text(), Color32::WHITE, s);
+        (fill, stroke, text_c)
+    } else {
+        let off_fill = theme::glass(0.11 + 0.08 * h);
+        let on_fill = theme::glass(0.26);
+        let fill = theme::lerp_color(off_fill, on_fill, s);
+        let stroke = theme::glass((0.15 + 0.10 * h) * (1.0 - s) + 0.22 * s);
+        let text_c = theme::lerp_color(Color32::from_white_alpha(215), Color32::WHITE, s.max(h * 0.5));
+        (fill, stroke, text_c)
     };
-    let off_fill = if style == ChipStyle::Outline { theme::glass(0.04 * h) } else { theme::glass(0.09 + 0.06 * h) };
-    let fill = theme::lerp_color(off_fill, on_fill, s);
+
     ui.painter().rect_filled(rect, radius, fill);
-    if style == ChipStyle::Outline {
-        ui.painter().rect_stroke(rect, radius, egui::Stroke::new(1.0, theme::glass(0.3 * (1.0 - s))), egui::StrokeKind::Inside);
-    }
-    let fg = theme::lerp_color(theme::text(), on_fg, s);
+    ui.painter().rect_stroke(rect, radius, egui::Stroke::new(1.0, stroke_color), egui::StrokeKind::Inside);
     ui.painter().galley(rect.center() - text.size() / 2.0, text, fg);
     resp
 }
