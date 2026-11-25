@@ -770,7 +770,6 @@ fn lyrics_wait(app: &mut App, ui: &mut Ui, rect: Rect, now: f64) -> bool {
     ui.vertical_centered(|ui| {
         if now - since < 20.0 {
             ui.spinner();
-            ui.label(egui::RichText::new(t!("loading_lyrics")).color(theme::text_dim()));
             ui.ctx().request_repaint_after(std::time::Duration::from_millis(100));
         } else {
             ui.label(egui::RichText::new(t!("no_lyrics_yet")).font(theme::semibold(16.0)).color(theme::text_dim()));
@@ -793,7 +792,6 @@ fn lyrics_panel(app: &mut App, ui: &mut Ui, rect: Rect, now: f64, centered: bool
         ui.vertical_centered(|ui| {
             if now - since < 20.0 {
                 ui.spinner();
-                ui.label(egui::RichText::new(t!("loading_lyrics")).color(theme::text_dim()));
                 ui.ctx().request_repaint_after(std::time::Duration::from_millis(100));
             } else {
                 ui.label(egui::RichText::new(t!("no_lyrics_yet")).font(theme::semibold(16.0)).color(theme::text_dim()));

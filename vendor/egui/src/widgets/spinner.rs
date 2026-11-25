@@ -43,11 +43,19 @@ impl Spinner {
                 .color
                 .unwrap_or_else(|| ui.visuals().strong_text_color());
             let radius = (rect.height().min(rect.width()) * 0.5) - 2.0;
-            let n_points = (radius.round() as u32).clamp(8, 128);
+            let stroke_width = (radius * 0.22).clamp(2.0, 3.0);
+
+            // Subtle background ring track so it always forms a clean ring
+            let track_color = color.gamma_multiply(0.20);
+            ui.painter().circle_stroke(rect.center(), radius, Stroke::new(stroke_width, track_color));
+
+            // Smooth rotating foreground arc around the ring
+            let n_points = (radius.round() as u32).clamp(16, 128);
             let time = ui.input(|i| i.time);
             let start_angle = time * core::f64::consts::TAU;
-            let end_angle = start_angle + 240f64.to_radians() * time.sin();
-            let points: Vec<Pos2> = (0..n_points)
+            let sweep = 240f64.to_radians();
+            let end_angle = start_angle + sweep;
+            let points: Vec<Pos2> = (0..=n_points)
                 .map(|i| {
                     let angle = lerp(start_angle..=end_angle, i as f64 / n_points as f64);
                     let (sin, cos) = angle.sin_cos();
@@ -55,7 +63,7 @@ impl Spinner {
                 })
                 .collect();
             ui.painter()
-                .add(Shape::line(points, Stroke::new(3.0, color)));
+                .add(Shape::line(points, Stroke::new(stroke_width, color)));
         }
     }
 }
