@@ -430,6 +430,14 @@ pub struct App {
     apple_waiting: std::collections::HashSet<String>,
     /// Artwork dominant colors cached by key (e.g. "album:{id}", "artist:{id}").
     pub art_colors: std::collections::HashMap<String, egui::Color32>,
+    /// Artwork vivid accent colors cached by key.
+    pub art_accents: std::collections::HashMap<String, egui::Color32>,
+    /// Pre-blurred 64x64 RGBA album/artist artwork bytes cached by key.
+    pub art_blurs: std::collections::HashMap<String, Vec<u8>>,
+    /// Uploaded blurred artwork textures for album ambient backdrops.
+    art_blur_tex: std::collections::HashMap<String, egui::TextureHandle>,
+    /// Timestamp when each artwork key finished loading (for smooth fade-in).
+    art_loaded_at: std::collections::HashMap<String, f64>,
     /// Artwork color requests currently in flight.
     art_waiting: std::collections::HashSet<String>,
     /// Settings › Artist pages: the listener's own signature service, or empty.
@@ -783,6 +791,10 @@ impl App {
             apple_motion: Default::default(),
             apple_waiting: Default::default(),
             art_colors: Default::default(),
+            art_accents: Default::default(),
+            art_blurs: Default::default(),
+            art_blur_tex: Default::default(),
+            art_loaded_at: Default::default(),
             art_waiting: Default::default(),
             signature_api: get("signature_api").unwrap_or_default(),
             signature_tex: Default::default(),
@@ -1358,21 +1370,11 @@ impl App {
 
         let (r, g, b) = (dom.r() as f32 / 255.0, dom.g() as f32 / 255.0, dom.b() as f32 / 255.0);
         let (h, s, v) = rgb_to_hsv(r, g, b);
-        let mut h_deg = h * 360.0;
+        let h_deg = h * 360.0;
 
-        if s < 0.08 || v < 0.08 {
+        // Perceptual grayscale cutoff: covers perceived as B&W / neutral gray stay obsidian dark.
+        if s < 0.17 || v < 0.08 {
             return base_default;
-        }
-
-        // Perceptual hue calibration:
-        // In dark UI backgrounds, cyan/teal hues (165°–205°) appear murky greenish-grey / algae
-        // due to human eye sensitivity to green. Shift them smoothly toward sky/sapphire blue (205°–220°)
-        // so blue-themed albums (like Shape of You) look cleanly and richly blue, not dark mud.
-        if (165.0..=205.0).contains(&h_deg) {
-            let t = (h_deg - 165.0) / 40.0;
-            h_deg = 205.0 + t * 15.0;
-        } else if (65.0..=95.0).contains(&h_deg) {
-            h_deg = if h_deg < 80.0 { 45.0 } else { 120.0 };
         }
 
         if is_light {
@@ -1386,15 +1388,133 @@ impl App {
             let lb = ((bb * 0.45 + pb * 0.55) * 255.0).round().clamp(220.0, 255.0) as u8;
             Color32::from_rgb(lr, lg, lb)
         } else {
-            // Deep, clean, obsidian dark tint without swampy/murky green-brown midtone sludge
-            let dark_s = (0.55 + 0.30 * s).clamp(0.55, 0.85);
-            let dark_v = (0.18 + 0.06 * s).clamp(0.18, 0.25);
+            // Rich, authentic dark tint preserving true artwork hue without distorting blues or snapping to green.
+            let dark_s = (0.38 + 0.44 * s).clamp(0.38, 0.80);
+            let dark_v = (0.19 + 0.08 * s).clamp(0.19, 0.27);
             let (dr, dg, db) = hsv_to_rgb(h_deg / 360.0, dark_s, dark_v);
             Color32::from_rgb(
                 (dr * 255.0).round() as u8,
                 (dg * 255.0).round() as u8,
                 (db * 255.0).round() as u8,
             )
+        }
+    }
+
+    /// Paint the main page section backdrop with warm blurred album artwork and alive ambient glow.
+    fn paint_page_backdrop(&mut self, ctx: &egui::Context, painter: &egui::Painter, section: egui::Rect, now: f64) {
+        let base = self.page_color(ctx);
+        painter.rect_filled(section, 0.0, base);
+
+        let key = match &self.page {
+            Page::Album(id) => format!("album:{id}"),
+            _ => return,
+        };
+        let Some(&dom) = self.art_colors.get(&key) else {
+            return;
+        };
+        let (_, s, v) = rgb_to_hsv(dom.r() as f32 / 255.0, dom.g() as f32 / 255.0, dom.b() as f32 / 255.0);
+        if s < 0.17 || v < 0.08 {
+            return;
+        }
+
+        if !self.art_blur_tex.contains_key(&key)
+            && let Some(rgba) = self.art_blurs.get(&key)
+            && rgba.len() == (crate::art::SIZE * crate::art::SIZE * 4) as usize
+        {
+            let img = egui::ColorImage::from_rgba_unmultiplied([crate::art::SIZE as usize, crate::art::SIZE as usize], rgba);
+            let tex = ctx.load_texture(format!("album-blur:{key}"), img, egui::TextureOptions::LINEAR);
+            self.art_blur_tex.insert(key.clone(), tex);
+        }
+
+        let loaded_t = self.art_loaded_at.get(&key).copied().unwrap_or(now);
+        let fade = theme::ease_out(((now - loaded_t) / 0.65).clamp(0.0, 1.0) as f32);
+        if fade < 1.0 {
+            ctx.request_repaint_after(Duration::from_millis(33));
+        }
+
+        let light = theme::light();
+        let p = painter.with_clip_rect(section);
+
+        if let Some(tex) = self.art_blur_tex.get(&key) {
+            let t = if self.playing() { (now * 0.28) as f32 } else { 0.0 };
+            let dx = t.sin() * 0.045;
+            let dy = (t * 0.73).cos() * 0.045;
+            let u0 = (0.08 + dx).clamp(0.02, 0.20);
+            let u1 = (0.92 + dx).clamp(0.80, 0.98);
+            let v0 = (0.08 + dy).clamp(0.02, 0.20);
+            let v1 = (0.92 + dy).clamp(0.80, 0.98);
+
+            let glow_h = (section.height() * 0.85).clamp(480.0, 760.0).min(section.height());
+            let wash_rect = egui::Rect::from_min_max(section.min, egui::pos2(section.right(), section.top() + glow_h));
+
+            let ys = [0.0f32, 0.25, 0.55, 0.80, 1.0];
+            let alphas = if light {
+                [0.20f32, 0.14, 0.06, 0.02, 0.0]
+            } else {
+                [0.52f32, 0.42, 0.22, 0.07, 0.0]
+            };
+            let xs = [0.0f32, 0.45, 1.0];
+            let x_boost = [1.12f32, 0.98, 0.86];
+
+            let mut mesh = egui::Mesh::with_texture(tex.id());
+            for (&ty, &base_a) in ys.iter().zip(alphas.iter()) {
+                let y = wash_rect.top() + ty * wash_rect.height();
+                let v = v0 + ty * (v1 - v0);
+                for (&tx, &xb) in xs.iter().zip(x_boost.iter()) {
+                    let x = wash_rect.left() + tx * wash_rect.width();
+                    let u = u0 + tx * (u1 - u0);
+                    let a = (base_a * fade * xb).clamp(0.0, 1.0);
+                    // Subtle warm tint on dark backgrounds so colors feel alive rather than cold.
+                    let (wr, wg, wb) = if light { (1.0, 1.0, 1.0) } else { (1.0, 0.96, 0.91) };
+                    let col = Color32::from_rgba_premultiplied(
+                        (255.0 * a * wr).min(255.0) as u8,
+                        (255.0 * a * wg).min(255.0) as u8,
+                        (255.0 * a * wb).min(255.0) as u8,
+                        (255.0 * a).min(255.0) as u8,
+                    );
+                    mesh.vertices.push(egui::epaint::Vertex {
+                        pos: egui::pos2(x, y),
+                        uv: egui::pos2(u, v),
+                        color: col,
+                    });
+                }
+            }
+            let cols = xs.len() as u32;
+            for r in 0..(ys.len() as u32 - 1) {
+                for c in 0..(cols - 1) {
+                    let i0 = r * cols + c;
+                    let i1 = i0 + 1;
+                    let i2 = i0 + cols;
+                    let i3 = i2 + 1;
+                    mesh.add_triangle(i0, i1, i2);
+                    mesh.add_triangle(i1, i3, i2);
+                }
+            }
+            p.add(egui::Shape::mesh(mesh));
+        }
+
+        // Warm backlit ambient halo behind the album cover
+        if let Some(&acc) = self.art_accents.get(&key) {
+            let breath = if self.playing() { 1.0 + 0.06 * (now as f32 * 0.8).sin() } else { 1.0 };
+            let warm_acc = theme::lerp_color(acc, Color32::from_rgb(255, 224, 196), 0.16);
+            let center = egui::pos2(section.left() + 210.0, section.top() + 190.0);
+            let rad_x = (section.width() * 0.45).clamp(280.0, 460.0);
+            let rad_y = 300.0;
+            let mut halo = egui::Mesh::default();
+            let halo_alpha = (if light { 0.08 } else { 0.17 }) * fade * breath;
+            halo.colored_vertex(center, theme::with_alpha(warm_acc, halo_alpha));
+            const SEGS: usize = 24;
+            for i in 0..=SEGS {
+                let ang = (i as f32 / SEGS as f32) * std::f32::consts::TAU;
+                halo.colored_vertex(
+                    center + egui::vec2(ang.cos() * rad_x, ang.sin() * rad_y),
+                    Color32::TRANSPARENT,
+                );
+                if i > 0 {
+                    halo.add_triangle(0, i as u32, i as u32 + 1);
+                }
+            }
+            p.add(egui::Shape::mesh(halo));
         }
     }
 
@@ -1633,7 +1753,7 @@ impl eframe::App for App {
             // The playing row's bars need a steady, full rate to read as smooth; 30 fps
             // behind other windows.
             ctx.request_repaint_after(Duration::from_millis(if focused { 16 } else { 33 }));
-        } else if playing && shell::pages_bg_moves(self.look()) {
+        } else if playing && (shell::pages_bg_moves(self.look()) || (self.look().id == crate::preset::DEFAULT_ID && matches!(self.page, Page::Album(_)))) {
             ctx.request_repaint_after(Duration::from_millis(66));
         } else if playing || self.buffering {
             ctx.request_repaint_after(Duration::from_millis(250));
@@ -1734,10 +1854,9 @@ impl eframe::App for App {
                 .show(ui, |ui| shell::sidebar(self, ui));
             self.scroll_panes.push(side.response.rect);
             let section = ui.available_rect_before_wrap();
-            // The built-in look keeps its colour to the sidebar: the pages beside it are
-            // plain, the same flat light or dark as the player bar under them.
+            // The built-in look paints the page's ambient tint plus a warm blurred artwork backdrop on albums.
             if look.id == crate::preset::DEFAULT_ID {
-                ui.painter().rect_filled(section, 0.0, self.page_color(&ctx));
+                self.paint_page_backdrop(&ctx, ui.painter(), section, now);
             }
             const DRAWER_W: f32 = 340.0;
             let q = theme::anim_bool(&ctx, "queue-drawer", self.queue_open && !self.np_open, 0.25);

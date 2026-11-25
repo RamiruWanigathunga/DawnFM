@@ -831,7 +831,7 @@ pub fn player_bar(app: &mut App, ui: &mut Ui, now: f64, _frosted: bool) {
         cap.shrink2(vec2(12.0, 0.0))
     } else {
         const H: f32 = 56.0;
-        let radius = 20.0;
+        let radius = H / 2.0;
         let max_w = 840.0;
         let w = (full.width() - 32.0).clamp(420.0, max_w).min(full.width() - 16.0);
         let cap = Rect::from_min_size(pos2(full.center().x - w / 2.0, full.bottom() - 14.0 - H), vec2(w, H));
@@ -848,20 +848,6 @@ pub fn player_bar(app: &mut App, ui: &mut Ui, now: f64, _frosted: bool) {
         } else {
             theme::lerp_color(app.page_color(&ctx), Color32::WHITE, 0.18)
         };
-
-        // Realistic soft drop shadow under the floating controller bar
-        let shadow_ambient = if theme::light() {
-            egui::epaint::Shadow { offset: [0, 8], blur: 32, spread: 2, color: Color32::from_black_alpha(40) }
-        } else {
-            egui::epaint::Shadow { offset: [0, 8], blur: 32, spread: 2, color: Color32::from_black_alpha(150) }
-        };
-        let shadow_contact = if theme::light() {
-            egui::epaint::Shadow { offset: [0, 2], blur: 8, spread: 0, color: Color32::from_black_alpha(25) }
-        } else {
-            egui::epaint::Shadow { offset: [0, 2], blur: 8, spread: 0, color: Color32::from_black_alpha(90) }
-        };
-        ui.painter().add(shadow_ambient.as_shape(cap, egui::CornerRadius::same(radius as u8)));
-        ui.painter().add(shadow_contact.as_shape(cap, egui::CornerRadius::same(radius as u8)));
 
         ui.painter().rect_filled(cap, radius, fill);
         ui.painter().rect_stroke(cap, radius, egui::Stroke::new(1.0, stroke_col), egui::StrokeKind::Inside);

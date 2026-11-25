@@ -378,6 +378,10 @@ impl App {
             Resp::Art { key, art } => {
                 self.art_waiting.remove(&key);
                 self.art_colors.insert(key.clone(), art.dominant);
+                self.art_accents.insert(key.clone(), art.accent);
+                self.art_blurs.insert(key.clone(), art.rgba.clone());
+                self.art_blur_tex.remove(&key);
+                self.art_loaded_at.insert(key.clone(), now);
                 if self.mix_hold().is_none() && self.current_id() == Some(key.as_str()) {
                     self.accent = art.accent;
                     self.dominant = art.dominant;

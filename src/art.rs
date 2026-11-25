@@ -145,14 +145,19 @@ fn palette(img: &image::RgbImage) -> (Color32, Color32) {
     }
 
     // Manage dominant color: don't make it too dark or too white, keeping the artwork's hue/tint.
-    // If most_used is near-grayscale/black (sat < 0.15) but the artwork has a vivid accent, prefer accent_raw
+    // If most_used is near-grayscale/black (sat < 0.15) but the artwork has a genuinely vivid accent, prefer accent_raw
     let (most_r, most_g, most_b) = (most_used[0] / 255.0, most_used[1] / 255.0, most_used[2] / 255.0);
     let most_max = most_r.max(most_g).max(most_b);
     let most_min = most_r.min(most_g).min(most_b);
     let most_sat = if most_max > 0.0 { (most_max - most_min) / most_max } else { 0.0 };
 
-    let (mut dom_r, mut dom_g, mut dom_b) = if most_sat < 0.15 && best_score > 0.02 {
-        (accent_raw[0] / 255.0, accent_raw[1] / 255.0, accent_raw[2] / 255.0)
+    let (acc_r, acc_g, acc_b) = (accent_raw[0] / 255.0, accent_raw[1] / 255.0, accent_raw[2] / 255.0);
+    let acc_max = acc_r.max(acc_g).max(acc_b);
+    let acc_min = acc_r.min(acc_g).min(acc_b);
+    let accent_sat = if acc_max > 0.0 { (acc_max - acc_min) / acc_max } else { 0.0 };
+
+    let (mut dom_r, mut dom_g, mut dom_b) = if most_sat < 0.15 && accent_sat > 0.22 && best_score > 0.02 {
+        (acc_r, acc_g, acc_b)
     } else {
         (most_r, most_g, most_b)
     };
