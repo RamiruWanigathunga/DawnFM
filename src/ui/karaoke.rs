@@ -124,7 +124,7 @@ const LONG_WORD: f64 = 1.5;
 const LINE_SYNC_DELAY: f64 = 0.05;
 /// Word groups longer than twice `blyrics-long-word-wrap-threshold` may break.
 const LONG_GROUP_CHARS: usize = 20;
-const USER_SCROLL_RESUME: f64 = 25.0;
+const USER_SCROLL_RESUME: f64 = 5.0;
 const DECO_ENTRY: f64 = 0.35;
 
 /// Resolved look for one frame: the extension's defaults, adjusted by the preset.

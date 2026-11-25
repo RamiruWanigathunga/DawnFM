@@ -920,37 +920,52 @@ fn synced(app: &mut App, ui: &mut Ui, rect: Rect, id: &str, lyrics: &Lyrics, now
     if out.animating {
         super::animate(ui.ctx());
     }
-    // The extension's `.autoscroll-resume-button` (YouTube Music's rem is 10 px): a frosted
-    // pill under the top edge in the lyrics font at 600, 1.75rem; padding .5rem 1rem;
-    // white 5% fill, 1px white 10% border, radius 1rem, over a 5px backdrop blur (which
-    // reads as about twice those on screen). It slides down from -3em to 2em as it fades
-    // in, and its text glows on hover.
-    let shown = theme::anim_bool(ui.ctx(), "lyr-resume", out.user_scrolling, 0.2);
+    if out.user_scrolling {
+        ui.ctx().request_repaint_after(std::time::Duration::from_millis(150));
+    }
+    // Sleek, minimal floating capsule to resume autoscroll when reader scrolled away.
+    // If not clicked, autoscroll automatically resumes in 5s.
+    let shown = theme::anim_bool(ui.ctx(), "lyr-resume", out.user_scrolling, 0.22);
     if shown > 0.0 {
-        let font = theme::lyric_font(&style.font, crate::preset::Weight::Semibold, 17.5);
-        let resume_color = if bg_light { Color32::from_rgb(0x18, 0x14, 0x1c) } else { theme::text() };
+        let font = theme::semibold(12.0);
         let resume_label = t!("resume_autoscroll");
-        let g = widgets::galley(ui, &resume_label, font, resume_color, rect.width() - 40.0);
-        let size = g.size() + vec2(20.0, 10.0) + Vec2::splat(2.0);
-        let em = 17.5;
-        let y = rect.top() + 8.0 + egui::lerp(-3.0 * em..=0.5 * em, theme::ease_out(shown));
+        let text_color = if bg_light { Color32::from_rgb(0x18, 0x14, 0x1c) } else { Color32::from_white_alpha(225) };
+        let g = widgets::galley(ui, &resume_label, font, text_color, rect.width() - 40.0);
+        let h = 26.0;
+        let w = g.size().x + 24.0;
+        let size = vec2(w, h);
+        let y = rect.top() + 10.0 + egui::lerp(-28.0..=0.0, theme::ease_out(shown));
         let r = Rect::from_min_size(pos2(rect.center().x - size.x / 2.0, y), size);
         let resp = ui.interact(r, ui.scope_id().with("lyr-resume-btn"), if out.user_scrolling { Sense::click() } else { Sense::hover() });
         let resp = named(resp, &resume_label).on_hover_cursor(egui::CursorIcon::PointingHand);
-        let hover = theme::anim_bool(ui.ctx(), "lyr-resume-h", resp.hovered() && out.user_scrolling, 0.25);
+        let hover = theme::anim_bool(ui.ctx(), "lyr-resume-h", resp.hovered() && out.user_scrolling, 0.2);
         let p = ui.painter().with_clip_rect(rect.expand2(vec2(0.0, 4.0)));
-        p.rect_filled(r, 10.0, theme::glass(0.10 * shown));
-        p.rect_stroke(r, 10.0, egui::Stroke::new(1.0, theme::glass(0.2 * shown)), egui::StrokeKind::Inside);
+        let radius = h / 2.0;
+
+        // Soft drop shadow
+        let shadow_alpha = (40.0 * shown) as u8;
+        p.rect_filled(r.translate(vec2(0.0, 1.5)), radius, Color32::from_black_alpha(shadow_alpha));
+
+        // Frosted capsule fill matching app UI theme
+        let (fill, stroke_color, fg) = if bg_light {
+            let bg_alpha = (235.0 * shown) as u8;
+            let fill = theme::lerp_color(Color32::from_white_alpha(bg_alpha), Color32::WHITE, hover);
+            let stroke = Color32::from_black_alpha(((25.0 + 20.0 * hover) * shown) as u8);
+            (fill, stroke, Color32::from_rgb(0x18, 0x14, 0x1c))
+        } else {
+            let base_fill = theme::glass((0.14 + 0.08 * hover) * shown);
+            let stroke = theme::glass((0.16 + 0.12 * hover) * shown);
+            let fg = theme::lerp_color(Color32::from_white_alpha((220.0 * shown) as u8), Color32::WHITE, hover);
+            (base_fill, stroke, fg)
+        };
+
+        p.rect_filled(r, radius, fill);
+        p.rect_stroke(r, radius, egui::Stroke::new(1.0, stroke_color), egui::StrokeKind::Inside);
+
         let at = r.center() - g.size() / 2.0;
-        if hover > 0.0
-            && let Some((tex, glow_rect, uv)) = app.lyric_view.text_glow(ui.ctx(), g.clone(), at, 15.0)
-        {
-            // `text-shadow: 0 0 1.5rem var(--blyrics-glow-color)`: a real blur of the letters.
-            let glow = crate::preset::paint(&style.glow_color, accent);
-            p.image(tex, glow_rect, uv, theme::with_alpha(glow, hover * shown));
-        }
-        p.galley_with_override_text_color(at, g, theme::with_alpha(resume_color, shown));
-        if shown < 1.0 {
+        p.galley_with_override_text_color(at, g, fg);
+
+        if shown < 1.0 || (hover > 0.0 && hover < 1.0) {
             super::animate(ui.ctx());
         }
         if resp.clicked() {

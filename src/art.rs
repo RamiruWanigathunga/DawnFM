@@ -92,42 +92,7 @@ fn palette(img: &image::RgbImage) -> (Color32, Color32) {
         bins[idx].sum[2] += rgb[2];
     }
 
-    // 1. Most used color across the artwork (highest bin pixel count)
-    let mut max_count = 0;
-    let mut most_used = [128.0f32, 128.0f32, 128.0f32];
-    for bin in &bins {
-        if bin.count > max_count {
-            max_count = bin.count;
-            let c = bin.count as f32;
-            most_used = [bin.sum[0] / c, bin.sum[1] / c, bin.sum[2] / c];
-        }
-    }
-
-    // Manage dominant color: don't make it too dark or too white, keeping the artwork's hue/tint.
-    // If it's chromatic (sat > 0.15) but very dark, moderately boost it, but do NOT boost neutral/grayscale darks or blacks into artificial hues.
-    let (mut dom_r, mut dom_g, mut dom_b) = (most_used[0] / 255.0, most_used[1] / 255.0, most_used[2] / 255.0);
-    let max_c = dom_r.max(dom_g).max(dom_b);
-    let min_c = dom_r.min(dom_g).min(dom_b);
-    let sat = if max_c > 0.0 { (max_c - min_c) / max_c } else { 0.0 };
-    let luma = 0.299 * dom_r + 0.587 * dom_g + 0.114 * dom_b;
-    if luma > 0.82 {
-        let factor = 0.82 / luma;
-        dom_r *= factor;
-        dom_g *= factor;
-        dom_b *= factor;
-    } else if luma < 0.16 && sat > 0.15 {
-        let factor = (0.18 / luma.max(0.01)).min(2.0);
-        dom_r = (dom_r * factor).min(1.0);
-        dom_g = (dom_g * factor).min(1.0);
-        dom_b = (dom_b * factor).min(1.0);
-    }
-    let dominant = Color32::from_rgb(
-        (dom_r * 255.0).round() as u8,
-        (dom_g * 255.0).round() as u8,
-        (dom_b * 255.0).round() as u8,
-    );
-
-    // 2. Vivid accent color for UI highlights, buttons, and progress bar
+    // 1. Vivid accent color for UI highlights, buttons, and progress bar
     let mut best_score = 0.0f32;
     let mut best_color = [200.0, 60.0, 80.0];
 
@@ -167,6 +132,51 @@ fn palette(img: &image::RgbImage) -> (Color32, Color32) {
     let avg = [sum[0] / total_pixels, sum[1] / total_pixels, sum[2] / total_pixels];
     let accent_raw = if best_score > 0.01 { best_color } else { avg };
     let accent = lift(accent_raw);
+
+    // 2. Most used color across the artwork (highest bin pixel count)
+    let mut max_count = 0;
+    let mut most_used = [128.0f32, 128.0f32, 128.0f32];
+    for bin in &bins {
+        if bin.count > max_count {
+            max_count = bin.count;
+            let c = bin.count as f32;
+            most_used = [bin.sum[0] / c, bin.sum[1] / c, bin.sum[2] / c];
+        }
+    }
+
+    // Manage dominant color: don't make it too dark or too white, keeping the artwork's hue/tint.
+    // If most_used is near-grayscale/black (sat < 0.15) but the artwork has a vivid accent, prefer accent_raw
+    let (most_r, most_g, most_b) = (most_used[0] / 255.0, most_used[1] / 255.0, most_used[2] / 255.0);
+    let most_max = most_r.max(most_g).max(most_b);
+    let most_min = most_r.min(most_g).min(most_b);
+    let most_sat = if most_max > 0.0 { (most_max - most_min) / most_max } else { 0.0 };
+
+    let (mut dom_r, mut dom_g, mut dom_b) = if most_sat < 0.15 && best_score > 0.02 {
+        (accent_raw[0] / 255.0, accent_raw[1] / 255.0, accent_raw[2] / 255.0)
+    } else {
+        (most_r, most_g, most_b)
+    };
+
+    let max_c = dom_r.max(dom_g).max(dom_b);
+    let min_c = dom_r.min(dom_g).min(dom_b);
+    let sat = if max_c > 0.0 { (max_c - min_c) / max_c } else { 0.0 };
+    let luma = 0.299 * dom_r + 0.587 * dom_g + 0.114 * dom_b;
+    if luma > 0.82 {
+        let factor = 0.82 / luma;
+        dom_r *= factor;
+        dom_g *= factor;
+        dom_b *= factor;
+    } else if luma < 0.16 && sat > 0.15 {
+        let factor = (0.18 / luma.max(0.01)).min(2.0);
+        dom_r = (dom_r * factor).min(1.0);
+        dom_g = (dom_g * factor).min(1.0);
+        dom_b = (dom_b * factor).min(1.0);
+    }
+    let dominant = Color32::from_rgb(
+        (dom_r * 255.0).round() as u8,
+        (dom_g * 255.0).round() as u8,
+        (dom_b * 255.0).round() as u8,
+    );
 
     (accent, dominant)
 }

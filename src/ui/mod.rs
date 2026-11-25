@@ -1288,16 +1288,61 @@ impl App {
             self.backend.request(crate::backend::Req::Art { key, url: t.url.clone() });
         }
     }
+}
 
-    /// Target page background color: in dark mode, starts from the #111111 main dark base.
-    /// Only Album and Artist pages tint to the subtle ambient tint of that specific page's artwork.
-    pub fn page_target_color(&self) -> Color32 {
-        if theme::light() {
-            return theme::bg();
+fn rgb_to_hsv(r: f32, g: f32, b: f32) -> (f32, f32, f32) {
+    let max = r.max(g).max(b);
+    let min = r.min(g).min(b);
+    let delta = max - min;
+    let v = max;
+    let s = if max > 0.0 { delta / max } else { 0.0 };
+    if delta <= 0.0001 {
+        return (0.0, 0.0, v);
+    }
+    let h = if (max - r).abs() < 0.0001 {
+        let mut seg = (g - b) / delta;
+        if seg < 0.0 {
+            seg += 6.0;
         }
-        let base_dark = Color32::from_rgb(0x11, 0x11, 0x11);
+        seg / 6.0
+    } else if (max - g).abs() < 0.0001 {
+        ((b - r) / delta + 2.0) / 6.0
+    } else {
+        ((r - g) / delta + 4.0) / 6.0
+    };
+    (h, s, v)
+}
+
+fn hsv_to_rgb(h: f32, s: f32, v: f32) -> (f32, f32, f32) {
+    if s <= 0.0 {
+        return (v, v, v);
+    }
+    let h_deg = (h.fract() * 6.0).rem_euclid(6.0);
+    let i = h_deg.floor() as i32;
+    let f = h_deg - i as f32;
+    let p = v * (1.0 - s);
+    let q = v * (1.0 - s * f);
+    let t = v * (1.0 - s * (1.0 - f));
+    match i {
+        0 => (v, t, p),
+        1 => (q, v, p),
+        2 => (p, v, t),
+        3 => (p, q, v),
+        4 => (t, p, v),
+        _ => (v, p, q),
+    }
+}
+
+impl App {
+
+    /// Target page background color:
+    /// In dark mode, starts from #111111 base and adds a clean, non-muddy chromatic tint.
+    /// In light mode, starts from the #f6f4f8 base and adds a subtle, fresh pastel ambient wash.
+    pub fn page_target_color(&self) -> Color32 {
+        let is_light = theme::light();
+        let base_default = if is_light { theme::bg() } else { Color32::from_rgb(0x11, 0x11, 0x11) };
         if self.look().id != crate::preset::DEFAULT_ID {
-            return self.look().solid();
+            return if is_light { theme::bg() } else { self.look().solid() };
         }
 
         // Only tint background for Artist and Album pages matching that page's artwork
@@ -1307,32 +1352,55 @@ impl App {
             _ => None,
         };
 
-        if let Some(dom) = page_dom {
-            let (r, g, b) = (dom.r() as f32, dom.g() as f32, dom.b() as f32);
-            let max_c = r.max(g).max(b);
-            let min_c = r.min(g).min(b);
-            let sat = if max_c > 0.0 { (max_c - min_c) / max_c } else { 0.0 };
-            if sat < 0.08 {
-                base_dark
-            } else {
-                let scale = (130.0 / max_c).clamp(0.5, 2.0);
-                let norm_r = (r * scale).min(255.0);
-                let norm_g = (g * scale).min(255.0);
-                let norm_b = (b * scale).min(255.0);
-                let blend = (0.24 * (sat * 1.5).min(1.0)).clamp(0.0, 0.40);
-                let t_r = (17.0 * (1.0 - blend) + norm_r * blend).round() as u8;
-                let t_g = (17.0 * (1.0 - blend) + norm_g * blend).round() as u8;
-                let t_b = (17.0 * (1.0 - blend) + norm_b * blend).round() as u8;
-                Color32::from_rgb(t_r, t_g, t_b)
-            }
+        let Some(dom) = page_dom else {
+            return base_default;
+        };
+
+        let (r, g, b) = (dom.r() as f32 / 255.0, dom.g() as f32 / 255.0, dom.b() as f32 / 255.0);
+        let (h, s, v) = rgb_to_hsv(r, g, b);
+        let mut h_deg = h * 360.0;
+
+        if s < 0.08 || v < 0.08 {
+            return base_default;
+        }
+
+        // Perceptual hue calibration:
+        // In dark UI backgrounds, cyan/teal hues (165°–205°) appear murky greenish-grey / algae
+        // due to human eye sensitivity to green. Shift them smoothly toward sky/sapphire blue (205°–220°)
+        // so blue-themed albums (like Shape of You) look cleanly and richly blue, not dark mud.
+        if (165.0..=205.0).contains(&h_deg) {
+            let t = (h_deg - 165.0) / 40.0;
+            h_deg = 205.0 + t * 15.0;
+        } else if (65.0..=95.0).contains(&h_deg) {
+            h_deg = if h_deg < 80.0 { 45.0 } else { 120.0 };
+        }
+
+        if is_light {
+            // Fresh, clean pastel ambient wash on light mode background
+            let light_s = (0.06 + 0.06 * s).clamp(0.06, 0.12);
+            let light_v = (0.98 - 0.02 * s).clamp(0.95, 0.99);
+            let (pr, pg, pb) = hsv_to_rgb(h_deg / 360.0, light_s, light_v);
+            let (br, bg, bb) = (246.0 / 255.0, 244.0 / 255.0, 248.0 / 255.0);
+            let lr = ((br * 0.45 + pr * 0.55) * 255.0).round().clamp(220.0, 255.0) as u8;
+            let lg = ((bg * 0.45 + pg * 0.55) * 255.0).round().clamp(220.0, 255.0) as u8;
+            let lb = ((bb * 0.45 + pb * 0.55) * 255.0).round().clamp(220.0, 255.0) as u8;
+            Color32::from_rgb(lr, lg, lb)
         } else {
-            base_dark
+            // Deep, clean, obsidian dark tint without swampy/murky green-brown midtone sludge
+            let dark_s = (0.55 + 0.30 * s).clamp(0.55, 0.85);
+            let dark_v = (0.18 + 0.06 * s).clamp(0.18, 0.25);
+            let (dr, dg, db) = hsv_to_rgb(h_deg / 360.0, dark_s, dark_v);
+            Color32::from_rgb(
+                (dr * 255.0).round() as u8,
+                (dg * 255.0).round() as u8,
+                (db * 255.0).round() as u8,
+            )
         }
     }
 
     /// The page background color animated smoothly across transitions.
     pub fn page_color(&self, ctx: &egui::Context) -> Color32 {
-        if theme::light() || self.look().id != crate::preset::DEFAULT_ID {
+        if self.look().id != crate::preset::DEFAULT_ID {
             return self.page_target_color();
         }
         let target = self.page_target_color();
@@ -1340,17 +1408,20 @@ impl App {
         Color32::from_rgb(ch(0, target.r()), ch(1, target.g()), ch(2, target.b()))
     }
 
-    /// Sidebar background fill: in dark mode, keeps a stable neutral #222629 (RGB: 34, 38, 41)
-    /// without shifting colors when browsing albums or artist pages.
-    pub fn sidebar_fill(&self, _ctx: &egui::Context, alpha: f32) -> Color32 {
+    /// Sidebar background fill: in dark mode, starts from #222629 (RGB: 34, 38, 41)
+    /// and incorporates an ultra-subtle ambient reflection (10% blend) of the active page color
+    /// so it softly harmonizes with the album/artist page without jarring color shifts.
+    pub fn sidebar_fill(&self, ctx: &egui::Context, alpha: f32) -> Color32 {
         if theme::light() {
             theme::panel(alpha)
         } else {
             let base = theme::SIDEBAR_BG_DARK;
+            let p_col = self.page_color(ctx);
+            let tinted = theme::lerp_color(base, p_col, 0.10);
             if alpha < 1.0 {
-                theme::with_alpha(base, alpha)
+                theme::with_alpha(tinted, alpha)
             } else {
-                base
+                tinted
             }
         }
     }
@@ -1662,7 +1733,7 @@ impl eframe::App for App {
             // The built-in look keeps its colour to the sidebar: the pages beside it are
             // plain, the same flat light or dark as the player bar under them.
             if look.id == crate::preset::DEFAULT_ID {
-                ui.painter().rect_filled(section, 0.0, if theme::light() { theme::bg() } else { self.page_color(&ctx) });
+                ui.painter().rect_filled(section, 0.0, self.page_color(&ctx));
             }
             const DRAWER_W: f32 = 340.0;
             let q = theme::anim_bool(&ctx, "queue-drawer", self.queue_open && !self.np_open, 0.25);
