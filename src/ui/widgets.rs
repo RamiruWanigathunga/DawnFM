@@ -233,33 +233,32 @@ pub fn pill(ui: &mut Ui, label: &str, glyph: Option<char>, primary: bool) -> Res
     let resp = named(resp, label).on_hover_cursor(egui::CursorIcon::PointingHand);
     let h = theme::anim_bool(ui.ctx(), resp.id.with("h"), resp.hovered(), 0.15);
     let light = theme::light();
-    let accented = primary && crate::preset::active().app.chip == crate::preset::ChipStyle::Accent;
-    let accent_color = ui.ctx().data(|d| d.get_temp::<Color32>(egui::Id::unique("accent"))).unwrap_or(theme::RED);
-
     let (fill, stroke_color, fg, icon_col) = if light {
         if primary {
             let bg = theme::lerp_color(Color32::from_white_alpha(235), Color32::WHITE, h);
             let stroke = Color32::from_black_alpha((30.0 + 20.0 * h) as u8);
             let text_c = Color32::from_rgb(0x18, 0x14, 0x1c);
-            let ic = if accented { accent_color } else { text_c };
+            let ic = text_c;
             (bg, stroke, text_c, ic)
         } else {
             let bg = theme::lerp_color(Color32::from_black_alpha(15), Color32::from_black_alpha(28), h);
             let stroke = Color32::from_black_alpha((25.0 + 18.0 * h) as u8);
-            (bg, stroke, theme::text(), theme::text())
+            let text_c = theme::text();
+            (bg, stroke, text_c, text_c)
         }
     } else {
         if primary {
             let bg = theme::glass(0.16 + 0.08 * h);
             let stroke = theme::glass(0.18 + 0.12 * h);
             let text_c = theme::lerp_color(Color32::from_white_alpha(225), Color32::WHITE, h);
-            let ic = if accented { accent_color } else { Color32::WHITE };
+            let ic = Color32::WHITE;
             (bg, stroke, text_c, ic)
         } else {
             let bg = theme::glass(0.12 + 0.08 * h);
             let stroke = theme::glass(0.15 + 0.10 * h);
             let text_c = theme::lerp_color(theme::text_dim(), theme::text(), h);
-            (bg, stroke, text_c, text_c)
+            let ic = theme::lerp_color(Color32::from_white_alpha(225), Color32::WHITE, h);
+            (bg, stroke, text_c, ic)
         }
     };
 

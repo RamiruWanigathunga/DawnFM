@@ -491,8 +491,11 @@ pub fn circle_action(ui: &mut Ui, glyph: CircleGlyph, name: &str, active: bool) 
     ui.painter().circle_filled(rect.center(), press, fill);
     ui.painter().circle_stroke(rect.center(), press, egui::Stroke::new(1.0, stroke_col));
 
-    let base = if crate::preset::active().app.chip == crate::preset::ChipStyle::Accent { app_accent(ui) } else { theme::text_dim() };
-    let color = theme::lerp_color(base, theme::text(), h.max(active as u8 as f32));
+    let color = if theme::light() {
+        Color32::from_rgb(0x18, 0x14, 0x1c)
+    } else {
+        theme::lerp_color(Color32::from_white_alpha(225), Color32::WHITE, h.max(active as u8 as f32))
+    };
     match glyph {
         CircleGlyph::Char(g) => widgets::icon_at(ui, rect.center(), g, 16.0, color),
         CircleGlyph::More => {
