@@ -1241,9 +1241,7 @@ pub fn collection(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
     let is_album = c.is_album;
     // The artist page links here: its rows show the songs' play counts.
     let top_songs = app.artist.as_ref().is_some_and(|a| a.top_playlist.as_deref() == Some(id));
-    let filter_on = app.coll_search.as_ref().is_some_and(|(fid, _)| fid == id);
     let selecting = app.selection.on(&app.page);
-    let mut toggle_search = false;
     let mut start_select = false;
     let mut stop_select = false;
     let photo = artist_id.as_ref().and_then(|a| app.artist_photos.get(a)).filter(|t| !t.is_empty());
@@ -1329,11 +1327,96 @@ pub fn collection(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
                         acts.push(Action::SaveCollection(save_id, !saved));
                     }
                 }
-                // Round actions at the right end of the row.
+                // Actions at the right end of the row: Find in Album search bar and Share/More segmented pill.
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.spacing_mut().item_spacing = vec2(12.0, 0.0);
-                    let more = circle_action(ui, CircleGlyph::More, "More", false);
-                    egui::Popup::menu(&more).show(|ui| {
+                    ui.spacing_mut().item_spacing = vec2(10.0, 0.0);
+                    let light = theme::light();
+
+                    // 1. Search pill on the far right (first in right_to_left)
+                    let search_w = 190.0f32.min(ui.available_width() - 80.0).max(120.0);
+                    let (search_rect, _) = ui.allocate_exact_size(vec2(search_w, 34.0), Sense::hover());
+                    let search_shadow = if light { 18 } else { 35 };
+                    ui.painter().rect_filled(search_rect.translate(vec2(0.0, 1.0)), 17.0, Color32::from_black_alpha(search_shadow));
+                    let search_fill = if light { Color32::from_black_alpha(15) } else { theme::glass(0.12) };
+                    ui.painter().rect_filled(search_rect, 17.0, search_fill);
+                    ui.painter().rect_stroke(search_rect, 17.0, egui::Stroke::new(1.0, if light { Color32::from_black_alpha(25) } else { theme::glass(0.16) }), egui::StrokeKind::Inside);
+
+                    widgets::icon_at(ui, pos2(search_rect.left() + 15.0, search_rect.center().y), icon::SEARCH, 13.5, theme::text_dim());
+
+                    let mut current_query = match &app.coll_search {
+                        Some((fid, q)) if fid == id => q.clone(),
+                        _ => String::new(),
+                    };
+                    let clearable = !current_query.is_empty();
+                    let text_right = if clearable { search_rect.right() - 28.0 } else { search_rect.right() - 10.0 };
+                    let text_rect = Rect::from_min_max(pos2(search_rect.left() + 28.0, search_rect.top() + 4.0), pos2(text_right, search_rect.bottom() - 4.0));
+                    let placeholder = if is_album { "Find in Album" } else { "Find in Playlist" };
+                    let edit_resp = ui.put(
+                        text_rect,
+                        egui::TextEdit::singleline(&mut current_query)
+                            .hint_text(egui::RichText::new(placeholder).color(theme::text_dim()))
+                            .font(theme::regular(13.0))
+                            .text_color(theme::text())
+                            .frame(egui::Frame::NONE)
+                            .desired_width(text_rect.width()),
+                    );
+                    if edit_resp.changed() {
+                        if current_query.is_empty() {
+                            app.coll_search = None;
+                        } else {
+                            app.coll_search = Some((id.to_owned(), current_query.clone()));
+                        }
+                    }
+                    if clearable {
+                        let clear_rect = Rect::from_center_size(pos2(search_rect.right() - 14.0, search_rect.center().y), Vec2::splat(18.0));
+                        let clear_resp = named(ui.interact(clear_rect, ui.scope_id().with("search_clear"), Sense::click()), "Clear search").on_hover_cursor(egui::CursorIcon::PointingHand);
+                        widgets::icon_at(ui, clear_rect.center(), icon::X, 11.0, if clear_resp.hovered() { theme::text() } else { theme::text_dim() });
+                        if clear_resp.clicked() {
+                            app.coll_search = None;
+                        }
+                    }
+
+                    // 2. Share & More segmented pill
+                    let (pill_rect, _) = ui.allocate_exact_size(vec2(70.0, 34.0), Sense::hover());
+                    let pill_shadow = if light { 18 } else { 35 };
+                    ui.painter().rect_filled(pill_rect.translate(vec2(0.0, 1.0)), 17.0, Color32::from_black_alpha(pill_shadow));
+                    let pill_fill = if light { Color32::from_black_alpha(15) } else { theme::glass(0.12) };
+                    ui.painter().rect_filled(pill_rect, 17.0, pill_fill);
+                    ui.painter().rect_stroke(pill_rect, 17.0, egui::Stroke::new(1.0, if light { Color32::from_black_alpha(25) } else { theme::glass(0.16) }), egui::StrokeKind::Inside);
+
+                    let mid_x = pill_rect.min.x + 35.0;
+                    let share_rect = Rect::from_min_max(pill_rect.min, pos2(mid_x, pill_rect.max.y));
+                    let more_rect = Rect::from_min_max(pos2(mid_x, pill_rect.min.y), pill_rect.max);
+
+                    let share_resp = named(ui.interact(share_rect, ui.scope_id().with("coll_share"), Sense::click()), "Share").on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text("Share");
+                    let more_resp = named(ui.interact(more_rect, ui.scope_id().with("coll_more"), Sense::click()), "More").on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text("More");
+                    let more_open = egui::Popup::is_id_open(ui.ctx(), egui::Popup::default_response_id(&more_resp));
+
+                    if share_resp.hovered() {
+                        ui.painter().rect_filled(share_rect, egui::CornerRadius { nw: 17, ne: 0, sw: 17, se: 0 }, if light { Color32::from_black_alpha(22) } else { theme::glass(0.10) });
+                    }
+                    if more_resp.hovered() || more_open {
+                        ui.painter().rect_filled(more_rect, egui::CornerRadius { nw: 0, ne: 17, sw: 0, se: 17 }, if light { Color32::from_black_alpha(22) } else { theme::glass(0.10) });
+                    }
+
+                    // Divider between Share and More
+                    ui.painter().line_segment([pos2(mid_x, pill_rect.min.y + 7.0), pos2(mid_x, pill_rect.max.y - 7.0)], egui::Stroke::new(1.0, if light { Color32::from_black_alpha(20) } else { theme::glass(0.10) }));
+
+                    // Share icon
+                    let share_fg = if light { Color32::from_rgb(0x18, 0x14, 0x1c) } else if share_resp.hovered() { Color32::WHITE } else { theme::lerp_color(theme::text_dim(), theme::text(), 0.5) };
+                    widgets::icon_at(ui, share_rect.center(), icon::SHARE, 15.0, share_fg);
+
+                    // More dots
+                    let more_fg = if light { Color32::from_rgb(0x18, 0x14, 0x1c) } else if more_resp.hovered() || more_open { Color32::WHITE } else { theme::lerp_color(theme::text_dim(), theme::text(), 0.5) };
+                    for i in -1..=1 {
+                        ui.painter().circle_filled(more_rect.center() + vec2(i as f32 * 4.5, 0.0), 1.6, more_fg);
+                    }
+
+                    if share_resp.clicked() {
+                        acts.push(Action::Share(target.clone()));
+                    }
+
+                    egui::Popup::menu(&more_resp).show(|ui| {
                         ui.set_width(200.0);
                         ui.add_space(2.0);
                         let mut any = false;
@@ -1363,20 +1446,13 @@ pub fn collection(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
                         if any {
                             widgets::menu_separator(ui);
                         }
-                        if widgets::menu_action(ui, Some(icon::LINK), "Share") {
+                        if widgets::menu_action(ui, Some(icon::SHARE), "Share") {
                             acts.push(Action::Share(target.clone()));
                         }
                         ui.add_space(3.0);
                     });
-                    if circle_action(ui, CircleGlyph::Char(icon::SEARCH), "Search in this list", filter_on).clicked() {
-                        toggle_search = true;
-                    }
                 });
             });
-            if toggle_search {
-                let closing = app.coll_search.as_ref().is_some_and(|(fid, _)| fid == id);
-                app.coll_search = (!closing).then(|| (id.to_owned(), String::new()));
-            }
             if start_select {
                 app.selection.start(&app.page);
             }
@@ -1386,46 +1462,7 @@ pub fn collection(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
 
         });
     });
-    let mut dismiss_search = false;
-    if let Some((fid, query)) = &mut app.coll_search
-        && fid == id
-    {
-        ui.add_space(14.0);
-        let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width().min(420.0), 40.0), Sense::hover());
-        ui.painter().rect_filled(rect, 20.0, theme::glass(0.09));
-        widgets::icon_at(ui, pos2(rect.left() + 20.0, rect.center().y), icon::SEARCH, 16.0, theme::text_dim());
-        let clearable = !query.is_empty();
-        let inner = Rect::from_min_max(pos2(rect.left() + 40.0, rect.top() + 4.0), pos2(rect.right() - if clearable { 40.0 } else { 16.0 }, rect.bottom() - 4.0));
-        let edit = ui.put(
-            inner,
-            egui::TextEdit::singleline(query)
-                .hint_text(egui::RichText::new("Search in this list").color(theme::text_faint()))
-                .font(theme::regular(14.0))
-                .align(egui::Align2::LEFT_CENTER)
-                .frame(egui::Frame::NONE)
-                .desired_width(inner.width()),
-        );
-        if toggle_search {
-            edit.request_focus();
-        } else if !edit.has_focus() && query.is_empty() {
-            // Left alone empty, the field goes away instead of sitting over the list.
-            dismiss_search = true;
-        }
-        if clearable {
-            let x = Rect::from_center_size(pos2(rect.right() - 20.0, rect.center().y), Vec2::splat(26.0));
-            let resp = named(ui.interact(x, ui.scope_id().with("coll-clear"), Sense::click()), "Clear search").on_hover_cursor(egui::CursorIcon::PointingHand);
-            widgets::icon_at(ui, x.center(), icon::X, 14.0, theme::text_dim());
-            if resp.clicked() {
-                query.clear();
-            }
-        }
-        ui.add_space(18.0);
-    } else {
-        ui.add_space(26.0);
-    }
-    if dismiss_search {
-        app.coll_search = None;
-    }
+    ui.add_space(26.0);
     let needle = app.coll_search.as_ref().filter(|(fid, _)| fid == id).map(|(_, q)| q.trim().to_lowercase()).unwrap_or_default();
     let filtered: Vec<Track> = if needle.is_empty() {
         Vec::new()

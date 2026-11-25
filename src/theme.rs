@@ -479,6 +479,7 @@ pub mod icon {
     pub const PIN: char = '\u{e259}';
     pub const PIN_OFF: char = '\u{e2b6}';
     pub const MAXIMIZE_2: char = '\u{e113}';
+    pub const SHARE: char = '\u{e154}';
 }
 
 /// Inter (SIL OFL 1.1), the default face: regular / semibold / extra bold, subset to
