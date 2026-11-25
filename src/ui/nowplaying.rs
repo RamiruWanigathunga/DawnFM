@@ -113,8 +113,14 @@ fn body(app: &mut App, ui: &mut Ui, now: f64) {
         || ui.rect_contains_pointer(br_rect);
     let busy = app.seek_drag.is_some() || egui::Popup::is_any_open(ui.ctx());
     let idle = now - app.mouse_last_moved >= 5.0;
-    let active = !is_fullscreen || !idle || busy || controls_hovered;
-    let controls_alpha = if is_fullscreen {
+    let narrow_panel = narrow && (app.np_tab == NpTab::UpNext || (app.np_tab == NpTab::Lyrics && !no_lyrics));
+    let auto_hide = is_fullscreen || narrow_panel;
+    let active = !auto_hide || !idle || busy || controls_hovered;
+    let controls_alpha = if auto_hide {
+        if active && !busy && !controls_hovered && !idle {
+            let remaining = (5.0 - (now - app.mouse_last_moved)).max(0.05);
+            ui.ctx().request_repaint_after(std::time::Duration::from_secs_f64(remaining));
+        }
         theme::anim_bool(ui.ctx(), "np-controls-visible", active, 0.25)
     } else {
         1.0
@@ -225,7 +231,7 @@ fn body(app: &mut App, ui: &mut Ui, now: f64) {
             let card = Rect::from_min_size(pos2(left, content.bottom() - h), vec2(cw, h));
             let mut cui = ui.new_child(egui::UiBuilder::new().max_rect(card));
             cui.multiply_opacity(1.0 - art_vis);
-            sleeve(app, &mut cui, card.left() + 20.0, w, card.top() + 16.0, &track, no_lyrics, now, controls_alpha);
+            sleeve(app, &mut cui, card.left() + 20.0, w, card.top() + 16.0, &track, no_lyrics, now, controls_alpha, false);
         }
         if beside_cover { Rect::from_min_max(pos2(content.left() + content.width() * 0.46, content.top()), content.max) } else { content }
     } else {
@@ -276,6 +282,37 @@ fn body(app: &mut App, ui: &mut Ui, now: f64) {
                 _ => super::shell::queue_list(app, &mut rui, "np"),
             }
         }
+    }
+
+    // Narrow / iPad-style panel mode: overlay player controls at the bottom over lyrics/queue
+    // only while the pointer is active (fades out after inactivity).
+    if narrow && !beside_cover && panel_vis > 0.001 && controls_alpha > 0.001 {
+        let overlay_alpha = panel_vis * controls_alpha;
+        let bg_light = app.bg_is_light();
+        let scrim_top = (area.bottom() - 280.0).max(area.top());
+        let scrim = Rect::from_min_max(pos2(area.left(), scrim_top), area.max);
+        let mut shade = egui::Mesh::default();
+        let white = egui::epaint::WHITE_UV;
+        let bot_col = if bg_light {
+            let bg = app.page_color(ui.ctx());
+            Color32::from_rgba_unmultiplied(bg.r(), bg.g(), bg.b(), (215.0 * overlay_alpha) as u8)
+        } else {
+            Color32::from_black_alpha((175.0 * overlay_alpha) as u8)
+        };
+        shade.vertices.push(egui::epaint::Vertex { pos: scrim.left_bottom(), uv: white, color: bot_col });
+        shade.vertices.push(egui::epaint::Vertex { pos: scrim.right_bottom(), uv: white, color: bot_col });
+        shade.vertices.push(egui::epaint::Vertex { pos: scrim.left_top(), uv: white, color: Color32::TRANSPARENT });
+        shade.vertices.push(egui::epaint::Vertex { pos: scrim.right_top(), uv: white, color: Color32::TRANSPARENT });
+        shade.indices.extend_from_slice(&[0, 1, 2, 2, 1, 3]);
+        ui.painter().add(egui::Shape::mesh(shade));
+
+        let ov_w = (content.width() - 16.0).clamp(240.0, 400.0);
+        let ov_x = (area.center().x - ov_w * 0.5).max(area.left() + 20.0);
+        let clears_br = ov_x + ov_w <= area.right() - 108.0;
+        let ov_y = if clears_br { area.bottom() - 190.0 } else { area.bottom() - 220.0 };
+        let card = Rect::from_min_size(pos2(ov_x - 12.0, ov_y - 12.0), vec2(ov_w + 24.0, 196.0));
+        let mut ov_ui = ui.new_child(egui::UiBuilder::new().id_salt("np-narrow-overlay").max_rect(card));
+        sleeve(app, &mut ov_ui, ov_x, ov_w, ov_y, &track, no_lyrics, now, overlay_alpha, true);
     }
 
     // ------------------------------------------------------------------ Apple Music Floating Corner Pills
@@ -519,7 +556,7 @@ fn cover_column(app: &mut App, ui: &mut Ui, col: Rect, track: &crate::model::Tra
             ui.painter().rect_filled(art, cr, theme::shade(1.0 - cs.brightness));
         }
     }
-    sleeve(app, ui, art.left(), side, art.bottom() + 22.0, track, no_lyrics, now, controls_alpha);
+    sleeve(app, ui, art.left(), side, art.bottom() + 22.0, track, no_lyrics, now, controls_alpha, false);
 }
 
 /// The sleeve's information under the art (title, artists, star, ⋯), the seek line
@@ -527,7 +564,7 @@ fn cover_column(app: &mut App, ui: &mut Ui, col: Rect, track: &crate::model::Tra
 /// starting at `info_y`. About 175 points tall. Shared by the cover column and the
 /// card over a full-bleed cover. `controls`: fullscreen opacity multiplier.
 #[allow(clippy::too_many_arguments)]
-fn sleeve(app: &mut App, ui: &mut Ui, x0: f32, w: f32, info_y: f32, track: &crate::model::Track, no_lyrics: bool, now: f64, controls: f32) {
+fn sleeve(app: &mut App, ui: &mut Ui, x0: f32, w: f32, info_y: f32, track: &crate::model::Track, no_lyrics: bool, now: f64, controls: f32, force_expand: bool) {
     let hold = app.mix_hold().map(|h| (h.total, h.mix, app.mix_hold_pos(h)));
     let heard = if hold.is_some() { track.clone() } else { app.playing_track().cloned().unwrap_or_else(|| track.clone()) };
 
@@ -535,13 +572,13 @@ fn sleeve(app: &mut App, ui: &mut Ui, x0: f32, w: f32, info_y: f32, track: &crat
     let controls_rect = Rect::from_min_size(pos2(x0, info_y), vec2(w, 196.0));
     ui.ctx().data_mut(|d| d.insert_temp(egui::Id::unique("np-controls-rect"), controls_rect));
 
-    // In the song-only player with no lyrics, controls are kept permanently visible and interactive.
-    let no_lyrics_view = no_lyrics || app.np_tab != NpTab::Lyrics;
+    // In the song-only player with no lyrics (when not auto-hiding), controls are kept permanently visible and interactive.
+    let no_lyrics_view = !force_expand && (no_lyrics || app.np_tab != NpTab::Lyrics);
     let playing = app.playing() || app.buffering;
     let hovered = ui.rect_contains_pointer(controls_rect.expand(16.0));
     let busy = app.seek_drag.is_some() || egui::Popup::is_any_open(ui.ctx());
-    let expanded = no_lyrics_view || !playing || hovered || busy || (app.fullscreen && controls > 0.01);
-    let expand_alpha = if no_lyrics_view {
+    let expanded = no_lyrics_view || !playing || hovered || busy || ((app.fullscreen || force_expand) && controls > 0.01);
+    let expand_alpha = if no_lyrics_view || force_expand {
         1.0
     } else {
         theme::anim_bool(ui.ctx(), "np-sleeve-expand", expanded, 0.25)
