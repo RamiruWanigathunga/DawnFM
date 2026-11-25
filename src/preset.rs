@@ -180,7 +180,7 @@ impl Default for LyricStyle {
             min_alpha: 0.25,
             past_alpha: Some(0.35),
             sung_color: "white".into(),
-            blur: 2.0,
+            blur: 0.8,
             blur_scope: BlurScope::Upcoming,
             glow: 0.0,
             glow_color: "white".into(),

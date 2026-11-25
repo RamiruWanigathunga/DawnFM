@@ -158,8 +158,13 @@ fn body(app: &mut App, ui: &mut Ui, now: f64) {
     let busy = app.seek_drag.is_some() || egui::Popup::is_any_open(ui.ctx());
     let idle = now - app.mouse_last_moved >= 3.5;
     let active = !is_fullscreen || !idle || busy || controls_hovered;
+    let no_lyrics_view = no_lyrics || app.np_tab != NpTab::Lyrics;
     let controls_alpha = if is_fullscreen {
-        theme::anim_bool(ui.ctx(), "np-controls-visible", active, 0.25)
+        if no_lyrics_view {
+            1.0
+        } else {
+            theme::anim_bool(ui.ctx(), "np-controls-visible", active, 0.25)
+        }
     } else {
         1.0
     };
@@ -171,7 +176,7 @@ fn body(app: &mut App, ui: &mut Ui, now: f64) {
     if controls_alpha > 0.001 {
         let mut hui = ui.new_child(egui::UiBuilder::new().max_rect(header).layout(egui::Layout::left_to_right(egui::Align::Center)));
         hui.multiply_opacity(controls_alpha);
-        let interactive = controls_alpha > 0.01;
+        let interactive = if no_lyrics_view { true } else { controls_alpha > 0.01 };
         let bg_light = app.bg_is_light();
         let accent = app.accent_color();
         hui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -396,7 +401,13 @@ fn cover_column(app: &mut App, ui: &mut Ui, col: Rect, track: &crate::model::Tra
         ui.painter().add(s.as_shape(art, cr));
     }
     if cs.shadow > 0.0 {
-        widgets::soft_shadow(ui, art, radius.min(255.0), 60.0, cs.shadow.min(1.0));
+        let bg_light = app.bg_is_light();
+        let (blur, alpha) = if bg_light {
+            (24.0, (cs.shadow * 0.25).clamp(0.05, 0.16))
+        } else {
+            (30.0, (cs.shadow * 0.40).clamp(0.08, 0.24))
+        };
+        widgets::soft_shadow(ui, art, radius.min(255.0), blur, alpha);
     }
     let tint = Color32::from_gray((cs.brightness.clamp(0.1, 1.0) * 255.0) as u8);
     if round {
@@ -445,24 +456,29 @@ fn sleeve(app: &mut App, ui: &mut Ui, x0: f32, w: f32, info_y: f32, track: &crat
     let controls_rect = Rect::from_min_size(pos2(x0, info_y), vec2(w, 196.0));
     ui.ctx().data_mut(|d| d.insert_temp(egui::Id::unique("np-controls-rect"), controls_rect));
 
-    // When a song is playing, auto-hide controls along with song and artist; on hover, paused, or busy, expand.
+    // In the no-lyrics view, controls are kept permanently visible and interactive.
+    let no_lyrics_view = no_lyrics || app.np_tab != NpTab::Lyrics;
     let playing = app.playing() || app.buffering;
     let hovered = ui.rect_contains_pointer(controls_rect.expand(16.0));
     let busy = app.seek_drag.is_some() || egui::Popup::is_any_open(ui.ctx());
-    let expanded = !playing || hovered || busy || (app.fullscreen && controls > 0.01);
-    let expand_alpha = theme::anim_bool(ui.ctx(), "np-sleeve-expand", expanded, 0.25);
+    let expanded = no_lyrics_view || !playing || hovered || busy || (app.fullscreen && controls > 0.01);
+    let expand_alpha = if no_lyrics_view {
+        1.0
+    } else {
+        theme::anim_bool(ui.ctx(), "np-sleeve-expand", expanded, 0.25)
+    };
     if expand_alpha > 0.0 && expand_alpha < 1.0 {
         super::animate(ui.ctx());
     }
 
-    let effective_alpha = expand_alpha * controls;
+    let effective_alpha = if no_lyrics_view { 1.0 } else { expand_alpha * controls };
     if effective_alpha <= 0.001 {
         return;
     }
     let mut cui = ui.new_child(egui::UiBuilder::new().id_salt("np-controls").max_rect(ui.max_rect()));
     cui.multiply_opacity(effective_alpha);
     let ui = &mut cui;
-    let interactive = effective_alpha > 0.5;
+    let interactive = if no_lyrics_view { true } else { effective_alpha > 0.5 };
 
     let bg_light = app.bg_is_light();
 

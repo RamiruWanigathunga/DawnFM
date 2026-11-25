@@ -1123,23 +1123,19 @@ impl View {
                     (1.0, 0.0)
                 } else {
                     let mut t = match first_active {
-                        Some(a) if i < a && !user => css.past.map_or((1.0, 0.0), |p| (p[0], p[1])),
-                        Some(a) if i > a => css.upcoming.map_or((1.0, 0.0), |p| (p[0], p[1])),
+                        Some(a) if i < a && !user => css.past.map_or((1.0, 0.0), |p| (p[0], (p[1] * 0.25).min(0.75))),
+                        Some(a) if i > a => css.upcoming.map_or((1.0, 0.0), |p| (p[0], (p[1] * 0.25).min(0.75))),
                         _ => (1.0, 0.0),
                     };
                     if let Some(a) = first_active {
-                        if i == a + 1 {
-                            // Upcoming 1 line after active lyrics: keep it subtle and darker so it doesn't distract or point out.
+                        if i == a + 1 || i + 1 == a {
                             t.0 = t.0.clamp(0.28, 0.35);
-                            t.1 = (t.1 * 0.4).max(0.8).min(1.5);
-                        } else if i + 1 == a {
-                            // Keep the line right after it has been sung softly receding.
-                            t.0 = t.0.clamp(0.28, 0.32);
-                            t.1 = (t.1 * 0.4).max(0.8).min(1.5);
-                        } else if i + 2 == a {
-                            // Subtly show two lines ago as well.
-                            t.0 = t.0.min(0.22);
-                            t.1 = (t.1 * 0.6).min(2.5);
+                            t.1 = (t.1 * 0.2).min(0.35);
+                        } else if i + 2 == a || i == a + 2 {
+                            t.0 = t.0.min(0.25);
+                            t.1 = (t.1 * 0.3).min(0.55);
+                        } else {
+                            t.1 = t.1.min(0.75);
                         }
                     }
                     t
@@ -1185,14 +1181,12 @@ impl View {
                 };
                 let target = if rel == 0 || sung_now {
                     0.0
-                } else if rel == 1 {
-                    if cfg.blur > 0.0 && blur_on { (cfg.blur * 0.4).min(1.2) } else { 0.0 }
-                } else if rel == -1 {
-                    if cfg.blur > 0.0 && blur_on { (cfg.blur * 0.4).min(1.2) } else { 0.0 }
-                } else if rel == -2 {
-                    if cfg.blur > 0.0 && blur_on { (cfg.blur * 0.6).min(2.0) } else { 0.0 }
+                } else if rel == 1 || rel == -1 {
+                    if cfg.blur > 0.0 && blur_on { (cfg.blur * 0.15).min(0.3) } else { 0.0 }
+                } else if rel == 2 || rel == -2 {
+                    if cfg.blur > 0.0 && blur_on { (cfg.blur * 0.25).min(0.5) } else { 0.0 }
                 } else if cfg.blur > 0.0 && blur_on {
-                    (cfg.blur * (1.0 + 0.35 * (dist - 1.0).clamp(0.0, 3.0))).min(9.0)
+                    (cfg.blur * 0.35).min(0.75)
                 } else {
                     0.0
                 };
