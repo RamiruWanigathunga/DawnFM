@@ -1412,8 +1412,12 @@ pub fn collection(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
                     let text_right = if clearable { search_rect.right() - 28.0 } else { search_rect.right() - 10.0 };
                     let text_rect = Rect::from_min_max(pos2(search_rect.left() + 28.0, search_rect.top() + 4.0), pos2(text_right, search_rect.bottom() - 4.0));
                     let placeholder = if is_album { "Find in Album" } else { "Find in Playlist" };
-                    let edit_resp = ui.put(
-                        text_rect,
+                    let mut text_ui = ui.new_child(
+                        egui::UiBuilder::new()
+                            .max_rect(text_rect)
+                            .layout(egui::Layout::centered_and_justified(egui::Direction::TopDown)),
+                    );
+                    let edit_resp = text_ui.add(
                         egui::TextEdit::singleline(&mut current_query)
                             .hint_text(egui::RichText::new(placeholder).color(theme::text_dim()))
                             .font(theme::regular(13.0))

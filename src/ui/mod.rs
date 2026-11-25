@@ -1550,9 +1550,9 @@ impl App {
     /// page tint with a subtle glassy lift.
     pub fn lyrics_panel_fill(&self, ctx: &egui::Context) -> Color32 {
         if theme::light() {
-            theme::panel(0.42)
+            theme::with_alpha(theme::lerp_color(self.page_color(ctx), Color32::WHITE, 0.12), 0.42)
         } else {
-            theme::lerp_color(self.page_color(ctx), Color32::WHITE, 0.035)
+            theme::with_alpha(theme::lerp_color(self.page_color(ctx), Color32::WHITE, 0.035), 0.72)
         }
     }
 
