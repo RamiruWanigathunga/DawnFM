@@ -121,7 +121,7 @@ pub fn background(app: &mut App, ui: &mut Ui, screen: Rect, now: f64, only: Opti
         None => ui.painter().clone(),
     };
     painter.rect_filled(screen, 0.0, app.page_color(ui.ctx()));
-    if !light && !app.fullscreen && only.is_none() {
+    if !light && !(app.fullscreen && app.np_open) && only.is_none() {
         let side_rect = Rect::from_min_max(screen.min, pos2(screen.left() + SIDEBAR_W, screen.bottom()));
         painter.rect_filled(side_rect, 0.0, app.sidebar_fill(ui.ctx(), 1.0));
     }

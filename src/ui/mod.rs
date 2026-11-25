@@ -1651,7 +1651,8 @@ impl eframe::App for App {
         // Now playing is dark; once it's most of the way up, so is the player bar under it.
         let np = theme::anim_bool(&ctx, "np-open", self.np_open && self.current().is_some(), 0.42);
         let is_fs = self.fullscreen || ctx.input(|i| i.viewport().fullscreen.unwrap_or(false));
-        let light = self.light_pages(&ctx) && !is_fs;
+        let np_fullscreen = is_fs && self.np_open;
+        let light = self.light_pages(&ctx) && !np_fullscreen;
         theme::set_mode(&ctx, light);
         if self.chrome_applied.as_deref() != Some(look.id.as_str()) {
             if self.chrome_applied.is_none() {
@@ -1667,7 +1668,7 @@ impl eframe::App for App {
         let app_style = &look.app;
         // Once now playing has slid all the way up it hides everything but the player
         // bar, so the pages and the full-screen background under it aren't drawn.
-        let covered = !is_fs && np >= 1.0;
+        let covered = !np_fullscreen && np >= 1.0;
         let bar_strip = egui::Rect::from_min_max(egui::pos2(screen.left(), screen.bottom() - self.bar_height()), screen.max);
         titlebar::set_fullscreen(&ctx, is_fs);
         // The mini player, or nothing but the background while the window changes size.
@@ -1694,7 +1695,7 @@ impl eframe::App for App {
             }
             return;
         }
-        shell::background(self, ui, screen, now, covered.then_some(bar_strip));
+        shell::background(self, ui, screen, now, (covered || np_fullscreen).then_some(bar_strip));
         // Set again by the sidebar's search box when it's drawn this frame.
         self.search_rect = None;
         if !is_fs && !covered {
@@ -1706,7 +1707,7 @@ impl eframe::App for App {
             let side = egui::Rect::from_min_max(egui::pos2(screen.left(), screen.top() + titlebar::HEIGHT), egui::pos2(screen.left() + side_w, screen.bottom()));
             titlebar::drag_strip(ui, side, "sidebar");
         }
-        if !is_fs && !covered {
+        if !np_fullscreen && !covered {
             use crate::preset::SidebarStyle;
             let side_alpha = app_style.sidebar_alpha.clamp(0.0, 1.0);
             // The logo's row is 32 points tall.
