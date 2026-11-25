@@ -448,23 +448,29 @@ fn sleeve(app: &mut App, ui: &mut Ui, x0: f32, w: f32, info_y: f32, track: &crat
     let controls_rect = Rect::from_min_size(pos2(x0, info_y), vec2(w, 196.0));
     ui.ctx().data_mut(|d| d.insert_temp(egui::Id::unique("np-controls-rect"), controls_rect));
 
+    // In the song-only player with no lyrics, controls are kept permanently visible and interactive.
+    let no_lyrics_view = no_lyrics || app.np_tab != NpTab::Lyrics;
     let playing = app.playing() || app.buffering;
     let hovered = ui.rect_contains_pointer(controls_rect.expand(16.0));
     let busy = app.seek_drag.is_some() || egui::Popup::is_any_open(ui.ctx());
-    let expanded = !playing || hovered || busy || (app.fullscreen && controls > 0.01);
-    let expand_alpha = theme::anim_bool(ui.ctx(), "np-sleeve-expand", expanded, 0.25);
+    let expanded = no_lyrics_view || !playing || hovered || busy || (app.fullscreen && controls > 0.01);
+    let expand_alpha = if no_lyrics_view {
+        1.0
+    } else {
+        theme::anim_bool(ui.ctx(), "np-sleeve-expand", expanded, 0.25)
+    };
     if expand_alpha > 0.0 && expand_alpha < 1.0 {
         super::animate(ui.ctx());
     }
 
-    let effective_alpha = expand_alpha * controls;
+    let effective_alpha = if no_lyrics_view { 1.0 } else { expand_alpha * controls };
     if effective_alpha <= 0.001 {
         return;
     }
     let mut cui = ui.new_child(egui::UiBuilder::new().id_salt("np-controls").max_rect(ui.max_rect()));
     cui.multiply_opacity(effective_alpha);
     let ui = &mut cui;
-    let interactive = effective_alpha > 0.2;
+    let interactive = if no_lyrics_view { true } else { effective_alpha > 0.2 };
 
     let bg_light = app.bg_is_light();
 
