@@ -159,7 +159,7 @@ fn check_failed(app: &mut App, ui: &mut Ui) -> bool {
     }
 }
 
-/// A page's data hasn't arrived: shimmering placeholders while it loads, a retry if the
+/// A page's data hasn't arrived: pulsing skeleton placeholders while it loads, a retry if the
 /// request failed.
 fn placeholder(app: &mut App, ui: &mut Ui, now: f64, rows: usize, card: f32) {
     if check_failed(app, ui) {
@@ -174,49 +174,48 @@ fn placeholder_collection(app: &mut App, ui: &mut Ui, now: f64) {
     if check_failed(app, ui) {
         return;
     }
-    let shimmer = |ui: &Ui, r: Rect, radius: f32| {
-        ui.painter().rect_filled(r, radius, theme::glass(0.06));
-        widgets::shimmer_band(ui, r, radius, now);
+    let skeleton = |ui: &Ui, r: Rect, radius: f32| {
+        widgets::skeleton_rect(ui, r, radius, now);
     };
     let side = (ui.available_width() * 0.3).clamp(200.0, 300.0);
     ui.add_space(18.0);
     ui.horizontal_top(|ui| {
         let (img, _) = ui.allocate_exact_size(Vec2::splat(side), Sense::hover());
         let radius = theme::card_radius() + 2.0;
-        shimmer(ui, img, radius);
+        skeleton(ui, img, radius);
 
         ui.add_space(28.0);
         ui.vertical(|ui| {
             ui.add_space((side - 200.0).max(6.0));
             let title_w = (ui.available_width() * 0.55).clamp(200.0, 380.0);
             let (title_r, _) = ui.allocate_exact_size(vec2(title_w, 32.0), Sense::hover());
-            shimmer(ui, title_r, 6.0);
+            skeleton(ui, title_r, 6.0);
 
             ui.add_space(14.0);
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing = vec2(10.0, 0.0);
                 let (avatar_r, _) = ui.allocate_exact_size(Vec2::splat(34.0), Sense::hover());
-                shimmer(ui, avatar_r, 17.0);
+                skeleton(ui, avatar_r, 17.0);
 
                 let (name_r, _) = ui.allocate_exact_size(vec2(160.0, 18.0), Sense::hover());
-                shimmer(ui, name_r, 4.0);
+                skeleton(ui, name_r, 4.0);
             });
 
             ui.add_space(12.0);
             let (meta_r, _) = ui.allocate_exact_size(vec2(180.0, 14.0), Sense::hover());
-            shimmer(ui, meta_r, 4.0);
+            skeleton(ui, meta_r, 4.0);
 
             ui.add_space(18.0);
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing = vec2(10.0, 0.0);
                 let (play_r, _) = ui.allocate_exact_size(vec2(86.0, 36.0), Sense::hover());
-                shimmer(ui, play_r, 18.0);
+                skeleton(ui, play_r, 18.0);
 
                 let (shuf_r, _) = ui.allocate_exact_size(vec2(98.0, 36.0), Sense::hover());
-                shimmer(ui, shuf_r, 18.0);
+                skeleton(ui, shuf_r, 18.0);
 
                 let (more_r, _) = ui.allocate_exact_size(Vec2::splat(36.0), Sense::hover());
-                shimmer(ui, more_r, 18.0);
+                skeleton(ui, more_r, 18.0);
             });
         });
     });
@@ -230,32 +229,31 @@ fn placeholder_artist(app: &mut App, ui: &mut Ui, now: f64) {
     if check_failed(app, ui) {
         return;
     }
-    let shimmer = |ui: &Ui, r: Rect, radius: f32| {
-        ui.painter().rect_filled(r, radius, theme::glass(0.06));
-        widgets::shimmer_band(ui, r, radius, now);
+    let skeleton = |ui: &Ui, r: Rect, radius: f32| {
+        widgets::skeleton_rect(ui, r, radius, now);
     };
     let w = ui.available_width();
     let hero_h = hero_height(w);
     let (hero, _) = ui.allocate_exact_size(vec2(w, hero_h), Sense::hover());
-    shimmer(ui, hero, 0.0);
+    skeleton(ui, hero, 0.0);
     paint_hero_gradient_dissolve(ui.painter(), hero, super::shell::base_color(app));
 
     let base_x = hero.left() + 28.0;
     let btn_y = hero.bottom() - 36.0;
 
     let more_rect = Rect::from_center_size(pos2(base_x + 19.0, btn_y), vec2(38.0, 38.0));
-    shimmer(ui, more_rect, 19.0);
+    skeleton(ui, more_rect, 19.0);
 
     let play_center = pos2(base_x + 38.0 + 14.0 + 24.0, btn_y);
     let play_rect = Rect::from_center_size(play_center, vec2(48.0, 48.0));
-    shimmer(ui, play_rect, 24.0);
+    skeleton(ui, play_rect, 24.0);
 
     let name_w = (w * 0.45).clamp(220.0, 380.0);
     let name_r = Rect::from_min_size(pos2(base_x, btn_y - 88.0), vec2(name_w, 44.0));
-    shimmer(ui, name_r, 8.0);
+    skeleton(ui, name_r, 8.0);
 
     let stats_r = Rect::from_min_size(pos2(base_x, btn_y - 32.0), vec2(160.0, 14.0));
-    shimmer(ui, stats_r, 4.0);
+    skeleton(ui, stats_r, 4.0);
 
     egui::Frame::new().inner_margin(egui::Margin { left: 28, right: 48, top: 0, bottom: 0 }).show(ui, |ui| {
         let cw = ui.available_width();
@@ -267,41 +265,41 @@ fn placeholder_artist(app: &mut App, ui: &mut Ui, now: f64) {
             ui.horizontal_top(|ui| {
                 ui.allocate_ui_with_layout(vec2(left_w, 0.0), egui::Layout::top_down(egui::Align::LEFT), |ui| {
                     let (head, _) = ui.allocate_exact_size(vec2(140.0, 22.0), Sense::hover());
-                    shimmer(ui, head, 4.0);
+                    skeleton(ui, head, 4.0);
                     ui.add_space(8.0);
                     let (card_r, _) = ui.allocate_exact_size(vec2(left_w, left_w * 0.65), Sense::hover());
-                    shimmer(ui, card_r, 12.0);
+                    skeleton(ui, card_r, 12.0);
                 });
                 ui.add_space(24.0);
                 ui.allocate_ui_with_layout(vec2(right_w, 0.0), egui::Layout::top_down(egui::Align::LEFT), |ui| {
                     let (head, _) = ui.allocate_exact_size(vec2(120.0, 22.0), Sense::hover());
-                    shimmer(ui, head, 4.0);
+                    skeleton(ui, head, 4.0);
                     ui.add_space(8.0);
                     widgets::skeleton_rows(ui, now, 4);
                 });
             });
         } else {
             let (head, _) = ui.allocate_exact_size(vec2(140.0, 22.0), Sense::hover());
-            shimmer(ui, head, 4.0);
+            skeleton(ui, head, 4.0);
             ui.add_space(8.0);
             widgets::skeleton_rows(ui, now, 4);
         }
 
         ui.add_space(26.0);
         let (shelf_head, _) = ui.allocate_exact_size(vec2(160.0, 22.0), Sense::hover());
-        shimmer(ui, shelf_head, 4.0);
+        skeleton(ui, shelf_head, 4.0);
         ui.add_space(14.0);
         ui.horizontal(|ui| {
             for _ in 0..6 {
                 let (r, _) = ui.allocate_exact_size(vec2(CARD, CARD + 50.0), Sense::hover());
                 let img_r = Rect::from_min_size(r.min, Vec2::splat(CARD));
-                shimmer(ui, img_r, 8.0);
+                skeleton(ui, img_r, 8.0);
                 let t_r = Rect::from_min_size(r.min + vec2(0.0, CARD + 10.0), vec2(CARD * 0.8, 12.0));
-                shimmer(ui, t_r, 4.0);
+                skeleton(ui, t_r, 4.0);
             }
         });
     });
-    ui.ctx().request_repaint_after(std::time::Duration::from_millis(16));
+    super::animate(ui.ctx());
 }
 
 /// Search loading skeleton: top result card on the left with top songs on the right,
@@ -310,9 +308,8 @@ fn placeholder_search(app: &mut App, ui: &mut Ui, now: f64) {
     if check_failed(app, ui) {
         return;
     }
-    let shimmer = |ui: &Ui, r: Rect, radius: f32| {
-        ui.painter().rect_filled(r, radius, theme::glass(0.06));
-        widgets::shimmer_band(ui, r, radius, now);
+    let skeleton = |ui: &Ui, r: Rect, radius: f32| {
+        widgets::skeleton_rect(ui, r, radius, now);
     };
     ui.add_space(14.0);
     let is_wide = ui.available_width() >= 780.0;
@@ -320,38 +317,39 @@ fn placeholder_search(app: &mut App, ui: &mut Ui, now: f64) {
         ui.horizontal_top(|ui| {
             ui.vertical(|ui| {
                 let (h, _) = ui.allocate_exact_size(vec2(120.0, 24.0), Sense::hover());
-                shimmer(ui, h, 4.0);
+                skeleton(ui, h, 4.0);
                 ui.add_space(8.0);
                 let (card_r, _) = ui.allocate_exact_size(vec2(420.0, 236.0), Sense::hover());
-                shimmer(ui, card_r, 14.0);
+                skeleton(ui, card_r, 14.0);
             });
             ui.add_space(24.0);
             ui.vertical(|ui| {
                 let (h, _) = ui.allocate_exact_size(vec2(100.0, 24.0), Sense::hover());
-                shimmer(ui, h, 4.0);
+                skeleton(ui, h, 4.0);
                 ui.add_space(8.0);
                 widgets::skeleton_rows(ui, now, 4);
             });
         });
     } else {
         let (h, _) = ui.allocate_exact_size(vec2(100.0, 24.0), Sense::hover());
-        shimmer(ui, h, 4.0);
+        skeleton(ui, h, 4.0);
         ui.add_space(8.0);
         widgets::skeleton_rows(ui, now, 5);
     }
     ui.add_space(26.0);
     let (shelf_h, _) = ui.allocate_exact_size(vec2(140.0, 22.0), Sense::hover());
-    shimmer(ui, shelf_h, 4.0);
+    skeleton(ui, shelf_h, 4.0);
     ui.add_space(14.0);
     ui.horizontal(|ui| {
         for _ in 0..6 {
             let (r, _) = ui.allocate_exact_size(vec2(CARD, CARD + 50.0), Sense::hover());
             let img_r = Rect::from_min_size(r.min, Vec2::splat(CARD));
-            shimmer(ui, img_r, 8.0);
+            skeleton(ui, img_r, 8.0);
             let t_r = Rect::from_min_size(r.min + vec2(0.0, CARD + 10.0), vec2(CARD * 0.8, 12.0));
-            shimmer(ui, t_r, 4.0);
+            skeleton(ui, t_r, 4.0);
         }
     });
+    super::animate(ui.ctx());
 }
 
 /// Explore / New releases page loading skeleton: new releases card shelf, top songs grid rows,
@@ -360,36 +358,36 @@ fn placeholder_new(app: &mut App, ui: &mut Ui, now: f64) {
     if check_failed(app, ui) {
         return;
     }
-    let shimmer = |ui: &Ui, r: Rect, radius: f32| {
-        ui.painter().rect_filled(r, radius, theme::glass(0.06));
-        widgets::shimmer_band(ui, r, radius, now);
+    let skeleton = |ui: &Ui, r: Rect, radius: f32| {
+        widgets::skeleton_rect(ui, r, radius, now);
     };
     let (h1, _) = ui.allocate_exact_size(vec2(220.0, 24.0), Sense::hover());
-    shimmer(ui, h1, 4.0);
+    skeleton(ui, h1, 4.0);
     ui.add_space(14.0);
     ui.horizontal(|ui| {
         for _ in 0..6 {
             let (r, _) = ui.allocate_exact_size(vec2(CARD, CARD + 50.0), Sense::hover());
-            shimmer(ui, Rect::from_min_size(r.min, Vec2::splat(CARD)), 8.0);
-            shimmer(ui, Rect::from_min_size(r.min + vec2(0.0, CARD + 10.0), vec2(CARD * 0.8, 12.0)), 4.0);
+            skeleton(ui, Rect::from_min_size(r.min, Vec2::splat(CARD)), 8.0);
+            skeleton(ui, Rect::from_min_size(r.min + vec2(0.0, CARD + 10.0), vec2(CARD * 0.8, 12.0)), 4.0);
         }
     });
     ui.add_space(24.0);
     let (h2, _) = ui.allocate_exact_size(vec2(140.0, 24.0), Sense::hover());
-    shimmer(ui, h2, 4.0);
+    skeleton(ui, h2, 4.0);
     ui.add_space(12.0);
     widgets::skeleton_rows(ui, now, 4);
     ui.add_space(24.0);
     let (h3, _) = ui.allocate_exact_size(vec2(120.0, 24.0), Sense::hover());
-    shimmer(ui, h3, 4.0);
+    skeleton(ui, h3, 4.0);
     ui.add_space(14.0);
     ui.horizontal(|ui| {
         for _ in 0..6 {
             let (r, _) = ui.allocate_exact_size(vec2(CARD, CARD + 50.0), Sense::hover());
-            shimmer(ui, Rect::from_min_size(r.min, Vec2::splat(CARD)), 8.0);
-            shimmer(ui, Rect::from_min_size(r.min + vec2(0.0, CARD + 10.0), vec2(CARD * 0.8, 12.0)), 4.0);
+            skeleton(ui, Rect::from_min_size(r.min, Vec2::splat(CARD)), 8.0);
+            skeleton(ui, Rect::from_min_size(r.min + vec2(0.0, CARD + 10.0), vec2(CARD * 0.8, 12.0)), 4.0);
         }
     });
+    super::animate(ui.ctx());
 }
 
 /// Track list loading skeleton (History, Liked Songs).
@@ -397,19 +395,18 @@ fn placeholder_track_list(app: &mut App, ui: &mut Ui, now: f64, with_actions: bo
     if check_failed(app, ui) {
         return;
     }
-    let shimmer = |ui: &Ui, r: Rect, radius: f32| {
-        ui.painter().rect_filled(r, radius, theme::glass(0.06));
-        widgets::shimmer_band(ui, r, radius, now);
+    let skeleton = |ui: &Ui, r: Rect, radius: f32| {
+        widgets::skeleton_rect(ui, r, radius, now);
     };
     if with_actions {
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing = vec2(10.0, 0.0);
             let (p1, _) = ui.allocate_exact_size(vec2(86.0, 36.0), Sense::hover());
-            shimmer(ui, p1, 18.0);
+            skeleton(ui, p1, 18.0);
             let (p2, _) = ui.allocate_exact_size(vec2(98.0, 36.0), Sense::hover());
-            shimmer(ui, p2, 18.0);
+            skeleton(ui, p2, 18.0);
             let (p3, _) = ui.allocate_exact_size(vec2(90.0, 36.0), Sense::hover());
-            shimmer(ui, p3, 18.0);
+            skeleton(ui, p3, 18.0);
         });
         ui.add_space(10.0);
     }
@@ -421,13 +418,12 @@ fn placeholder_grid(app: &mut App, ui: &mut Ui, now: f64, card: f32, circle: boo
     if check_failed(app, ui) {
         return;
     }
-    let shimmer = |ui: &Ui, r: Rect, radius: f32| {
-        ui.painter().rect_filled(r, radius, theme::glass(0.06));
-        widgets::shimmer_band(ui, r, radius, now);
+    let skeleton = |ui: &Ui, r: Rect, radius: f32| {
+        widgets::skeleton_rect(ui, r, radius, now);
     };
     if with_new_button {
         let (btn_r, _) = ui.allocate_exact_size(vec2(120.0, 34.0), Sense::hover());
-        shimmer(ui, btn_r, 17.0);
+        skeleton(ui, btn_r, 17.0);
         ui.add_space(14.0);
     }
     widgets::skeleton_grid(ui, now, card, circle, count);
