@@ -93,27 +93,54 @@ impl HttpImages {
     }
 }
 
-/// Prefetch thumbnail URLs in the background and cache them to disk so they are immediately available.
+/// Prefetch thumbnail URLs in parallel and cache them to disk so they are immediately available.
 pub fn prefetch_thumbs(backend: &Backend, urls: Vec<String>) {
     if urls.is_empty() {
         return;
     }
+    let mut unique = Vec::with_capacity(urls.len());
+    let mut seen = std::collections::HashSet::with_capacity(urls.len());
+    for url in urls {
+        if seen.insert(url.clone()) {
+            unique.push(url);
+        }
+    }
     let dir = backend.data_dir().join("thumbs");
     let http = backend.http();
+    let wake_backend = backend.clone();
     backend.spawn(async move {
-        for url in urls {
+        let sem = Arc::new(tokio::sync::Semaphore::new(12));
+        let mut handles = Vec::with_capacity(unique.len());
+        for url in unique {
             let file = disk_path(&dir, &url);
             if file.exists() {
                 continue;
             }
-            if let Ok(resp) = http.get(&url).send().await
-                && let Ok(resp) = resp.error_for_status()
-                && let Ok(bytes) = resp.bytes().await
-            {
-                if bytes.len() <= DISK_MAX_FILE {
-                    let _ = std::fs::write(&file, &bytes);
+            let sem = sem.clone();
+            let http = http.clone();
+            handles.push(tokio::spawn(async move {
+                let Ok(_permit) = sem.acquire_owned().await else { return false };
+                if file.exists() {
+                    return false;
                 }
+                if let Ok(resp) = http.get(&url).send().await
+                    && let Ok(resp) = resp.error_for_status()
+                    && let Ok(bytes) = resp.bytes().await
+                    && bytes.len() <= DISK_MAX_FILE
+                {
+                    return std::fs::write(&file, &bytes).is_ok();
+                }
+                false
+            }));
+        }
+        let mut wrote_any = false;
+        for h in handles {
+            if let Ok(true) = h.await {
+                wrote_any = true;
             }
+        }
+        if wrote_any {
+            wake_backend.wake();
         }
     });
 }

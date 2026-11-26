@@ -154,6 +154,8 @@ fn build_for(n: u32) -> reqwest::Client {
         // Google keeps an idle connection open at least 150 s: keeping ours 120 s saves
         // the next song's `/player` call and stream a fresh TLS handshake each.
         .pool_idle_timeout(Duration::from_secs(120))
+        .pool_max_idle_per_host(16)
+        .tcp_nodelay(true)
         // A server that stops sending mid-response; streams have their own, tighter check.
         .read_timeout(Duration::from_secs(30))
         .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0 Safari/537.36")

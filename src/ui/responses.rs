@@ -199,12 +199,12 @@ impl App {
             }
             Resp::Explore(e) => {
                 let mut prefetch_urls = Vec::new();
-                for card in e.new_albums.iter().chain(&e.charts).take(8) {
+                for card in e.new_albums.iter().chain(&e.charts).take(16) {
                     if let Some(t) = crate::model::pick_thumb(&card.thumbs, 360) {
                         prefetch_urls.push(crate::model::sized(&t.url, 544));
                     }
                 }
-                for track in e.top.iter().take(8) {
+                for track in e.top.iter().take(16) {
                     if let Some(t) = crate::model::pick_thumb(&track.thumbs, 120) {
                         prefetch_urls.push(crate::model::sized(&t.url, 120));
                     }
@@ -283,15 +283,18 @@ impl App {
                     }
                 }
                 let mut prefetch_urls = Vec::new();
-                if let Some(t) = crate::model::pick_thumb(&a.banner, 1440).or_else(|| a.banner.iter().max_by_key(|t| t.width)) {
+                if let Some(t) = crate::model::pick_thumb(&a.banner, 1920).or_else(|| a.banner.iter().max_by_key(|t| t.width)) {
                     prefetch_urls.push(t.url.clone());
                 }
-                for card in a.albums.iter().chain(&a.playlists).take(8) {
+                if let Some(t) = crate::model::pick_thumb(&a.photo, 544) {
+                    prefetch_urls.push(crate::model::sized(&t.url, 544));
+                }
+                for card in a.albums.iter().chain(&a.playlists).chain(&a.similar).take(16) {
                     if let Some(t) = crate::model::pick_thumb(&card.thumbs, 360) {
                         prefetch_urls.push(crate::model::sized(&t.url, 544));
                     }
                 }
-                for track in a.top.iter().take(8) {
+                for track in a.top.iter().take(15) {
                     if let Some(t) = crate::model::pick_thumb(&track.thumbs, 120) {
                         prefetch_urls.push(crate::model::sized(&t.url, 120));
                     }
@@ -598,17 +601,17 @@ impl App {
     /// The home feed, replacing the one shown.
     fn on_home(&mut self, page: HomePage) {
         let mut prefetch_urls = Vec::new();
-        for shelf in page.shelves.iter().take(3) {
+        for shelf in page.shelves.iter().take(5) {
             match &shelf.kind {
                 crate::model::ShelfKind::Cards(cards) => {
-                    for card in cards.iter().take(4) {
+                    for card in cards.iter().take(8) {
                         if let Some(t) = crate::model::pick_thumb(&card.thumbs, 360) {
                             prefetch_urls.push(crate::model::sized(&t.url, 544));
                         }
                     }
                 }
                 crate::model::ShelfKind::Songs { tracks, .. } => {
-                    for track in tracks.iter().take(4) {
+                    for track in tracks.iter().take(12) {
                         if let Some(t) = crate::model::pick_thumb(&track.thumbs, 120) {
                             prefetch_urls.push(crate::model::sized(&t.url, 120));
                         }

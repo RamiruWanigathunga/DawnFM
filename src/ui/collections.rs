@@ -87,10 +87,11 @@ impl App {
     /// counts: one from before a sign-in change or a deletion is dropped.
     pub(super) fn collection_in(&mut self, load: u64, c: Collection, more: bool) {
         let mut prefetch_urls = Vec::new();
-        if let Some(t) = crate::model::pick_thumb(&c.thumbs, 544) {
+        if let Some(t) = crate::model::pick_thumb(&c.thumbs, 720) {
+            prefetch_urls.push(crate::model::sized(&t.url, 720));
             prefetch_urls.push(crate::model::sized(&t.url, 544));
         }
-        for track in c.tracks.iter().take(12) {
+        for track in c.tracks.iter().take(24) {
             if let Some(t) = crate::model::pick_thumb(&track.thumbs, 120) {
                 prefetch_urls.push(crate::model::sized(&t.url, 120));
             }

@@ -528,7 +528,7 @@ impl Backend {
         wake: Arc<dyn Fn() + Send + Sync>,
     ) -> anyhow::Result<Self> {
         let rt = tokio::runtime::Builder::new_multi_thread()
-            .worker_threads(2)
+            .worker_threads(6)
             .thread_name("net")
             .enable_all()
             .build()?;
@@ -1033,57 +1033,80 @@ impl Backend {
             Some(d) => Some(d),
             None => self.stream_duration(&t.id).await,
         };
-        let query = lyrics::Query {
-            video_id: &t.id,
-            song: &t.title,
-            artist: &artist,
-            album: t.album.as_ref().map(|a| a.name.as_str()),
-            duration,
-        };
+        let album = t.album.as_ref().map(|a| a.name.clone());
+        let song = t.title.clone();
 
-        // 1. Fetch fast sources (Unison + lrc.red) first in parallel (~200ms)
-        let fast_sources = self.lyrics.fetch_fast(&query).await;
-        let mut has_fast = false;
-        if !fast_sources.is_empty() {
-            let mut set = LyricsSet { sources: fast_sources };
-            set.sources.sort_by_key(|l| lyrics::Provider::ALL.iter().position(|p| *p == l.provider));
-            if let Ok(fail) = std::env::var("YTM_LYRICS_FAIL") {
-                set.sources.retain(|l| !fail.split(',').any(|k| k.trim() == l.provider.key()));
-            }
-            if !set.sources.is_empty() {
-                has_fast = true;
-                let _ = self.tx.send(Resp::Lyrics { video_id: video_id.clone(), lyrics: set.clone() });
-                self.wake();
-                self.lyrics.insert_recent(video_id.clone(), set);
-            }
-        }
-
-        // 2. Fetch Better Lyrics SSE stream in continuation
-        let stream_res = self.lyrics.fetch_stream(&query).await;
-        let mut all_sources = self.lyrics.get_recent(&video_id).map(|s| s.sources).unwrap_or_default();
-        let mut updated = false;
-        match stream_res {
-            Ok(stream_sources) => {
-                for s in stream_sources {
-                    if !all_sources.iter().any(|existing| existing.provider == s.provider) {
-                        all_sources.push(s);
-                        updated = true;
+        // Race all lyrics providers concurrently and stream results as soon as each arrives.
+        let (ptx, mut prx) = tokio::sync::mpsc::unbounded_channel::<Vec<lyrics::Lyrics>>();
+        for kind in 0..3u8 {
+            let client = self.lyrics.clone();
+            let ptx = ptx.clone();
+            let (vid, s, art, alb) = (video_id.clone(), song.clone(), artist.clone(), album.clone());
+            tokio::spawn(async move {
+                let q = lyrics::Query {
+                    video_id: &vid,
+                    song: &s,
+                    artist: &art,
+                    album: alb.as_deref(),
+                    duration,
+                };
+                let res = match kind {
+                    0 => client.fetch_unison(&q).await,
+                    1 => client.fetch_lrcred(&q).await,
+                    _ => client.fetch_stream(&q).await,
+                };
+                match res {
+                    Ok(list) if !list.is_empty() => {
+                        let _ = ptx.send(list);
+                    }
+                    Ok(_) => {}
+                    Err(e) => {
+                        let label = match kind {
+                            0 => "unison",
+                            1 => "lrc.red",
+                            _ => "better lyrics",
+                        };
+                        if kind == 2 {
+                            log::warn!("{label} failed: {e:#}");
+                        } else {
+                            log::info!("{label}: {e:#}");
+                        }
                     }
                 }
+            });
+        }
+        drop(ptx);
+
+        let fail_env = std::env::var("YTM_LYRICS_FAIL").ok();
+        let mut all_sources: Vec<lyrics::Lyrics> = Vec::new();
+        let mut emitted = false;
+        while let Some(batch) = prx.recv().await {
+            let mut changed = false;
+            for src in batch {
+                if let Some(fail) = &fail_env
+                    && fail.split(',').any(|k| k.trim() == src.provider.key())
+                {
+                    continue;
+                }
+                if !all_sources.iter().any(|existing| existing.provider == src.provider) {
+                    all_sources.push(src);
+                    changed = true;
+                }
             }
-            Err(e) => log::warn!("better lyrics failed: {e:#}"),
+            if changed {
+                all_sources.sort_by_key(|l| lyrics::Provider::ALL.iter().position(|p| *p == l.provider));
+                let set = LyricsSet { sources: all_sources.clone() };
+                self.lyrics.insert_recent(video_id.clone(), set.clone());
+                let _ = self.tx.send(Resp::Lyrics { video_id: video_id.clone(), lyrics: set });
+                self.wake();
+                emitted = true;
+            }
         }
 
-        all_sources.sort_by_key(|l| lyrics::Provider::ALL.iter().position(|p| *p == l.provider));
-        let mut final_set = LyricsSet { sources: all_sources };
-        if let Ok(fail) = std::env::var("YTM_LYRICS_FAIL") {
-            final_set.sources.retain(|l| !fail.split(',').any(|k| k.trim() == l.provider.key()));
-        }
-
-        self.lyrics.insert_recent(video_id.clone(), final_set.clone());
-
-        if !has_fast || updated {
-            let _ = self.tx.send(Resp::Lyrics { video_id, lyrics: final_set });
+        if !emitted {
+            let empty = LyricsSet::default();
+            self.lyrics.insert_recent(video_id.clone(), empty.clone());
+            let _ = self.tx.send(Resp::Lyrics { video_id, lyrics: empty });
             self.wake();
         }
     }
@@ -1093,13 +1116,13 @@ impl Backend {
     /// so wait for playback to resolve the stream briefly. The player's own duration
     /// counts too: starting a song clears it, and a restored session sets it.
     async fn stream_duration(&self, video_id: &str) -> Option<u32> {
-        for _ in 0..5 {
+        for _ in 0..2 {
             let ms = self.current.lock_unpoisoned().as_ref().filter(|(id, _)| id == video_id).map(|(_, s)| s.duration_ms);
             let ms = ms.filter(|ms| *ms > 0).or_else(|| self.audio.status.duration().map(|d| d.as_millis() as u64));
             if let Some(ms) = ms.filter(|ms| *ms > 0) {
                 return Some((ms / 1000) as u32);
             }
-            tokio::time::sleep(std::time::Duration::from_millis(60)).await;
+            tokio::time::sleep(std::time::Duration::from_millis(40)).await;
         }
         log::debug!("lyrics: no duration for {video_id}");
         None

@@ -342,7 +342,7 @@ impl Client {
         unreachable!()
     }
 
-    async fn fetch_unison(&self, q: &Query<'_>) -> anyhow::Result<Vec<Lyrics>> {
+    pub async fn fetch_unison(&self, q: &Query<'_>) -> anyhow::Result<Vec<Lyrics>> {
         let mut params = vec![("v", q.video_id.to_owned()), ("song", q.song.to_owned()), ("artist", q.artist.to_owned())];
         params.push(("duration", q.duration.unwrap_or(0).to_string()));
         if let Some(a) = q.album {
@@ -357,7 +357,7 @@ impl Client {
     }
 
     /// lrc.red: find the track in its catalogue, then fetch its TTML (word or line timed).
-    async fn fetch_lrcred(&self, q: &Query<'_>) -> anyhow::Result<Vec<Lyrics>> {
+    pub async fn fetch_lrcred(&self, q: &Query<'_>) -> anyhow::Result<Vec<Lyrics>> {
         if q.song.trim().is_empty() {
             return Ok(vec![]);
         }
