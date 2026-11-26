@@ -159,7 +159,7 @@ fn check_failed(app: &mut App, ui: &mut Ui) -> bool {
     }
 }
 
-/// A page's data hasn't arrived: shimmering placeholders while it loads, a retry if the
+/// A page's data hasn't arrived: pulsing skeleton placeholders while it loads, a retry if the
 /// request failed.
 fn placeholder(app: &mut App, ui: &mut Ui, now: f64, rows: usize, card: f32) {
     if check_failed(app, ui) {
@@ -174,49 +174,48 @@ fn placeholder_collection(app: &mut App, ui: &mut Ui, now: f64) {
     if check_failed(app, ui) {
         return;
     }
-    let shimmer = |ui: &Ui, r: Rect, radius: f32| {
-        ui.painter().rect_filled(r, radius, theme::glass(0.06));
-        widgets::shimmer_band(ui, r, radius, now);
+    let skeleton = |ui: &Ui, r: Rect, radius: f32| {
+        widgets::skeleton_rect(ui, r, radius, now);
     };
     let side = (ui.available_width() * 0.3).clamp(200.0, 300.0);
     ui.add_space(18.0);
     ui.horizontal_top(|ui| {
         let (img, _) = ui.allocate_exact_size(Vec2::splat(side), Sense::hover());
         let radius = theme::card_radius() + 2.0;
-        shimmer(ui, img, radius);
+        skeleton(ui, img, radius);
 
         ui.add_space(28.0);
         ui.vertical(|ui| {
             ui.add_space((side - 200.0).max(6.0));
             let title_w = (ui.available_width() * 0.55).clamp(200.0, 380.0);
             let (title_r, _) = ui.allocate_exact_size(vec2(title_w, 32.0), Sense::hover());
-            shimmer(ui, title_r, 6.0);
+            skeleton(ui, title_r, 6.0);
 
             ui.add_space(14.0);
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing = vec2(10.0, 0.0);
                 let (avatar_r, _) = ui.allocate_exact_size(Vec2::splat(34.0), Sense::hover());
-                shimmer(ui, avatar_r, 17.0);
+                skeleton(ui, avatar_r, 17.0);
 
                 let (name_r, _) = ui.allocate_exact_size(vec2(160.0, 18.0), Sense::hover());
-                shimmer(ui, name_r, 4.0);
+                skeleton(ui, name_r, 4.0);
             });
 
             ui.add_space(12.0);
             let (meta_r, _) = ui.allocate_exact_size(vec2(180.0, 14.0), Sense::hover());
-            shimmer(ui, meta_r, 4.0);
+            skeleton(ui, meta_r, 4.0);
 
             ui.add_space(18.0);
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing = vec2(10.0, 0.0);
                 let (play_r, _) = ui.allocate_exact_size(vec2(86.0, 36.0), Sense::hover());
-                shimmer(ui, play_r, 18.0);
+                skeleton(ui, play_r, 18.0);
 
                 let (shuf_r, _) = ui.allocate_exact_size(vec2(98.0, 36.0), Sense::hover());
-                shimmer(ui, shuf_r, 18.0);
+                skeleton(ui, shuf_r, 18.0);
 
                 let (more_r, _) = ui.allocate_exact_size(Vec2::splat(36.0), Sense::hover());
-                shimmer(ui, more_r, 18.0);
+                skeleton(ui, more_r, 18.0);
             });
         });
     });
@@ -230,32 +229,31 @@ fn placeholder_artist(app: &mut App, ui: &mut Ui, now: f64) {
     if check_failed(app, ui) {
         return;
     }
-    let shimmer = |ui: &Ui, r: Rect, radius: f32| {
-        ui.painter().rect_filled(r, radius, theme::glass(0.06));
-        widgets::shimmer_band(ui, r, radius, now);
+    let skeleton = |ui: &Ui, r: Rect, radius: f32| {
+        widgets::skeleton_rect(ui, r, radius, now);
     };
     let w = ui.available_width();
     let hero_h = hero_height(w);
     let (hero, _) = ui.allocate_exact_size(vec2(w, hero_h), Sense::hover());
-    shimmer(ui, hero, 0.0);
+    skeleton(ui, hero, 0.0);
     paint_hero_gradient_dissolve(ui.painter(), hero, super::shell::base_color(app));
 
     let base_x = hero.left() + 28.0;
     let btn_y = hero.bottom() - 36.0;
 
     let more_rect = Rect::from_center_size(pos2(base_x + 19.0, btn_y), vec2(38.0, 38.0));
-    shimmer(ui, more_rect, 19.0);
+    skeleton(ui, more_rect, 19.0);
 
     let play_center = pos2(base_x + 38.0 + 14.0 + 24.0, btn_y);
     let play_rect = Rect::from_center_size(play_center, vec2(48.0, 48.0));
-    shimmer(ui, play_rect, 24.0);
+    skeleton(ui, play_rect, 24.0);
 
     let name_w = (w * 0.45).clamp(220.0, 380.0);
     let name_r = Rect::from_min_size(pos2(base_x, btn_y - 88.0), vec2(name_w, 44.0));
-    shimmer(ui, name_r, 8.0);
+    skeleton(ui, name_r, 8.0);
 
     let stats_r = Rect::from_min_size(pos2(base_x, btn_y - 32.0), vec2(160.0, 14.0));
-    shimmer(ui, stats_r, 4.0);
+    skeleton(ui, stats_r, 4.0);
 
     egui::Frame::new().inner_margin(egui::Margin { left: 28, right: 48, top: 0, bottom: 0 }).show(ui, |ui| {
         let cw = ui.available_width();
@@ -267,41 +265,41 @@ fn placeholder_artist(app: &mut App, ui: &mut Ui, now: f64) {
             ui.horizontal_top(|ui| {
                 ui.allocate_ui_with_layout(vec2(left_w, 0.0), egui::Layout::top_down(egui::Align::LEFT), |ui| {
                     let (head, _) = ui.allocate_exact_size(vec2(140.0, 22.0), Sense::hover());
-                    shimmer(ui, head, 4.0);
+                    skeleton(ui, head, 4.0);
                     ui.add_space(8.0);
                     let (card_r, _) = ui.allocate_exact_size(vec2(left_w, left_w * 0.65), Sense::hover());
-                    shimmer(ui, card_r, 12.0);
+                    skeleton(ui, card_r, 12.0);
                 });
                 ui.add_space(24.0);
                 ui.allocate_ui_with_layout(vec2(right_w, 0.0), egui::Layout::top_down(egui::Align::LEFT), |ui| {
                     let (head, _) = ui.allocate_exact_size(vec2(120.0, 22.0), Sense::hover());
-                    shimmer(ui, head, 4.0);
+                    skeleton(ui, head, 4.0);
                     ui.add_space(8.0);
                     widgets::skeleton_rows(ui, now, 4);
                 });
             });
         } else {
             let (head, _) = ui.allocate_exact_size(vec2(140.0, 22.0), Sense::hover());
-            shimmer(ui, head, 4.0);
+            skeleton(ui, head, 4.0);
             ui.add_space(8.0);
             widgets::skeleton_rows(ui, now, 4);
         }
 
         ui.add_space(26.0);
         let (shelf_head, _) = ui.allocate_exact_size(vec2(160.0, 22.0), Sense::hover());
-        shimmer(ui, shelf_head, 4.0);
+        skeleton(ui, shelf_head, 4.0);
         ui.add_space(14.0);
         ui.horizontal(|ui| {
             for _ in 0..6 {
                 let (r, _) = ui.allocate_exact_size(vec2(CARD, CARD + 50.0), Sense::hover());
                 let img_r = Rect::from_min_size(r.min, Vec2::splat(CARD));
-                shimmer(ui, img_r, 8.0);
+                skeleton(ui, img_r, 8.0);
                 let t_r = Rect::from_min_size(r.min + vec2(0.0, CARD + 10.0), vec2(CARD * 0.8, 12.0));
-                shimmer(ui, t_r, 4.0);
+                skeleton(ui, t_r, 4.0);
             }
         });
     });
-    ui.ctx().request_repaint_after(std::time::Duration::from_millis(16));
+    super::animate(ui.ctx());
 }
 
 /// Search loading skeleton: top result card on the left with top songs on the right,
@@ -310,9 +308,8 @@ fn placeholder_search(app: &mut App, ui: &mut Ui, now: f64) {
     if check_failed(app, ui) {
         return;
     }
-    let shimmer = |ui: &Ui, r: Rect, radius: f32| {
-        ui.painter().rect_filled(r, radius, theme::glass(0.06));
-        widgets::shimmer_band(ui, r, radius, now);
+    let skeleton = |ui: &Ui, r: Rect, radius: f32| {
+        widgets::skeleton_rect(ui, r, radius, now);
     };
     ui.add_space(14.0);
     let is_wide = ui.available_width() >= 780.0;
@@ -320,38 +317,39 @@ fn placeholder_search(app: &mut App, ui: &mut Ui, now: f64) {
         ui.horizontal_top(|ui| {
             ui.vertical(|ui| {
                 let (h, _) = ui.allocate_exact_size(vec2(120.0, 24.0), Sense::hover());
-                shimmer(ui, h, 4.0);
+                skeleton(ui, h, 4.0);
                 ui.add_space(8.0);
                 let (card_r, _) = ui.allocate_exact_size(vec2(420.0, 236.0), Sense::hover());
-                shimmer(ui, card_r, 14.0);
+                skeleton(ui, card_r, 14.0);
             });
             ui.add_space(24.0);
             ui.vertical(|ui| {
                 let (h, _) = ui.allocate_exact_size(vec2(100.0, 24.0), Sense::hover());
-                shimmer(ui, h, 4.0);
+                skeleton(ui, h, 4.0);
                 ui.add_space(8.0);
                 widgets::skeleton_rows(ui, now, 4);
             });
         });
     } else {
         let (h, _) = ui.allocate_exact_size(vec2(100.0, 24.0), Sense::hover());
-        shimmer(ui, h, 4.0);
+        skeleton(ui, h, 4.0);
         ui.add_space(8.0);
         widgets::skeleton_rows(ui, now, 5);
     }
     ui.add_space(26.0);
     let (shelf_h, _) = ui.allocate_exact_size(vec2(140.0, 22.0), Sense::hover());
-    shimmer(ui, shelf_h, 4.0);
+    skeleton(ui, shelf_h, 4.0);
     ui.add_space(14.0);
     ui.horizontal(|ui| {
         for _ in 0..6 {
             let (r, _) = ui.allocate_exact_size(vec2(CARD, CARD + 50.0), Sense::hover());
             let img_r = Rect::from_min_size(r.min, Vec2::splat(CARD));
-            shimmer(ui, img_r, 8.0);
+            skeleton(ui, img_r, 8.0);
             let t_r = Rect::from_min_size(r.min + vec2(0.0, CARD + 10.0), vec2(CARD * 0.8, 12.0));
-            shimmer(ui, t_r, 4.0);
+            skeleton(ui, t_r, 4.0);
         }
     });
+    super::animate(ui.ctx());
 }
 
 /// Explore / New releases page loading skeleton: new releases card shelf, top songs grid rows,
@@ -360,36 +358,36 @@ fn placeholder_new(app: &mut App, ui: &mut Ui, now: f64) {
     if check_failed(app, ui) {
         return;
     }
-    let shimmer = |ui: &Ui, r: Rect, radius: f32| {
-        ui.painter().rect_filled(r, radius, theme::glass(0.06));
-        widgets::shimmer_band(ui, r, radius, now);
+    let skeleton = |ui: &Ui, r: Rect, radius: f32| {
+        widgets::skeleton_rect(ui, r, radius, now);
     };
     let (h1, _) = ui.allocate_exact_size(vec2(220.0, 24.0), Sense::hover());
-    shimmer(ui, h1, 4.0);
+    skeleton(ui, h1, 4.0);
     ui.add_space(14.0);
     ui.horizontal(|ui| {
         for _ in 0..6 {
             let (r, _) = ui.allocate_exact_size(vec2(CARD, CARD + 50.0), Sense::hover());
-            shimmer(ui, Rect::from_min_size(r.min, Vec2::splat(CARD)), 8.0);
-            shimmer(ui, Rect::from_min_size(r.min + vec2(0.0, CARD + 10.0), vec2(CARD * 0.8, 12.0)), 4.0);
+            skeleton(ui, Rect::from_min_size(r.min, Vec2::splat(CARD)), 8.0);
+            skeleton(ui, Rect::from_min_size(r.min + vec2(0.0, CARD + 10.0), vec2(CARD * 0.8, 12.0)), 4.0);
         }
     });
     ui.add_space(24.0);
     let (h2, _) = ui.allocate_exact_size(vec2(140.0, 24.0), Sense::hover());
-    shimmer(ui, h2, 4.0);
+    skeleton(ui, h2, 4.0);
     ui.add_space(12.0);
     widgets::skeleton_rows(ui, now, 4);
     ui.add_space(24.0);
     let (h3, _) = ui.allocate_exact_size(vec2(120.0, 24.0), Sense::hover());
-    shimmer(ui, h3, 4.0);
+    skeleton(ui, h3, 4.0);
     ui.add_space(14.0);
     ui.horizontal(|ui| {
         for _ in 0..6 {
             let (r, _) = ui.allocate_exact_size(vec2(CARD, CARD + 50.0), Sense::hover());
-            shimmer(ui, Rect::from_min_size(r.min, Vec2::splat(CARD)), 8.0);
-            shimmer(ui, Rect::from_min_size(r.min + vec2(0.0, CARD + 10.0), vec2(CARD * 0.8, 12.0)), 4.0);
+            skeleton(ui, Rect::from_min_size(r.min, Vec2::splat(CARD)), 8.0);
+            skeleton(ui, Rect::from_min_size(r.min + vec2(0.0, CARD + 10.0), vec2(CARD * 0.8, 12.0)), 4.0);
         }
     });
+    super::animate(ui.ctx());
 }
 
 /// Track list loading skeleton (History, Liked Songs).
@@ -397,19 +395,18 @@ fn placeholder_track_list(app: &mut App, ui: &mut Ui, now: f64, with_actions: bo
     if check_failed(app, ui) {
         return;
     }
-    let shimmer = |ui: &Ui, r: Rect, radius: f32| {
-        ui.painter().rect_filled(r, radius, theme::glass(0.06));
-        widgets::shimmer_band(ui, r, radius, now);
+    let skeleton = |ui: &Ui, r: Rect, radius: f32| {
+        widgets::skeleton_rect(ui, r, radius, now);
     };
     if with_actions {
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing = vec2(10.0, 0.0);
             let (p1, _) = ui.allocate_exact_size(vec2(86.0, 36.0), Sense::hover());
-            shimmer(ui, p1, 18.0);
+            skeleton(ui, p1, 18.0);
             let (p2, _) = ui.allocate_exact_size(vec2(98.0, 36.0), Sense::hover());
-            shimmer(ui, p2, 18.0);
+            skeleton(ui, p2, 18.0);
             let (p3, _) = ui.allocate_exact_size(vec2(90.0, 36.0), Sense::hover());
-            shimmer(ui, p3, 18.0);
+            skeleton(ui, p3, 18.0);
         });
         ui.add_space(10.0);
     }
@@ -421,13 +418,12 @@ fn placeholder_grid(app: &mut App, ui: &mut Ui, now: f64, card: f32, circle: boo
     if check_failed(app, ui) {
         return;
     }
-    let shimmer = |ui: &Ui, r: Rect, radius: f32| {
-        ui.painter().rect_filled(r, radius, theme::glass(0.06));
-        widgets::shimmer_band(ui, r, radius, now);
+    let skeleton = |ui: &Ui, r: Rect, radius: f32| {
+        widgets::skeleton_rect(ui, r, radius, now);
     };
     if with_new_button {
         let (btn_r, _) = ui.allocate_exact_size(vec2(120.0, 34.0), Sense::hover());
-        shimmer(ui, btn_r, 17.0);
+        skeleton(ui, btn_r, 17.0);
         ui.add_space(14.0);
     }
     widgets::skeleton_grid(ui, now, card, circle, count);
@@ -443,7 +439,7 @@ pub enum CircleGlyph {
 
 /// The accent colour the app set for this frame.
 fn app_accent(ui: &Ui) -> Color32 {
-    ui.ctx().data(|d| d.get_temp::<Color32>(egui::Id::unique("accent"))).unwrap_or(theme::RED)
+    ui.ctx().data(|d| d.get_temp::<Color32>(egui::Id::unique("accent"))).unwrap_or(theme::BLUE)
 }
 
 /// "ALBUM · 2024" / "PLAYLIST · 42 SONGS · 2 HR 10 MIN": the line under the artist.
@@ -480,17 +476,27 @@ pub fn circle_action(ui: &mut Ui, glyph: CircleGlyph, name: &str, active: bool) 
     ui.painter().circle_filled(rect.center() + vec2(0.0, 1.5), press, Color32::from_black_alpha(shadow_alpha));
 
     // Frosted glass fill & inside stroke
-    let fill = if light {
-        theme::lerp_color(Color32::from_black_alpha(15), Color32::from_black_alpha(28), h)
+    if crate::renderer::active() == crate::renderer::Renderer::OpenGl {
+        let (tint, tint_alpha, sat, sheen) = if light {
+            (Color32::WHITE, 0.52 + 0.12 * h, 1.15, 0.18)
+        } else {
+            (Color32::from_rgb(0x22, 0x22, 0x28), 0.48 + 0.12 * h, 1.25, 0.12)
+        };
+        let cap = Rect::from_center_size(rect.center(), Vec2::splat(press * 2.0));
+        super::shell::paint_live_backdrop_blur(ui, resp.id.with("blur"), cap, press, tint, tint_alpha, sat, sheen, 1.0);
     } else {
-        theme::glass(0.12 + 0.08 * h)
-    };
+        let fill = if light {
+            theme::lerp_color(Color32::from_black_alpha(15), Color32::from_black_alpha(28), h)
+        } else {
+            theme::glass(0.12 + 0.08 * h)
+        };
+        ui.painter().circle_filled(rect.center(), press, fill);
+    }
     let stroke_col = if light {
         Color32::from_black_alpha((25.0 + 18.0 * h) as u8)
     } else {
         theme::glass(0.16 + 0.12 * h)
     };
-    ui.painter().circle_filled(rect.center(), press, fill);
     ui.painter().circle_stroke(rect.center(), press, egui::Stroke::new(1.0, stroke_col));
 
     let color = if theme::light() {
@@ -593,8 +599,17 @@ pub fn share_more_pill(
     let light = theme::light();
     let pill_shadow = if light { 18 } else { 35 };
     ui.painter().rect_filled(pill_rect.translate(vec2(0.0, 1.0)), 17.0, Color32::from_black_alpha(pill_shadow));
-    let pill_fill = if light { Color32::from_black_alpha(15) } else { theme::glass(0.12) };
-    ui.painter().rect_filled(pill_rect, 17.0, pill_fill);
+    if crate::renderer::active() == crate::renderer::Renderer::OpenGl {
+        let (tint, tint_alpha, sat, sheen) = if light {
+            (Color32::WHITE, 0.50, 1.15, 0.16)
+        } else {
+            (Color32::from_rgb(0x22, 0x22, 0x28), 0.46, 1.25, 0.10)
+        };
+        super::shell::paint_live_backdrop_blur(ui, ui.scope_id().with((id_salt, "pill-blur")), pill_rect, 17.0, tint, tint_alpha, sat, sheen, 1.0);
+    } else {
+        let pill_fill = if light { Color32::from_black_alpha(15) } else { theme::glass(0.12) };
+        ui.painter().rect_filled(pill_rect, 17.0, pill_fill);
+    }
     ui.painter().rect_stroke(pill_rect, 17.0, egui::Stroke::new(1.0, if light { Color32::from_black_alpha(25) } else { theme::glass(0.16) }), egui::StrokeKind::Inside);
 
     let mid_x = pill_rect.min.x + 35.0;
@@ -982,6 +997,15 @@ fn home(app: &mut App, ui: &mut Ui, now: f64) {
         greeting
     };
     page_title(ui, title);
+    if app.spotify_mode && app.spotify_user.is_none() {
+        ui.add_space(10.0);
+        ui.label(RichText::new("Sign in to Spotify in Settings to see your Spotify playlists, saved albums, liked songs and mixes.").color(theme::text_dim()));
+        ui.add_space(12.0);
+        if pill(ui, "Open Settings", None, true).clicked() {
+            app.actions.push(Action::Go(Page::Settings));
+        }
+        return;
+    }
     if let Some(h) = &mut app.home
         && !h.chips.is_empty()
     {
@@ -1245,9 +1269,44 @@ fn top_result(ui: &mut Ui, c: &Card, pick: bool, acts: &mut Vec<Action>) {    ui
         let playing = active == Some(true);
         let label = format!("{} {}", if playing { "Pause" } else { "Play" }, c.title);
         let p = named(ui.interact(pr, resp.id.with("play"), Sense::click()), &label).on_hover_cursor(egui::CursorIcon::PointingHand);
-        ui.painter().circle_filled(pc, 26.0, theme::with_alpha(Color32::WHITE, 0.4 + 0.6 * h));
+        let ph = theme::anim_bool(ui.ctx(), p.id.with("ph"), p.hovered(), 0.15);
+        let r = 26.0 + 2.0 * ph;
+        let play_rect = Rect::from_center_size(pc, Vec2::splat(r * 2.0));
+        let light = theme::light();
+        ui.painter().circle_filled(pc + vec2(0.0, 2.0), r, Color32::from_black_alpha(if light { 30 } else { 50 }));
+        if crate::renderer::active() == crate::renderer::Renderer::OpenGl {
+            let (tint_col, tint_alpha, sat, sheen) = if light {
+                (Color32::WHITE, 0.62 + 0.12 * ph, 1.25, 0.22)
+            } else {
+                (Color32::from_rgb(0x1a, 0x1c, 0x22), 0.52 + 0.12 * ph, 1.30, 0.18)
+            };
+            super::shell::paint_live_backdrop_blur(
+                ui,
+                egui::Id::unique("top-result-play-blur"),
+                play_rect,
+                r,
+                tint_col,
+                tint_alpha,
+                sat,
+                sheen,
+                0.4 + 0.6 * h,
+            );
+            let stroke_col = if light {
+                Color32::from_white_alpha(180)
+            } else {
+                Color32::from_white_alpha((55.0 + 25.0 * ph) as u8)
+            };
+            ui.painter().circle_stroke(pc, r, egui::Stroke::new(1.0, stroke_col));
+        } else {
+            ui.painter().circle_filled(pc, r, theme::with_alpha(Color32::WHITE, 0.4 + 0.6 * h));
+        }
         let nudge = if playing { 0.0 } else { 1.5 };
-        widgets::play_pause_glyph(ui, pc + vec2(nudge, 0.0), 10.0, Color32::from_gray(15), playing);
+        let glyph_col = if light {
+            Color32::from_rgb(0x18, 0x14, 0x1c)
+        } else {
+            Color32::WHITE
+        };
+        widgets::play_pause_glyph(ui, pc + vec2(nudge, 0.0), 10.0, glyph_col, playing);
         if p.clicked() {
             acts.push(match &c.target {
                 _ if active.is_some() => Action::TogglePlay,
@@ -1302,8 +1361,9 @@ pub fn collection(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
     let selecting = app.selection.on(&app.page);
     let mut start_select = false;
     let mut stop_select = false;
+    let active_lib = if app.spotify_mode { &app.spotify_library } else { &app.library };
     let photo = artist_id.as_ref().and_then(|a| app.artist_photos.get(a)).filter(|t| !t.is_empty());
-    let is_liked = id == "LM" || id == super::LIKED_MUSIC || id == "VLLM";
+    let is_liked = id == "LM" || id == super::LIKED_MUSIC || id == "VLLM" || id == crate::spotify::SPOTIFY_LIKED_ID;
     ui.add_space(18.0);
     ui.horizontal_top(|ui| {
         if !is_liked {
@@ -1323,8 +1383,8 @@ pub fn collection(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
             let target = if is_album { Target::Album(id.to_owned()) } else { Target::Playlist(id.to_owned()) };
             // Liked Music and Episodes for later are the account's own lists: they can't be
             // saved, removed, edited or deleted.
-            let auto = matches!(id, "LM" | "SE");
-            let saved = app.library.as_ref().is_some_and(|l| {
+            let auto = matches!(id, "LM" | "SE") || id == crate::spotify::SPOTIFY_LIKED_ID;
+            let saved = active_lib.as_ref().is_some_and(|l| {
                 let cards = if is_album { &l.albums } else { &l.playlists };
                 cards.iter().any(|card| card.target == target)
             });
@@ -1798,31 +1858,35 @@ pub fn artist(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
 
     let artist_target = Target::Artist(id.to_owned());
 
-    // Top-right Share & More segmented pill on the hero banner
-    let pill_rect = Rect::from_min_size(pos2(hero.right() - 90.0, hero.top() + 18.0), vec2(70.0, 34.0));
-    share_more_pill(ui, pill_rect, "artist", &artist_target, acts, |ui, acts, target| {
-        let mut any = false;
-        if let Some(sub) = &a.following {
-            let label = if sub.subscribed { "Subscribed" } else { "Subscribe" };
-            let icon = if sub.subscribed { Some(icon::CHECK) } else { None };
-            if widgets::menu_action(ui, icon, label) {
-                acts.push(Action::SetSubscribed(!sub.subscribed));
-            }
-            any = true;
-        }
-        if !top.is_empty() {
-            if widgets::menu_action(ui, Some(icon::RADIO), "Start Radio") {
-                acts.push(Action::Radio(top[0].clone()));
-            }
-            any = true;
-        }
-        if any {
-            widgets::menu_separator(ui);
-        }
-        if widgets::menu_action(ui, Some(icon::SHARE), "Share") {
-            acts.push(Action::Share(target.clone()));
-        }
-    });
+    // Top-right frosted circular Share button on the hero banner
+    let share_rect = Rect::from_min_size(pos2(hero.right() - 54.0, hero.top() + 18.0), vec2(34.0, 34.0));
+    let light_hero = theme::light();
+    let share_shadow = if light_hero { 18 } else { 35 };
+    ui.painter().circle_filled(share_rect.center() + vec2(0.0, 1.0), 17.0, Color32::from_black_alpha(share_shadow));
+    let share_resp = named(ui.interact(share_rect, ui.scope_id().with(("artist", "share")), Sense::click()), "Share")
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
+        .on_hover_text("Share");
+    let share_fill = if light_hero {
+        if share_resp.hovered() { Color32::from_black_alpha(26) } else { Color32::from_black_alpha(15) }
+    } else if share_resp.hovered() {
+        theme::glass(0.20)
+    } else {
+        theme::glass(0.12)
+    };
+    let share_stroke = if light_hero { Color32::from_black_alpha(25) } else { theme::glass(0.16) };
+    ui.painter().circle_filled(share_rect.center(), 17.0, share_fill);
+    ui.painter().circle_stroke(share_rect.center(), 17.0, egui::Stroke::new(1.0, share_stroke));
+    let share_fg = if light_hero {
+        Color32::from_rgb(0x18, 0x14, 0x1c)
+    } else if share_resp.hovered() {
+        Color32::WHITE
+    } else {
+        theme::lerp_color(theme::text_dim(), theme::text(), 0.5)
+    };
+    widgets::icon_at(ui, share_rect.center(), icon::SHARE, 15.0, share_fg);
+    if share_resp.clicked() {
+        acts.push(Action::Share(artist_target.clone()));
+    }
 
     let (below, _) = ui.allocate_exact_size(vec2(w, 58.0), Sense::hover());
     let base_x = hero.left() + 28.0;
@@ -2035,20 +2099,33 @@ pub(crate) fn played_artists(history: &[Track]) -> Vec<crate::model::Link> {
 }
 
 fn library(app: &mut App, ui: &mut Ui, tab: LibTab, now: f64) {
-    page_title(ui, "Library");
-    if !app.logged_in {
+    page_title(ui, if app.spotify_mode { "Spotify Library" } else { "Library" });
+    if !app.active_logged_in() {
         ui.add_space(10.0);
-        ui.label(RichText::new("Sign in to see your playlists, liked songs and history.").color(theme::text_dim()));
-        ui.add_space(12.0);
-        if pill(ui, "Sign in with Google", Some(icon::CIRCLE_USER), true).clicked() {
-            app.start_sign_in(ui.ctx());
+        if app.spotify_mode {
+            ui.label(RichText::new("Sign in to Spotify in Settings to see your playlists, liked songs, albums and artists.").color(theme::text_dim()));
+            ui.add_space(12.0);
+            if pill(ui, "Open Settings", None, true).clicked() {
+                app.actions.push(Action::Go(Page::Settings));
+            }
+        } else {
+            ui.label(RichText::new("Sign in to see your playlists, liked songs and history.").color(theme::text_dim()));
+            ui.add_space(12.0);
+            if pill(ui, "Sign in with Google", Some(icon::CIRCLE_USER), true).clicked() {
+                app.start_sign_in(ui.ctx());
+            }
         }
         return;
     }
     ui.add_space(12.0);
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 10.0;
-        for (t, label) in [(LibTab::Playlists, "Playlists"), (LibTab::Artists, "Artists"), (LibTab::Albums, "Albums"), (LibTab::Songs, "Liked songs"), (LibTab::History, "Recently played")] {
+        let tabs: &[(LibTab, &str)] = if app.spotify_mode {
+            &[(LibTab::Playlists, "Playlists"), (LibTab::Artists, "Artists"), (LibTab::Albums, "Albums"), (LibTab::Songs, "Liked songs")]
+        } else {
+            &[(LibTab::Playlists, "Playlists"), (LibTab::Artists, "Artists"), (LibTab::Albums, "Albums"), (LibTab::Songs, "Liked songs"), (LibTab::History, "Recently played")]
+        };
+        for &(t, label) in tabs {
             if chip(ui, label, tab == t).clicked() {
                 // Tabs swap in place (no history entry); the current one refreshes.
                 if tab == t {
@@ -2081,61 +2158,63 @@ fn library(app: &mut App, ui: &mut Ui, tab: LibTab, now: f64) {
             list(ui, &rows, &app.liked, h, true, plain, ListCtx { sel: &mut app.selection, page: &app.page, own: false, plays: false }, &mut app.actions);
         }
         LibTab::Artists => {
-            section_label(ui, "Subscribed artists", None);
-            if app.library_artists.is_none() {
+            section_label(ui, if app.spotify_mode { "Followed artists" } else { "Subscribed artists" }, None);
+            let Some(followed) = app.active_artists().map(|a| a.to_vec()) else {
                 placeholder_grid(app, ui, now, CARD, true, 12, false);
                 return;
-            }
-            let followed = app.library_artists.as_deref().unwrap_or_default();
+            };
             if followed.is_empty() {
                 ui.label(RichText::new("Artists you follow show up here.").color(theme::text_dim()));
             } else {
-                grid(ui, followed, &mut app.actions);
+                grid(ui, &followed, &mut app.actions);
             }
             // The artists behind the songs in History, newest first (limited to latest 10).
-            let played = app.history.as_deref().map(played_artists).unwrap_or_default();
-            if !played.is_empty() {
-                section_label(ui, "From your history", None);
-                let played_cards: Vec<Card> = played
-                    .into_iter()
-                    .take(HISTORY_ARTISTS_LIMIT)
-                    .filter_map(|a| {
-                        let id = a.id?;
-                        let thumbs = app.artist_photos.get(&id).cloned().filter(|t| !t.is_empty())
-                            .or_else(|| followed.iter().find(|c| matches!(&c.target, Target::Artist(cid) if cid == &id)).map(|c| c.thumbs.clone()))
-                            .or_else(|| app.artists_cache.get(&id).map(|(a, _)| if a.photo.is_empty() { a.banner.clone() } else { a.photo.clone() }))
-                            .or_else(|| app.artist.as_ref().filter(|a| a.id == id).map(|a| if a.photo.is_empty() { a.banner.clone() } else { a.photo.clone() }))
-                            .unwrap_or_default();
-                        if thumbs.is_empty() && !app.artist_photos.contains_key(&id) {
-                            app.artist_photos.insert(id.clone(), Vec::new());
-                            app.backend.request(crate::backend::Req::ArtistPhoto(id.clone()));
-                        }
-                        Some(Card {
-                            title: a.name,
-                            subtitle: String::new(),
-                            thumbs,
-                            target: Target::Artist(id),
-                            round: true,
-                            links: Vec::new(),
+            if !app.spotify_mode {
+                let played = app.history.as_deref().map(played_artists).unwrap_or_default();
+                if !played.is_empty() {
+                    section_label(ui, "From your history", None);
+                    let played_cards: Vec<Card> = played
+                        .into_iter()
+                        .take(HISTORY_ARTISTS_LIMIT)
+                        .filter_map(|a| {
+                            let id = a.id?;
+                            let thumbs = app.artist_photos.get(&id).cloned().filter(|t| !t.is_empty())
+                                .or_else(|| followed.iter().find(|c| matches!(&c.target, Target::Artist(cid) if cid == &id)).map(|c| c.thumbs.clone()))
+                                .or_else(|| app.artists_cache.get(&id).map(|(a, _)| if a.photo.is_empty() { a.banner.clone() } else { a.photo.clone() }))
+                                .or_else(|| app.artist.as_ref().filter(|a| a.id == id).map(|a| if a.photo.is_empty() { a.banner.clone() } else { a.photo.clone() }))
+                                .unwrap_or_default();
+                            if thumbs.is_empty() && !app.artist_photos.contains_key(&id) {
+                                app.artist_photos.insert(id.clone(), Vec::new());
+                                app.backend.request(crate::backend::Req::ArtistPhoto(id.clone()));
+                            }
+                            Some(Card {
+                                title: a.name,
+                                subtitle: String::new(),
+                                thumbs,
+                                target: Target::Artist(id),
+                                round: true,
+                                links: Vec::new(),
+                            })
                         })
-                    })
-                    .collect();
-                grid(ui, &played_cards, &mut app.actions);
-                ui.add_space(10.0);
+                        .collect();
+                    grid(ui, &played_cards, &mut app.actions);
+                    ui.add_space(10.0);
+                }
             }
         }
         // Liked Music, kept like any playlist.
         LibTab::Songs => {
-            if app.opened(super::LIKED_MUSIC).is_none() {
+            let liked_id = app.active_liked_id();
+            if app.opened(liked_id).is_none() {
                 placeholder_track_list(app, ui, now, true);
                 return;
             }
-            let more = app.receiving(super::LIKED_MUSIC);
-            let Some(o) = app.lists.get(super::LIKED_MUSIC) else { return };
+            let more = app.receiving(liked_id);
+            let Some(o) = app.lists.get(liked_id) else { return };
             let liked = &o.c.tracks;
             if !liked.is_empty() {
                 ui.horizontal(|ui| {
-                    play_pill(ui, &mut app.actions, &Target::Playlist(super::LIKED_MUSIC.into()), liked);
+                    play_pill(ui, &mut app.actions, &Target::Playlist(liked_id.into()), liked);
                     if pill(ui, &t!("shuffle"), Some(icon::SHUFFLE), false).clicked() {
                         let mut t = liked.clone();
                         super::shuffle(&mut t);
@@ -2151,18 +2230,19 @@ fn library(app: &mut App, ui: &mut Ui, tab: LibTab, now: f64) {
             }
         }
         _ => {
-            if app.library.is_none() {
-                let with_new = tab == LibTab::Playlists;
+            let Some(lib) = app.active_library().cloned() else {
+                let with_new = tab == LibTab::Playlists && !app.spotify_mode;
                 placeholder_grid(app, ui, now, CARD, false, 12, with_new);
                 return;
-            }
-            let Some(lib) = &app.library else { return };
+            };
             match tab {
                 LibTab::Playlists => {
-                    if pill(ui, "New playlist", None, false).clicked() {
-                        app.actions.push(Action::NewPlaylist(Vec::new()));
+                    if !app.spotify_mode {
+                        if pill(ui, "New playlist", None, false).clicked() {
+                            app.actions.push(Action::NewPlaylist(Vec::new()));
+                        }
+                        ui.add_space(14.0);
                     }
-                    ui.add_space(14.0);
                     grid(ui, &lib.playlists, &mut app.actions)
                 }
                 LibTab::Albums => grid(ui, &lib.albums, &mut app.actions),
@@ -2236,7 +2316,9 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
     settings_notifications(app, ui);
     settings_window(app, ui);
     settings_connections(app, ui);
-    super::transfer::settings_section(app, ui);
+    if !app.spotify_mode {
+        super::transfer::settings_section(app, ui);
+    }
     settings_network(app, ui);
     settings_shortcuts(ui);
     settings_updates(app, ui);
@@ -2297,43 +2379,184 @@ fn settings_account(app: &mut App, ui: &mut Ui) {
     let (mut sign_in, mut sign_out) = (false, false);
     // Asked again now and then while Settings shows: a failed ask, or a channel made since.
     let now = ui.input(|i| i.time);
-    if app.logged_in && app.channels_asked.is_none_or(|at| now - at > 60.0) {
+    if app.logged_in && !app.spotify_mode && app.channels_asked.is_none_or(|at| now - at > 60.0) {
         app.channels_asked = Some(now);
         app.backend.request(crate::backend::Req::Channels);
     }
-    settings_card(ui, |ui| {
-        if app.logged_in {
-            let name = app.account_name.clone().unwrap_or_else(|| "YouTube Music".to_owned());
-            setting_row(ui, &name, Some("Signed in with Google. Your home feed, library and likes come from this account. Saved in your macOS Keychain."), |ui| {
-                sign_out = pill_destructive(ui, "Sign out", Some(icon::LOG_OUT)).clicked();
-            });
-            // Also with one, when the one in use isn't it (a brand channel since deleted).
-            if app.channels.as_ref().is_some_and(|c| c.list.len() > 1 || !c.list.iter().any(|l| l.page_id == c.current)) {
-                divider(ui);
-                setting_row(ui, "Channel", Some("Your Google account and each YouTube channel it manages have their own library, likes, history and recommendations."), |ui| {
-                    channel_picker(app, ui);
+    if app.spotify_user.is_none() {
+        settings_card(ui, |ui| {
+            if app.logged_in {
+                let name = app.account_name.clone().unwrap_or_else(|| "YouTube Music".to_owned());
+                setting_row(ui, &name, Some("Signed in to YouTube Music with Google. Sign out to switch to Spotify. Saved in your macOS Keychain."), |ui| {
+                    sign_out = pill_destructive(ui, "Sign out", Some(icon::LOG_OUT)).clicked();
+                });
+                // Also with one, when the one in use isn't it (a brand channel since deleted).
+                if app.channels.as_ref().is_some_and(|c| c.list.len() > 1 || !c.list.iter().any(|l| l.page_id == c.current)) {
+                    divider(ui);
+                    setting_row(ui, "Channel", Some("Your Google account and each YouTube channel it manages have their own library, likes, history and recommendations."), |ui| {
+                        channel_picker(app, ui);
+                    });
+                }
+            } else {
+                setting_row(ui, "YouTube Music", Some("Sign in with Google for your YouTube Music home feed, library and likes."), |ui| {
+                    if busy {
+                        ui.spinner();
+                    } else {
+                        sign_in = pill(ui, "Sign in with Google", Some(icon::CIRCLE_USER), true).clicked();
+                    }
                 });
             }
-        } else {
-            setting_row(ui, "Not signed in", Some("Sign in to get your home feed, library and likes."), |ui| {
-                if busy {
+        });
+        if busy {
+            ui.add_space(6.0);
+            ui.label(RichText::new("Finish signing in in the window that opened.").font(theme::regular(11.0)).color(theme::text_dim()));
+        }
+        if sign_in {
+            app.start_sign_in(ui.ctx());
+        }
+        if sign_out {
+            app.backend.request(crate::backend::Req::Logout);
+        }
+    }
+    if !app.logged_in {
+        if app.spotify_user.is_none() {
+            ui.add_space(12.0);
+        }
+        settings_spotify(app, ui);
+    }
+}
+
+fn settings_spotify(app: &mut App, ui: &mut Ui) {
+    settings_card(ui, |ui| {
+        if let Some(username) = app.spotify_user.clone() {
+            setting_row(
+                ui,
+                &format!("Spotify ({username})"),
+                Some("Signed in to Spotify (Free & Premium). Sign out to switch to YouTube Music."),
+                |ui| {
+                    if pill_destructive(ui, "Sign out", Some(icon::LOG_OUT)).clicked() {
+                        app.backend.request(crate::backend::Req::SpotifyLogout);
+                    }
+                },
+            );
+            return;
+        }
+        if let Some(ch) = app.spotify_challenge.clone() {
+            setting_row(
+                ui,
+                "Verify Spotify login code",
+                Some(&format!("Enter the {}-character code sent to {}.", ch.code_length, ch.email)),
+                |_| {},
+            );
+            ui.add_space(8.0);
+            let enter = super::text_field(ui, "Verification code", &mut app.spotify_code, false, "123456")
+                .lost_focus()
+                && ui.input(|i| i.key_pressed(egui::Key::Enter));
+            ui.add_space(8.0);
+            ui.horizontal(|ui| {
+                if app.spotify_auth_busy {
                     ui.spinner();
                 } else {
-                    sign_in = pill(ui, "Sign in with Google", Some(icon::CIRCLE_USER), true).clicked();
+                    if pill(ui, "Verify", None, true).clicked() || enter {
+                        app.spotify_auth_busy = true;
+                        app.backend.request(crate::backend::Req::SpotifyEmailVerify {
+                            challenge: ch,
+                            code: app.spotify_code.trim().to_owned(),
+                        });
+                    }
+                    if pill(ui, "Cancel", None, false).clicked() {
+                        app.spotify_challenge = None;
+                        app.spotify_code.clear();
+                    }
                 }
             });
+            return;
+        }
+        let web_busy = app.spotify_web_signing_in.load(Ordering::Relaxed);
+        let mut web_sign_in = false;
+        let w = ui.available_width();
+        let (rect, _) = ui.allocate_exact_size(vec2(w, 72.0), Sense::hover());
+        let b = egui::Rect::from_min_size(pos2(rect.left(), rect.center().y - 22.0), vec2(44.0, 44.0));
+        super::transfer::badge(ui, b);
+        let x = b.right() + 16.0;
+        let tw = (rect.right() - x - 170.0).max(120.0);
+        ui.painter().text(pos2(x, rect.center().y - 10.0), Align2::LEFT_CENTER, "Spotify", theme::semibold(15.5), theme::text());
+        let g = widgets::galley_wrapped(
+            ui,
+            "Sign in with your Free or Premium Spotify account for Spotify playlists, albums and songs.",
+            theme::regular(11.0),
+            theme::text_dim(),
+            tw,
+            2,
+        );
+        ui.painter().galley(pos2(x, rect.center().y + 2.0), g, theme::text_dim());
+        let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect).layout(egui::Layout::right_to_left(egui::Align::Center)));
+        if web_busy {
+            child.spinner();
+        } else {
+            web_sign_in = pill(&mut child, "Sign in to Spotify", None, true).clicked();
+        }
+        if web_busy {
+            ui.add_space(4.0);
+            ui.label(RichText::new("Finish signing in in the window that opened.").font(theme::regular(11.0)).color(theme::text_dim()));
+        }
+        if web_sign_in {
+            app.start_spotify_account_sign_in(ui.ctx());
+        }
+        divider(ui);
+        setting_row(
+            ui,
+            "Or sign in directly",
+            Some("Use a Spotify Email code or Username & Password."),
+            |ui| {
+                if chip(ui, "Email code", !app.spotify_login_pw).clicked() {
+                    app.spotify_login_pw = false;
+                }
+                if chip(ui, "Password", app.spotify_login_pw).clicked() {
+                    app.spotify_login_pw = true;
+                }
+            },
+        );
+        ui.add_space(10.0);
+        if !app.spotify_login_pw {
+            let enter = super::text_field(ui, "Email", &mut app.spotify_email, false, "you@example.com")
+                .lost_focus()
+                && ui.input(|i| i.key_pressed(egui::Key::Enter));
+            ui.add_space(8.0);
+            if app.spotify_auth_busy {
+                ui.horizontal(|ui| {
+                    ui.spinner();
+                    if pill(ui, "Cancel", None, false).clicked() {
+                        app.spotify_auth_busy = false;
+                    }
+                });
+            } else if pill(ui, "Send login code", Some(icon::CIRCLE_USER), true).clicked() || enter {
+                app.spotify_auth_busy = true;
+                app.backend.request(crate::backend::Req::SpotifyEmailStart(app.spotify_email.trim().to_owned()));
+            }
+        } else {
+            super::text_field(ui, "Email or username", &mut app.spotify_email, false, "you@example.com");
+            ui.add_space(6.0);
+            let enter = super::dialogs::password_field(ui, "Password", &mut app.spotify_password, "Password")
+                .lost_focus()
+                && ui.input(|i| i.key_pressed(egui::Key::Enter));
+            ui.add_space(8.0);
+            if app.spotify_auth_busy {
+                ui.horizontal(|ui| {
+                    ui.spinner();
+                    if pill(ui, "Cancel", None, false).clicked() {
+                        app.spotify_auth_busy = false;
+                    }
+                });
+            } else if pill(ui, "Sign in to Spotify", Some(icon::CIRCLE_USER), true).clicked() || enter {
+                app.spotify_auth_busy = true;
+                app.backend.request(crate::backend::Req::SpotifyLogin {
+                    username: app.spotify_email.trim().to_owned(),
+                    password: app.spotify_password.clone(),
+                });
+            }
         }
     });
-    if busy {
-        ui.add_space(6.0);
-        ui.label(RichText::new("Finish signing in in the window that opened.").font(theme::regular(11.0)).color(theme::text_dim()));
-    }
-    if sign_in {
-        app.start_sign_in(ui.ctx());
-    }
-    if sign_out {
-        app.backend.request(crate::backend::Req::Logout);
-    }
 }
 
 fn channel_picker(app: &mut App, ui: &mut Ui) {
@@ -3089,7 +3312,7 @@ fn seconds_slider(ui: &mut Ui, v: &mut u32, range: std::ops::RangeInclusive<u32>
     resp.widget_info(|| egui::WidgetInfo::slider(ui.is_enabled(), value as f64, name));
     let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
     let h = if resp.hovered() || resp.dragged() { 1.0 } else { 0.0 };
-    let accent = ui.ctx().data(|d| d.get_temp::<Color32>(egui::Id::unique("accent"))).unwrap_or(theme::RED);
+    let accent = ui.ctx().data(|d| d.get_temp::<Color32>(egui::Id::unique("accent"))).unwrap_or(theme::BLUE);
     let t = (value - lo) as f32 / (hi - lo) as f32;
     let knob = pos2(egui::lerp(track.left()..=track.right(), t), track.center().y);
     ui.painter().rect_filled(track, 2.0, theme::glass(0.15));

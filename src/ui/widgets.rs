@@ -270,7 +270,16 @@ pub fn pill(ui: &mut Ui, label: &str, glyph: Option<char>, primary: bool) -> Res
     ui.painter().rect_filled(r.translate(vec2(0.0, 1.5)), radius, Color32::from_black_alpha(shadow_alpha));
 
     // Frosted capsule fill and subtle inside stroke
-    ui.painter().rect_filled(r, radius, fill);
+    if !primary && crate::renderer::active() == crate::renderer::Renderer::OpenGl {
+        let (tint, tint_alpha, sat, sheen) = if light {
+            (Color32::WHITE, 0.52 + 0.12 * h, 1.15, 0.18)
+        } else {
+            (Color32::from_rgb(0x22, 0x22, 0x28), 0.48 + 0.12 * h, 1.25, 0.12)
+        };
+        super::shell::paint_live_backdrop_blur(ui, resp.id.with("pill-blur"), r, radius, tint, tint_alpha, sat, sheen, 1.0);
+    } else {
+        ui.painter().rect_filled(r, radius, fill);
+    }
     ui.painter().rect_stroke(r, radius, egui::Stroke::new(1.0, stroke_color), egui::StrokeKind::Inside);
 
     let mut x = r.left() + 18.0;
@@ -335,7 +344,7 @@ pub fn chip(ui: &mut Ui, label: &str, selected: bool) -> Response {
     let s = theme::anim_bool(ui.ctx(), resp.id.with("s"), selected, 0.2);
     let radius = rect.height() / 2.0;
     let light = theme::light();
-    let accent = ui.ctx().data(|d| d.get_temp::<Color32>(egui::Id::unique("accent"))).unwrap_or(theme::RED);
+    let accent = ui.ctx().data(|d| d.get_temp::<Color32>(egui::Id::unique("accent"))).unwrap_or(theme::BLUE);
 
     // Soft drop shadow (subtle accent glow when selected)
     let shadow_alpha = if light { 20 } else { 38 };
@@ -374,8 +383,8 @@ pub fn chip(ui: &mut Ui, label: &str, selected: bool) -> Response {
 /// resizing the window doesn't fetch a new size every frame and small covers (rows,
 /// sidebar, player bar) share one download.
 fn fetch_px(px: u32) -> u32 {
-    const STEPS: [u32; 9] = [60, 120, 180, 240, 360, 544, 720, 960, 1200];
-    STEPS.into_iter().find(|&s| s >= px).unwrap_or(1200)
+    const STEPS: [u32; 10] = [60, 120, 180, 240, 360, 544, 720, 960, 1200, 1600];
+    STEPS.into_iter().find(|&s| s >= px).unwrap_or(1600)
 }
 
 /// How long the window's size must hold still before it counts as resized.
@@ -403,11 +412,11 @@ fn resizing(ctx: &egui::Context) -> bool {
 fn steady_url(ctx: &egui::Context, base: &str, px: u32) -> String {
     let want = sized(base, px);
     let id = egui::Id::unique(("cover-shown", base));
-    // Mid-resize, a cover that has a picture keeps it: every size step crossed would
-    // otherwise start a load, a decode and a texture upload for each cover on the page,
-    // and dragging the window edge would stutter. They catch up once it settles.
+    // Mid-resize, a cover that has a picture keeps it cleanly — but never stretch a tiny
+    // thumbnail (< 544px) into a fullscreen / large album cover.
     if resizing(ctx)
         && let Some(shown) = ctx.data(|d| d.get_temp::<u32>(id))
+        && (shown >= 544 || px <= 360)
     {
         return sized(base, shown);
     }
@@ -417,7 +426,7 @@ fn steady_url(ctx: &egui::Context, base: &str, px: u32) -> String {
         return want;
     }
     match ctx.data(|d| d.get_temp::<u32>(id)) {
-        Some(shown) if shown != px => sized(base, shown),
+        Some(shown) if shown != px && (shown >= 544 || px <= 360) => sized(base, shown),
         _ => want,
     }
 }
@@ -444,7 +453,7 @@ pub fn paint_cover_xfade_px(ui: &Ui, site: egui::Id, rect: Rect, thumbs: &[Thumb
     }
     let px = fetch_px(px);
     ui.painter().rect_filled(rect, radius, theme::glass(0.07));
-    let Some(t) = pick_thumb(thumbs, px.min(544)) else {
+    let Some(t) = pick_thumb(thumbs, px) else {
         icon_at(ui, rect.center(), icon::MUSIC, rect.width() * 0.3, theme::text_faint());
         return;
     };
@@ -467,7 +476,7 @@ pub fn paint_cover_px(ui: &Ui, rect: Rect, thumbs: &[Thumb], radius: f32, zoom: 
     }
     let px = fetch_px(px);
     ui.painter().rect_filled(rect, radius, theme::glass(0.07));
-    let Some(t) = pick_thumb(thumbs, px.min(544)) else {
+    let Some(t) = pick_thumb(thumbs, px) else {
         icon_at(ui, rect.center(), icon::MUSIC, rect.width() * 0.3, theme::text_faint());
         return;
     };
@@ -505,7 +514,7 @@ pub fn paint_cover_fade(ui: &Ui, site: egui::Id, rect: Rect, thumbs: &[Thumb], p
         return;
     }
     let px = fetch_px(px);
-    let Some(t) = pick_thumb(thumbs, px.min(544)) else { return };
+    let Some(t) = pick_thumb(thumbs, px) else { return };
     let url = steady_url(ui.ctx(), &t.url, px);
     let ready = matches!(egui::Image::new(&url).load_for_size(ui.ctx(), rect.size()), Ok(egui::load::TexturePoll::Ready { .. }));
     let uv = t.square_uv();
@@ -541,7 +550,7 @@ fn fade_mesh(ui: &Ui, url: &str, rect: Rect, uv: Rect, tint: Color32, fade_from:
 /// Start loading a cover at `px` without drawing it, so it's ready when it appears.
 pub fn preload_cover(ctx: &egui::Context, thumbs: &[Thumb], px: u32) {
     let px = fetch_px(px);
-    if let Some(t) = pick_thumb(thumbs, px.min(544)) {
+    if let Some(t) = pick_thumb(thumbs, px) {
         let _ = egui::Image::new(sized(&t.url, px)).load_for_size(ctx, Vec2::splat(px as f32));
     }
 }
@@ -553,7 +562,7 @@ pub fn preload_cover(ctx: &egui::Context, thumbs: &[Thumb], px: u32) {
 pub fn paint_disc(ui: &Ui, site: egui::Id, center: Pos2, r: f32, thumbs: &[Thumb], angle: f32, tint: Color32, px: u32) {
     ui.painter().circle_filled(center, r, theme::glass(0.07));
     let px = fetch_px(px);
-    let Some(t) = pick_thumb(thumbs, px.min(544)) else { return };
+    let Some(t) = pick_thumb(thumbs, px) else { return };
     let url = steady_url(ui.ctx(), &t.url, px);
     let ready = matches!(egui::Image::new(&url).load_for_size(ui.ctx(), Vec2::splat(r * 2.0)), Ok(egui::load::TexturePoll::Ready { .. }));
     let uv = t.square_uv();
@@ -682,8 +691,42 @@ pub fn card(ui: &mut Ui, c: &Card, width: f32, liked: bool, acts: &mut Vec<Actio
         let playing = active == Some(true);
         let p = named(p, &format!("{} {}", if playing { "Pause" } else { "Play" }, c.title)).on_hover_cursor(egui::CursorIcon::PointingHand);
         let ph = theme::anim_bool(ui.ctx(), p.id.with("ph"), p.hovered(), 0.15);
-        ui.painter().circle_filled(center, 18.0 + 1.5 * ph, theme::shade((0.62 + 0.10 * ph) * h));
-        play_pause_glyph(ui, center, 8.5, theme::with_alpha(Color32::WHITE, h), playing);
+        let r = 18.0 + 1.5 * ph;
+        let button_rect = Rect::from_center_size(center, Vec2::splat(r * 2.0));
+        let light = theme::light();
+        ui.painter().circle_filled(center + vec2(0.0, 1.5), r, Color32::from_black_alpha((36.0 * h) as u8));
+        if crate::renderer::active() == crate::renderer::Renderer::OpenGl {
+            let (tint_col, tint_alpha, sat, sheen) = if light {
+                (Color32::WHITE, 0.60 + 0.12 * ph, 1.25, 0.22)
+            } else {
+                (Color32::from_rgb(0x1a, 0x1c, 0x22), 0.52 + 0.12 * ph, 1.30, 0.18)
+            };
+            super::shell::paint_live_backdrop_blur(
+                ui,
+                egui::Id::unique("card-hover-play-blur"),
+                button_rect,
+                r,
+                tint_col,
+                tint_alpha,
+                sat,
+                sheen,
+                h,
+            );
+            let stroke_col = if light {
+                Color32::from_white_alpha((180.0 * h) as u8)
+            } else {
+                Color32::from_white_alpha(((55.0 + 30.0 * ph) * h) as u8)
+            };
+            ui.painter().circle_stroke(center, r, egui::Stroke::new(1.0, stroke_col));
+        } else {
+            ui.painter().circle_filled(center, r, theme::shade((0.62 + 0.10 * ph) * h));
+        }
+        let glyph_col = if light {
+            theme::with_alpha(Color32::from_rgb(0x18, 0x14, 0x1c), h)
+        } else {
+            theme::with_alpha(Color32::WHITE, h)
+        };
+        play_pause_glyph(ui, center, 8.5, glyph_col, playing);
         play_hit = p.clicked();
     }
     let tcolor = theme::text();
@@ -776,7 +819,7 @@ fn menu_row(ui: &mut Ui, label: &str, draw: Option<impl FnOnce(&Ui, Pos2, Color3
     let response = named(response, label);
     let over = response.hovered();
     if over {
-        let accent = ui.ctx().data(|d| d.get_temp::<Color32>(egui::Id::unique("accent"))).unwrap_or(theme::RED);
+        let accent = ui.ctx().data(|d| d.get_temp::<Color32>(egui::Id::unique("accent"))).unwrap_or(theme::BLUE);
         ui.painter().rect_filled(rect, 6.0, accent);
     }
     let color = if over {
@@ -1404,17 +1447,41 @@ pub fn h_scroll<R>(ui: &mut Ui, id: &str, nudge: i32, count: usize, item_width: 
     (out.inner, reached_end)
 }
 
-/// The skeleton's light band sweeping across `r`, for anything still loading.
-pub fn shimmer_band(ui: &Ui, r: Rect, radius: f32, time: f64) {
-    let phase = ((time * 1.3) % 1.5) as f32 - 0.25;
-    let x = r.left() + (r.width() + 300.0) * phase - 150.0;
-    let band = Rect::from_min_max(pos2((x - 70.0).max(r.left()), r.top()), pos2((x + 70.0).min(r.right()), r.bottom()));
-    if band.width() > 0.0 {
-        ui.painter().rect_filled(band, radius, theme::glass(0.025));
-    }
+/// The pulsing skeleton placeholder color at `time` with an optional phase offset in seconds.
+///
+/// Smoothly breathes between subtle placeholder opacity (4.5%) and active pulse (9.5%),
+/// matching modern pulsing skeleton animations (e.g. Tailwind `animate-pulse` / shadcn).
+pub fn skeleton_color_at(time: f64, offset: f64) -> Color32 {
+    let phase = ((time - offset) * (std::f64::consts::TAU / 1.8)).cos() as f32;
+    let pulse = 0.5 - 0.5 * phase;
+    let a = 0.045 + 0.050 * pulse;
+    theme::glass(a)
 }
 
-/// Paint a remote image into `rect`: the skeleton's shimmer while it downloads (not
+/// The active skeleton color at `time`, smoothly pulsing between min and max opacity.
+pub fn skeleton_color(time: f64) -> Color32 {
+    skeleton_color_at(time, 0.0)
+}
+
+/// Paint a pulsing skeleton placeholder block inside `rect`.
+pub fn skeleton_rect(ui: &Ui, rect: Rect, radius: f32, time: f64) {
+    skeleton_rect_at(ui, rect, radius, time, 0.0);
+}
+
+/// Paint a pulsing skeleton placeholder block inside `rect` with a phase offset.
+pub fn skeleton_rect_at(ui: &Ui, rect: Rect, radius: f32, time: f64, offset: f64) {
+    if !ui.is_rect_visible(rect) || rect.width() <= 0.0 || rect.height() <= 0.0 {
+        return;
+    }
+    ui.painter().rect_filled(rect, radius, skeleton_color_at(time, offset));
+}
+
+/// Pulsing placeholder for anything still loading (replaces former shimmer band).
+pub fn shimmer_band(ui: &Ui, r: Rect, radius: f32, time: f64) {
+    skeleton_rect(ui, r, radius, time);
+}
+
+/// Paint a remote image into `rect`: a pulsing skeleton while it downloads (not
 /// egui's spinner), then a quick fade-in. One already loaded just shows.
 pub fn paint_remote(ui: &Ui, url: &str, rect: Rect, radius: f32, uv: Rect, tint: Color32) {
     const FADE: f64 = 0.14;
@@ -1439,8 +1506,8 @@ pub fn paint_remote(ui: &Ui, url: &str, rect: Rect, radius: f32, uv: Rect, tint:
         }
         Ok(egui::load::TexturePoll::Pending { .. }) => {
             ctx.data_mut(|d| d.insert_temp::<Option<f64>>(id, None));
-            shimmer_band(ui, rect, radius, now);
-            ctx.request_repaint_after(std::time::Duration::from_millis(16));
+            skeleton_rect(ui, rect, radius, now);
+            super::animate(ctx);
         }
         // A failed image keeps its plain placeholder.
         Err(_) => {}
@@ -1470,77 +1537,71 @@ pub fn paint_motion(ui: &Ui, rect: Rect, radius: f32, s: &MotionSprite) {
     ui.painter().add(shape);
 }
 
-/// Song rows still on their way, at the end of a list that's coming in.
+/// Song rows still on their way, with a smooth staggered pulsing animation.
 pub fn skeleton_rows(ui: &mut Ui, time: f64, rows: usize) {
-    for _ in 0..rows {
+    for i in 0..rows {
         let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), ROW_H), Sense::hover());
         if !ui.is_rect_visible(r) {
             continue;
         }
         let cy = r.center().y;
+        let offset = (i as f64) * 0.08;
         for (b, radius) in [
             (Rect::from_min_size(pos2(r.left() + 10.0, cy - 20.0), Vec2::splat(40.0)), theme::thumb_radius()),
             (Rect::from_min_size(pos2(r.left() + 64.0, cy - 13.0), vec2((r.width() * 0.3).min(260.0), 11.0)), 4.0),
             (Rect::from_min_size(pos2(r.left() + 64.0, cy + 4.0), vec2((r.width() * 0.18).min(160.0), 9.0)), 4.0),
             (Rect::from_min_size(pos2(r.right() - 56.0, cy - 5.0), vec2(36.0, 10.0)), 4.0),
         ] {
-            ui.painter().rect_filled(b, radius, theme::glass(0.06));
-            shimmer_band(ui, b, radius, time);
+            skeleton_rect_at(ui, b, radius, time, offset);
         }
-        ui.ctx().request_repaint_after(std::time::Duration::from_millis(16));
     }
+    super::animate(ui.ctx());
 }
 
-/// Shimmering placeholder blocks while a page loads.
+/// Pulsing placeholder blocks while a page loads.
 pub fn skeleton(ui: &mut Ui, time: f64, rows: usize, card: f32) {
-    let shimmer = |ui: &Ui, r: Rect, radius: f32| {
-        ui.painter().rect_filled(r, radius, theme::glass(0.06));
-        shimmer_band(ui, r, radius, time);
-    };
     let top = ui.cursor().top();
-    for _ in 0..rows {
+    for row in 0..rows {
         ui.add_space(26.0);
         let (t, _) = ui.allocate_exact_size(vec2(220.0, 26.0), Sense::hover());
-        shimmer(ui, t, 6.0);
+        let row_offset = (row as f64) * 0.12;
+        skeleton_rect_at(ui, t, 6.0, time, row_offset);
         ui.add_space(14.0);
         ui.horizontal(|ui| {
-            for _ in 0..8 {
+            for col in 0..8 {
                 let (r, _) = ui.allocate_exact_size(vec2(card, card + 50.0), Sense::hover());
-                shimmer(ui, Rect::from_min_size(r.min, Vec2::splat(card)), 8.0);
-                shimmer(ui, Rect::from_min_size(r.min + vec2(0.0, card + 12.0), vec2(card * 0.8, 12.0)), 4.0);
-                shimmer(ui, Rect::from_min_size(r.min + vec2(0.0, card + 32.0), vec2(card * 0.5, 10.0)), 4.0);
+                let col_offset = row_offset + (col as f64) * 0.04;
+                skeleton_rect_at(ui, Rect::from_min_size(r.min, Vec2::splat(card)), 8.0, time, col_offset);
+                skeleton_rect_at(ui, Rect::from_min_size(r.min + vec2(0.0, card + 12.0), vec2(card * 0.8, 12.0)), 4.0, time, col_offset);
+                skeleton_rect_at(ui, Rect::from_min_size(r.min + vec2(0.0, card + 32.0), vec2(card * 0.5, 10.0)), 4.0, time, col_offset);
             }
         });
     }
-    // Repaint smoothly at 60 fps while on screen
     if ui.is_rect_visible(Rect::from_x_y_ranges(ui.max_rect().x_range(), top..=ui.cursor().top())) {
-        ui.ctx().request_repaint_after(std::time::Duration::from_millis(16));
+        super::animate(ui.ctx());
     }
 }
 
-/// Shimmering card grid (wrapped) for Library pages (Playlists, Albums, Artists).
+/// Pulsing card grid (wrapped) for Library pages (Playlists, Albums, Artists).
 pub fn skeleton_grid(ui: &mut Ui, time: f64, card: f32, circle: bool, count: usize) {
-    let shimmer = |ui: &Ui, r: Rect, radius: f32| {
-        ui.painter().rect_filled(r, radius, theme::glass(0.06));
-        shimmer_band(ui, r, radius, time);
-    };
     let radius = if circle { card / 2.0 } else { theme::card_radius() };
     let top = ui.cursor().top();
     ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing = vec2(20.0, 22.0);
-        for _ in 0..count {
+        for i in 0..count {
             let (r, _) = ui.allocate_exact_size(vec2(card, card + 48.0), Sense::hover());
-            shimmer(ui, Rect::from_min_size(r.min, Vec2::splat(card)), radius);
+            let offset = (i as f64) * 0.04;
+            skeleton_rect_at(ui, Rect::from_min_size(r.min, Vec2::splat(card)), radius, time, offset);
             let title_w = card * 0.70;
             let title_x = if circle { (card - title_w) / 2.0 } else { 0.0 };
-            shimmer(ui, Rect::from_min_size(r.min + vec2(title_x, card + 10.0), vec2(title_w, 12.0)), 4.0);
+            skeleton_rect_at(ui, Rect::from_min_size(r.min + vec2(title_x, card + 10.0), vec2(title_w, 12.0)), 4.0, time, offset);
             if !circle {
-                shimmer(ui, Rect::from_min_size(r.min + vec2(0.0, card + 28.0), vec2(card * 0.45, 10.0)), 4.0);
+                skeleton_rect_at(ui, Rect::from_min_size(r.min + vec2(0.0, card + 28.0), vec2(card * 0.45, 10.0)), 4.0, time, offset);
             }
         }
     });
     if ui.is_rect_visible(Rect::from_x_y_ranges(ui.max_rect().x_range(), top..=ui.cursor().top())) {
-        ui.ctx().request_repaint_after(std::time::Duration::from_millis(16));
+        super::animate(ui.ctx());
     }
 }
 

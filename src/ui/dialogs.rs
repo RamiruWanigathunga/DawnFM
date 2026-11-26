@@ -184,6 +184,14 @@ fn field_label(ui: &mut Ui, label: &str) {
 
 /// A labelled text box on a glass fill, like the jam and transfer pages' inputs.
 pub(super) fn text_field(ui: &mut Ui, label: &str, text: &mut String, multiline: bool, hint: &str) -> egui::Response {
+    text_field_styled(ui, label, text, multiline, false, hint)
+}
+
+pub(super) fn password_field(ui: &mut Ui, label: &str, text: &mut String, hint: &str) -> egui::Response {
+    text_field_styled(ui, label, text, false, true, hint)
+}
+
+fn text_field_styled(ui: &mut Ui, label: &str, text: &mut String, multiline: bool, password: bool, hint: &str) -> egui::Response {
     use egui::{Sense, vec2};
     if !label.is_empty() {
         field_label(ui, label);
@@ -192,7 +200,11 @@ pub(super) fn text_field(ui: &mut Ui, label: &str, text: &mut String, multiline:
     // Painted first, so the text box draws over it.
     let bg = ui.painter().add(egui::Shape::Noop);
     let inner = rect.shrink2(vec2(14.0, if multiline { 10.0 } else { 4.0 }));
-    let edit = if multiline { egui::TextEdit::multiline(text).desired_rows(4) } else { egui::TextEdit::singleline(text).align(egui::Align2::LEFT_CENTER) };
+    let edit = if multiline {
+        egui::TextEdit::multiline(text).desired_rows(4)
+    } else {
+        egui::TextEdit::singleline(text).password(password).align(egui::Align2::LEFT_CENTER)
+    };
     let resp = ui.put(
         inner,
         edit.hint_text(egui::RichText::new(hint).color(theme::text_faint())).font(theme::regular(14.0)).frame(egui::Frame::NONE).desired_width(inner.width()),

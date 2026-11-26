@@ -1,8 +1,8 @@
 <div align="center">
   <img src="assets/icon/icon.png" width="120" alt="Dawn FM">
   <h1>Dawn FM</h1>
-  <p><strong>Fast, lightweight native YouTube Music player for macOS & Windows</strong></p>
-  <p>Pure Rust · No Electron · 120 FPS animations · Ultra-low memory</p>
+  <p><strong>A fast, lightweight native YouTube Music &amp; Spotify player for macOS &amp; Windows</strong></p>
+  <p>Pure Rust · No Electron · Frosted glass UI · 120 FPS animations · Ultra-low memory</p>
 
   <p>
     <a href="https://github.com/wenujacodes/DawnFM/releases/latest"><img src="https://img.shields.io/github/v/release/wenujacodes/DawnFM?style=flat-square&color=a855f7&labelColor=0d1117" alt="Latest release"></a>
@@ -30,12 +30,13 @@
 
 ## Key Features
 
-- **Native & Ultra-Fast**: Built with Rust, [egui](https://github.com/emilk/egui), and [rodio](https://github.com/RustAudio/rodio). Instant playback, near-zero idle resource usage, and smooth 120 FPS UI.
-- **Cross-Platform**: First-class support for **macOS** (Apple Silicon & Intel) and **Windows** (frameless custom titlebar, installer & portable zip).
-- **Karaoke Lyrics**: Timed syllable-by-syllable synchronized lyrics with artwork-adaptive blur and typography.
-- **Hi-Res Audio**: Lossless & Dolby Atmos playback with DJ automix and seamless crossfade.
-- **Offline & Full Screen**: Local song downloads, library sync via Google sign-in, and immersive auto-hiding full screen mode.
-- **Privacy First**: Zero telemetry, no analytics, direct YouTube Music connection, and credentials encrypted in OS keychain/credential manager.
+- **YouTube Music & Spotify**: Start listening to YouTube Music right away without signing in, sign in with Google for your personal feed and library, or connect your **Spotify** account (Free & Premium, ad-free) via browser login, Email Code, or password.
+- **Native & Ultra-Fast**: Built in Rust with [egui](https://github.com/emilk/egui) and [rodio](https://github.com/RustAudio/rodio). Instant playback, frosted glass visuals, near-zero idle resource usage, and smooth 120 FPS animations.
+- **Cross-Platform**: First-class support for **macOS** (Apple Silicon & Intel vibrancy/Liquid Glass) and **Windows** (frameless custom titlebar, installer & portable zip).
+- **Karaoke Lyrics**: Timed syllable-by-syllable synchronized lyrics (including Spotify & Hi-Res sources) with artwork-adaptive blur and typography.
+- **Hi-Res Audio & Automix**: Lossless & Dolby Atmos addon playback, DJ automix, and seamless crossfade.
+- **Playlist Transfer & Offline Mode**: Copy your Spotify Liked Songs and playlists to YouTube Music, download tracks offline, and enjoy an auto-hiding full-screen player.
+- **Privacy First**: Zero telemetry, no analytics, direct service connections, and credentials encrypted in your macOS Keychain / Windows Credential Manager.
 
 ## Installation
 
@@ -51,7 +52,7 @@ Download the latest version from **[GitHub Releases](https://github.com/wenujaco
 ```sh
 git clone https://github.com/wenujacodes/DawnFM.git && cd DawnFM
 cargo build --release
-sh macos/bundle.sh target/release/dawnfm 2.4.4 out
+sh macos/bundle.sh target/release/dawnfm 2.5.0 out
 ```
 
 ## Credits

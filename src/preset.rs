@@ -12,7 +12,7 @@ use serde::Deserialize;
 /// Id of the built-in look (the app's own design, not a Better Lyrics theme).
 pub const DEFAULT_ID: &str = "ytm-rs";
 /// The built-in look's accent: a warm red.
-pub const DEFAULT_ACCENT: &str = "#f2364d";
+pub const DEFAULT_ACCENT: &str = "#3d8bff";
 
 #[derive(Clone, Copy, PartialEq, Default, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -372,7 +372,7 @@ impl Preset {
             id: DEFAULT_ID.into(),
             name: "Dawn FM".into(),
             creators: vec!["wenujacodes".into()],
-            blurb: "The app's own look: near-black pages tinted by the album art, a red accent, a floating sidebar and bold lyrics.".into(),
+            blurb: "The app's own look: near-black pages tinted by the album art, a blue accent, a floating sidebar and bold lyrics.".into(),
             accent: DEFAULT_ACCENT.into(),
             // Now playing: the cover fills the height on the left and fades into the
             // lyrics on the right, the song and its controls on a card over it.
@@ -428,24 +428,26 @@ pub struct Colour {
     pub solid: &'static str,
 }
 
-/// The first is the default: the look as it was before there was a choice.
+/// Built-in colour swatches; Blue is the default (`DEFAULT_COLOUR_IDX`), and any selection is persisted.
 pub const COLOURS: &[Colour] = &[
-    Colour { id: "red", name: "Red", accent: DEFAULT_ACCENT, solid: "#111111" },
+    Colour { id: "red", name: "Red", accent: "#f2364d", solid: "#111111" },
     Colour { id: "orange", name: "Orange", accent: "#ff7a2f", solid: "#111111" },
     Colour { id: "amber", name: "Amber", accent: "#f2b33d", solid: "#111111" },
     Colour { id: "green", name: "Green", accent: "#34c77b", solid: "#111111" },
     Colour { id: "teal", name: "Teal", accent: "#2bbfc4", solid: "#111111" },
-    Colour { id: "blue", name: "Blue", accent: "#3d8bff", solid: "#111111" },
+    Colour { id: "blue", name: "Blue", accent: DEFAULT_ACCENT, solid: "#111111" },
     Colour { id: "indigo", name: "Indigo", accent: "#7371ff", solid: "#111111" },
     Colour { id: "purple", name: "Purple", accent: "#a960f5", solid: "#111111" },
     Colour { id: "pink", name: "Pink", accent: "#ff5c9d", solid: "#111111" },
 ];
 
-static COLOUR: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+const DEFAULT_COLOUR_IDX: usize = 5;
 
-/// Pick the built-in look's colour by id; one that isn't there is the default.
+static COLOUR: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(DEFAULT_COLOUR_IDX);
+
+/// Pick the built-in look's colour by id; one that isn't there uses the default (Blue).
 pub fn set_colour(id: &str) {
-    let i = COLOURS.iter().position(|c| c.id == id).unwrap_or(0);
+    let i = COLOURS.iter().position(|c| c.id == id).unwrap_or(DEFAULT_COLOUR_IDX);
     COLOUR.store(i, std::sync::atomic::Ordering::Relaxed);
 }
 

@@ -24,6 +24,22 @@ impl App {
         });
     }
 
+    pub(super) fn start_spotify_account_sign_in(&self, ctx: &egui::Context) {
+        if self.spotify_web_signing_in.swap(true, Ordering::Relaxed) {
+            return;
+        }
+        let (backend, busy, ctx) = (self.backend.clone(), self.spotify_web_signing_in.clone(), ctx.clone());
+        crate::login::spawn(crate::login::Site::Spotify, backend.spotify_login_profile(), move |outcome| {
+            match outcome {
+                crate::login::Outcome::Cookie(c) => backend.request(Req::SpotifyWebLogin(c)),
+                crate::login::Outcome::Cancelled => {}
+                crate::login::Outcome::Failed(e) => backend.report_error(format!("Spotify sign-in window failed: {e}")),
+            }
+            busy.store(false, Ordering::Relaxed);
+            ctx.request_repaint();
+        });
+    }
+
     pub(super) fn start_sign_in(&self, ctx: &egui::Context) {
         if self.signing_in.swap(true, Ordering::Relaxed) {
             return;

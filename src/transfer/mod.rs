@@ -1228,6 +1228,23 @@ fn score(hit: &YtTrack, t: &Track) -> i32 {
     score
 }
 
+/// Match a non-YTM track (such as a Spotify catalog track) to its best YouTube Music equivalent.
+pub(crate) async fn match_track_to_ytm(
+    api: &Api,
+    title: &str,
+    artists: &[crate::model::Link],
+    duration: Option<u32>,
+) -> Result<Option<YtTrack>> {
+    let t = spotify::Track {
+        name: title.to_string(),
+        artists: artists.iter().map(|a| a.name.clone()).collect(),
+        local: false,
+        art: None,
+        duration,
+    };
+    Ok(search_song(api, &t).await?.map(|(yt, _)| yt))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

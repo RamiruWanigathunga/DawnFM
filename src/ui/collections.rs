@@ -48,6 +48,9 @@ impl App {
         if self.logged_in {
             self.load_list(LIKED_MUSIC, false, changed);
         }
+        if self.spotify_user.is_some() {
+            self.load_list(crate::spotify::SPOTIFY_LIKED_ID, false, changed);
+        }
     }
 
     /// Likes made here show at once, in the hearts and in Liked Music as kept. (A whole
@@ -87,10 +90,11 @@ impl App {
     /// counts: one from before a sign-in change or a deletion is dropped.
     pub(super) fn collection_in(&mut self, load: u64, c: Collection, more: bool) {
         let mut prefetch_urls = Vec::new();
-        if let Some(t) = crate::model::pick_thumb(&c.thumbs, 544) {
+        if let Some(t) = crate::model::pick_thumb(&c.thumbs, 720) {
+            prefetch_urls.push(crate::model::sized(&t.url, 720));
             prefetch_urls.push(crate::model::sized(&t.url, 544));
         }
-        for track in c.tracks.iter().take(12) {
+        for track in c.tracks.iter().take(24) {
             if let Some(t) = crate::model::pick_thumb(&track.thumbs, 120) {
                 prefetch_urls.push(crate::model::sized(&t.url, 120));
             }
@@ -114,8 +118,14 @@ impl App {
         if id == LIKED_MUSIC
             && let Some(o) = self.lists.get(LIKED_MUSIC)
         {
-            self.liked = o.c.tracks.iter().map(|t| t.id.clone()).collect();
+            self.liked.retain(|tid| crate::spotify::is_spotify_id(tid));
+            self.liked.extend(o.c.tracks.iter().map(|t| t.id.clone()));
             log::debug!("hearts: {} liked (from Liked Music's first page or whole copy)", self.liked.len());
+        } else if id == crate::spotify::SPOTIFY_LIKED_ID
+            && let Some(o) = self.lists.get(crate::spotify::SPOTIFY_LIKED_ID)
+        {
+            self.liked.retain(|tid| !crate::spotify::is_spotify_id(tid));
+            self.liked.extend(o.c.tracks.iter().map(|t| t.id.clone()));
         }
         if let Arrival::Done(done) = arrival {
             self.load_done(&id, done);
@@ -138,7 +148,7 @@ impl App {
         let keep = self.keep_lists();
         let keep: Vec<&str> = keep.iter().map(String::as_str).collect();
         let Some(page) = self.lists.page(&id, load, tracks, set_ids, more, &keep) else { return };
-        if id == LIKED_MUSIC {
+        if id == LIKED_MUSIC || id == crate::spotify::SPOTIFY_LIKED_ID {
             if page.kept {
                 self.liked.extend(page.tracks.iter().map(|t| t.id.clone()));
             }
@@ -191,13 +201,23 @@ impl App {
 
     pub(super) fn request_library(&mut self) {
         self.library_requested = std::time::Instant::now();
-        self.backend.request(Req::Library);
+        if self.spotify_mode {
+            if self.spotify_user.is_some() {
+                self.backend.request(Req::SpotifyLibrary);
+            }
+        } else {
+            self.backend.request(Req::Library);
+        }
     }
 
     /// Show `card` as in (or out of) the library at once, before YouTube Music confirms;
     /// the list it sends back replaces this.
     pub(super) fn set_saved(&mut self, card: &Card, save: bool) {
-        let Some(lib) = &mut self.library else { return };
+        let is_sp = match &card.target {
+            Target::Album(id) | Target::Playlist(id) | Target::Artist(id) => crate::spotify::is_spotify_id(id),
+            Target::Song(t) => crate::spotify::is_spotify_id(&t.id),
+        };
+        let Some(lib) = (if is_sp { &mut self.spotify_library } else { &mut self.library }) else { return };
         let list = if matches!(card.target, Target::Album(_)) { &mut lib.albums } else { &mut lib.playlists };
         list.retain(|c| c.target != card.target);
         if save {

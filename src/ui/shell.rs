@@ -325,7 +325,7 @@ pub fn sidebar(app: &mut App, ui: &mut Ui) {
             sidebar_search_content(app, ui);
         });
     } else {
-        if section(ui, "YouTube Music") {
+        if section(ui, if app.spotify_mode { "Spotify" } else { "YouTube Music" }) {
             nav(ui, glyphs::HOME, APPLE, &t!("home"), Page::Home, p == Page::Home, &mut go_to);
             nav(ui, glyphs::EXPLORE, APPLE, &t!("new"), Page::New, p == Page::New, &mut go_to);
         }
@@ -336,7 +336,9 @@ pub fn sidebar(app: &mut App, ui: &mut Ui) {
             icon_row(ui, icon::CIRCLE_USER, &t!("artists"), Page::Library(LibTab::Artists), lib(LibTab::Artists), &mut go_to);
             icon_row(ui, icon::DISC_3, &t!("albums"), Page::Library(LibTab::Albums), lib(LibTab::Albums), &mut go_to);
             icon_row(ui, icon::HEART, &t!("liked_songs"), Page::Library(LibTab::Songs), lib(LibTab::Songs), &mut go_to);
-            icon_row(ui, icon::HISTORY, &t!("recently_played"), Page::Library(LibTab::History), lib(LibTab::History), &mut go_to);
+            if !app.spotify_mode {
+                icon_row(ui, icon::HISTORY, &t!("recently_played"), Page::Library(LibTab::History), lib(LibTab::History), &mut go_to);
+            }
             nav(ui, glyphs::DOWNLOAD, APPLE, &t!("downloads"), Page::Downloads, p == Page::Downloads, &mut go_to);
         }
         ui.add_space(4.0);
@@ -344,7 +346,7 @@ pub fn sidebar(app: &mut App, ui: &mut Ui) {
 
         // Playlists that appeared since the order was last changed join it at the end, so a
         // drag can place any of them.
-        if let Some(l) = &app.library {
+        if let Some(l) = if app.spotify_mode { &app.spotify_library } else { &app.library } {
             for c in &l.playlists {
                 if let Target::Playlist(id) = &c.target
                     && !app.playlist_order.contains(id)
@@ -356,11 +358,19 @@ pub fn sidebar(app: &mut App, ui: &mut Ui) {
 
         let pl_h = (ui.available_height() - bottom_h).max(0.0);
         ui.allocate_ui(vec2(ui.available_width(), pl_h), |ui| {
-            if !app.logged_in {
-                ui.label(egui::RichText::new(t!("sign_in_to_see_playlists")).color(theme::text_dim()));
-                ui.add_space(8.0);
-                if widgets::pill(ui, &t!("sign_in"), None, false).clicked() {
-                    app.start_sign_in(ui.ctx());
+            if !app.active_logged_in() {
+                if app.spotify_mode {
+                    ui.label(egui::RichText::new("Sign in to Spotify to see your playlists.").color(theme::text_dim()));
+                    ui.add_space(8.0);
+                    if widgets::pill(ui, "Open Settings", None, false).clicked() {
+                        go_to = Some(Page::Settings);
+                    }
+                } else {
+                    ui.label(egui::RichText::new(t!("sign_in_to_see_playlists")).color(theme::text_dim()));
+                    ui.add_space(8.0);
+                    if widgets::pill(ui, &t!("sign_in"), None, false).clicked() {
+                        app.start_sign_in(ui.ctx());
+                    }
                 }
                 return;
             }
@@ -373,7 +383,8 @@ pub fn sidebar(app: &mut App, ui: &mut Ui) {
                 .max_height(pl_h)
                 .show(ui, |ui| {
                 // Last launch's list until the library arrives.
-                let Some(playlists) = app.library.as_ref().map(|l| &l.playlists).or(app.sidebar_cache.as_ref()) else {
+                let fallback_cache = if app.spotify_mode { None } else { app.sidebar_cache.as_ref() };
+                let Some(playlists) = (if app.spotify_mode { app.spotify_library.as_ref() } else { app.library.as_ref() }).map(|l| &l.playlists).or(fallback_cache).cloned() else {
                     // The spinner animates every frame: give up on a request that never answered.
                     if app.library_requested.elapsed() < std::time::Duration::from_secs(20) {
                         ui.horizontal(|ui| {
@@ -429,6 +440,7 @@ pub fn sidebar(app: &mut App, ui: &mut Ui) {
                     let is_liked = id == super::LIKED_MUSIC
                         || id == "LM"
                         || id == "VLLM"
+                        || id == crate::spotify::SPOTIFY_LIKED_ID
                         || c.thumbs.iter().any(|t| t.url.contains("/images/pbg/liked-songs"));
                     if is_liked {
                         let icon_fg = if selected {
@@ -918,7 +930,10 @@ void main() {
   vec3 vib = mix(vec3(lum), blur_col, u_sat);
   vec3 rgb = mix(vib, u_tint.rgb, u_tint.a);
   float top_sheen = smoothstep(2.5, 0.0, abs(u_rect_size.y - pos_px.y - 1.5)) * smoothstep(-3.0, -1.0, dist);
-  rgb += vec3(u_sheen * top_sheen);
+  float rim = smoothstep(2.2, 0.0, abs(dist + 1.2)) * 0.18;
+  rgb += vec3(u_sheen * (top_sheen * 0.85 + rim * 0.75));
+  float dither = (fract(sin(dot(pos_px, vec2(12.9898, 78.233))) * 43758.5453) - 0.5) * (1.0 / 255.0);
+  rgb = clamp(rgb + dither, 0.0, 1.0);
   FRAG = vec4(rgb * edge, edge);
 }
 "#;
@@ -1108,13 +1123,23 @@ struct BackdropBlurCell {
     failed: bool,
 }
 
-fn paint_live_backdrop_blur(ui: &mut Ui, cap: Rect, radius: f32, tint_col: Color32, tint_alpha: f32, sat: f32, sheen: f32) {
-    let alpha = ui.opacity();
-    if alpha <= 0.001 {
+pub(crate) fn paint_live_backdrop_blur(
+    ui: &mut Ui,
+    id: egui::Id,
+    cap: Rect,
+    radius: f32,
+    tint_col: Color32,
+    tint_alpha: f32,
+    sat: f32,
+    sheen: f32,
+    alpha: f32,
+) {
+    let effective_alpha = (ui.opacity() * alpha).clamp(0.0, 1.0);
+    if effective_alpha <= 0.001 {
         return;
     }
     let state: Arc<Mutex<BackdropBlurCell>> = ui.ctx().data_mut(|d| {
-        d.get_temp_mut_or_insert_with(egui::Id::unique("player-bar-blur-gl"), || Arc::new(Mutex::new(BackdropBlurCell::default())))
+        d.get_temp_mut_or_insert_with(id, || Arc::new(Mutex::new(BackdropBlurCell::default())))
             .clone()
     });
     let tint = [
@@ -1123,6 +1148,7 @@ fn paint_live_backdrop_blur(ui: &mut Ui, cap: Rect, radius: f32, tint_col: Color
         tint_col.b() as f32 / 255.0,
         tint_alpha,
     ];
+    let safe_radius = radius.min(cap.width() / 2.0).min(cap.height() / 2.0);
     let cb = eframe::egui_glow::CallbackFn::new(move |info, painter| {
         let vp = info.viewport_in_pixels();
         if vp.width_px <= 0 || vp.height_px <= 0 {
@@ -1222,11 +1248,11 @@ fn paint_live_backdrop_blur(ui: &mut Ui, cap: Rect, radius: f32, tint_col: Color
             gl.uniform_1_i32(s.comp_loc.tex.as_ref(), 0);
             gl.uniform_4_f32(s.comp_loc.uv_rect.as_ref(), u0, v0, uw, vh);
             gl.uniform_2_f32(s.comp_loc.rect_size.as_ref(), vp.width_px as f32, vp.height_px as f32);
-            gl.uniform_1_f32(s.comp_loc.radius_px.as_ref(), radius * info.pixels_per_point);
+            gl.uniform_1_f32(s.comp_loc.radius_px.as_ref(), safe_radius * info.pixels_per_point);
             gl.uniform_4_f32(s.comp_loc.tint.as_ref(), tint[0], tint[1], tint[2], tint[3]);
             gl.uniform_1_f32(s.comp_loc.sat.as_ref(), sat);
             gl.uniform_1_f32(s.comp_loc.sheen.as_ref(), sheen);
-            gl.uniform_1_f32(s.comp_loc.alpha.as_ref(), alpha);
+            gl.uniform_1_f32(s.comp_loc.alpha.as_ref(), effective_alpha);
             gl.draw_arrays(glow::TRIANGLES, 0, 3);
 
             if !prev_blend {
@@ -1271,7 +1297,7 @@ pub fn player_bar(app: &mut App, ui: &mut Ui, now: f64, _frosted: bool) {
             } else {
                 (theme::lerp_color(p_col, Color32::from_rgb(0x16, 0x18, 0x1e), 0.55), 0.52, 1.25, 0.07)
             };
-            paint_live_backdrop_blur(ui, cap, radius, tint_col, tint_alpha, sat, sheen);
+            paint_live_backdrop_blur(ui, egui::Id::unique("player-bar-blur-gl"), cap, radius, tint_col, tint_alpha, sat, sheen, 1.0);
         } else {
             let fill = if light {
                 theme::with_alpha(theme::lerp_color(p_col, Color32::WHITE, 0.72), 0.72)

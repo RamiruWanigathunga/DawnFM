@@ -169,15 +169,28 @@ impl App {
         self.audio.status.playing.load(Ordering::Relaxed)
     }
 
-    /// Fetch the current song's art for the background and accent.
+    /// Fetch the current song's art for the background and accent, plus hi-res cover for sharp Now Playing / fullscreen.
     pub(super) fn request_art(&mut self) {
-        let Some(track) = self.current() else { return };
+        let Some(track) = self.current().cloned() else { return };
+        self.prefetch_hi_res_cover(&track);
         if self.art_key.as_deref() == Some(track.id.as_str()) {
             return;
         }
-        if let Some(url) = backend::art_url(track) {
+        if let Some(url) = backend::art_url(&track) {
             let key = track.id.clone();
             self.backend.request(Req::Art { key, url });
+        }
+    }
+
+    fn prefetch_hi_res_cover(&self, track: &Track) {
+        let mut urls = Vec::new();
+        if let Some(t) = crate::model::pick_thumb(&track.thumbs, 1600) {
+            urls.push(crate::model::sized(&t.url, 1600));
+            urls.push(crate::model::sized(&t.url, 1200));
+            urls.push(crate::model::sized(&t.url, 960));
+        }
+        if !urls.is_empty() {
+            crate::images::prefetch_thumbs(&self.backend, urls);
         }
     }
 
@@ -436,6 +449,7 @@ impl App {
     /// Fetch whatever plays after the current track so skipping is instant.
     pub(super) fn prefetch_next(&self) {
         if let Some(t) = self.queue.upcoming() {
+            self.prefetch_hi_res_cover(t);
             self.backend.request(Req::Prefetch {
                 video_id: t.id.clone(),
                 extra: Box::new(crate::backend::PrefetchExtra {

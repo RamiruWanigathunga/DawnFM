@@ -19,8 +19,9 @@ const BG_LIGHT: Color32 = Color32::from_rgb(246, 244, 248);
 const TEXT_LIGHT: Color32 = Color32::from_rgb(22, 20, 26);
 const TEXT_DIM_LIGHT: Color32 = Color32::from_rgb(86, 82, 94);
 const TEXT_FAINT_LIGHT: Color32 = Color32::from_rgb(124, 118, 132);
-/// Default accent until a cover provides one (the built-in look's red).
+/// Built-in red and blue tokens (Blue is the default accent; Red is used for errors and the Red swatch).
 pub const RED: Color32 = Color32::from_rgb(0xF2, 0x36, 0x4D);
+pub const BLUE: Color32 = Color32::from_rgb(0x3D, 0x8B, 0xFF);
 
 /// Light or dark, as the app picked it for what's being drawn (see `set_mode`): the
 /// colours below follow it. Now playing always draws dark, over the album art.

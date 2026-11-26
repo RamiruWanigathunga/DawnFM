@@ -136,6 +136,55 @@ struct Hashes {
     ops: std::collections::BTreeMap<String, String>,
 }
 
+pub(crate) struct WebTokens {
+    pub access_token: String,
+    pub client_id: String,
+    pub client_token: String,
+    pub client_version: String,
+    pub device_id: String,
+    pub user_agent: &'static str,
+}
+
+async fn web_page_info(http: &reqwest::Client) -> Result<(String, String, String)> {
+    let resp = http
+        .get("https://open.spotify.com")
+        .header("User-Agent", UA)
+        .send()
+        .await?
+        .error_for_status()?;
+    let device_id = resp
+        .headers()
+        .get_all("set-cookie")
+        .iter()
+        .filter_map(|v| v.to_str().ok()?.strip_prefix("sp_t=")?.split(';').next().map(str::to_owned))
+        .next()
+        .unwrap_or_default();
+    let html = resp.text().await?;
+    let config = between(&html, r#"<script id="appServerConfig" type="text/plain">"#, "</script>")
+        .context("open.spotify.com is missing appServerConfig")?;
+    let config: Value = serde_json::from_slice(&base64::engine::general_purpose::STANDARD.decode(config.trim())?)?;
+    let client_version = config["clientVersion"].as_str().context("appServerConfig has no clientVersion")?.to_owned();
+    let bundle = script_srcs(&html)
+        .find(|s| s.contains("web-player/web-player") && s.ends_with(".js"))
+        .context("open.spotify.com has no web-player bundle")?
+        .to_owned();
+    Ok((device_id, client_version, bundle))
+}
+
+pub(crate) async fn web_tokens_from_cookie(http: &reqwest::Client, sp_dc: &str) -> Result<WebTokens> {
+    let (device_id, client_version, _) = web_page_info(http).await?;
+    let (access_token, client_id) = access_token(http, Some(sp_dc), &device_id).await?;
+    let client_token = client_token(http, &client_version, &client_id, &device_id).await?;
+    Ok(WebTokens {
+        access_token,
+        client_id,
+        client_token,
+        client_version,
+        device_id,
+        user_agent: UA,
+    })
+}
+
 impl Client {
     /// `sp_dc` signs in as the user it belongs to; `None` is anonymous.
     pub async fn connect(sp_dc: Option<&str>, data_dir: &Path) -> Result<Self> {
@@ -145,24 +194,7 @@ impl Client {
             .timeout(std::time::Duration::from_secs(20))
             .build()?;
 
-        let resp = http.get("https://open.spotify.com").send().await?.error_for_status()?;
-        let device_id = resp
-            .headers()
-            .get_all("set-cookie")
-            .iter()
-            .filter_map(|v| v.to_str().ok()?.strip_prefix("sp_t=")?.split(';').next().map(str::to_owned))
-            .next()
-            .unwrap_or_default();
-        let html = resp.text().await?;
-
-        let config = between(&html, r#"<script id="appServerConfig" type="text/plain">"#, "</script>")
-            .context("open.spotify.com is missing appServerConfig")?;
-        let config: Value = serde_json::from_slice(&base64::engine::general_purpose::STANDARD.decode(config.trim())?)?;
-        let client_version = config["clientVersion"].as_str().context("appServerConfig has no clientVersion")?.to_owned();
-        let bundle = script_srcs(&html)
-            .find(|s| s.contains("web-player/web-player") && s.ends_with(".js"))
-            .context("open.spotify.com has no web-player bundle")?
-            .to_owned();
+        let (device_id, client_version, bundle) = web_page_info(&http).await?;
 
         // The access token, client token and query hashes don't depend on each other.
         let (token, hashes) = tokio::try_join!(access_token(&http, sp_dc, &device_id), query_hashes(&http, &bundle, data_dir))?;
