@@ -774,10 +774,7 @@ fn song_grid(ui: &mut Ui, rows_ctx: &Rows, liked: &HashSet<String>, acts: &mut V
                 ui.set_width(col_w);
                 ui.vertical(|ui| {
                     for (i, t) in col.iter().enumerate() {
-                        let o = RowOpts {
-                            alt: i % 2 == 0,
-                            ..rows_ctx.opts(liked, t, None, false)
-                        };
+                        let o = rows_ctx.opts(liked, t, None, false);
                         if track_row(ui, t, &o, acts).clicked() {
                             picked = Some(c * rows + i);
                         }
@@ -1154,7 +1151,7 @@ fn search(app: &mut App, ui: &mut Ui, q: &str, now: f64) {
             ui.label(RichText::new("Songs").font(theme::bold(24.0)));
             ui.add_space(8.0);
             for (i, t) in r.tracks.iter().take(4).enumerate() {
-                let o = RowOpts { pick, alt: i % 2 == 0, ..rows.opts(liked, t, None, false) };
+                let o = RowOpts { pick, ..rows.opts(liked, t, None, false) };
                 if track_row(ui, t, &o, acts).clicked() {
                     acts.push(if pick { Action::TransferPick(t.clone()) } else { Action::Play(r.tracks.clone(), i) });
                 }
@@ -1168,7 +1165,7 @@ fn search(app: &mut App, ui: &mut Ui, q: &str, now: f64) {
         ui.label(RichText::new("More songs").font(theme::bold(24.0)));
         ui.add_space(10.0);
         for (i, t) in r.tracks.iter().enumerate().skip(4) {
-            let o = RowOpts { pick, alt: i % 2 == 0, ..rows.opts(liked, t, None, true) };
+            let o = RowOpts { pick, ..rows.opts(liked, t, None, true) };
             if track_row(ui, t, &o, acts).clicked() {
                 acts.push(if pick { Action::TransferPick(t.clone()) } else { Action::Play(r.tracks.clone(), i) });
             }
@@ -1680,9 +1677,6 @@ fn artist_top_songs_section(ui: &mut Ui, a: &crate::backend::ArtistPage, acts: &
                                 let (tile_rect, resp) = ui.allocate_exact_size(vec2(col_w, tile_h), Sense::click());
                                 let resp = named(resp, &t.title).on_hover_cursor(egui::CursorIcon::PointingHand);
                                 let h = if resp.hovered() { 1.0 } else { 0.0 };
-                                if row % 2 == 0 {
-                                    ui.painter().rect_filled(tile_rect, 8.0, theme::glass(0.025));
-                                }
                                 if h > 0.0 {
                                     ui.painter().rect_filled(tile_rect, 8.0, theme::glass(0.08));
                                 }
