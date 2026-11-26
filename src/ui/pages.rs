@@ -476,17 +476,27 @@ pub fn circle_action(ui: &mut Ui, glyph: CircleGlyph, name: &str, active: bool) 
     ui.painter().circle_filled(rect.center() + vec2(0.0, 1.5), press, Color32::from_black_alpha(shadow_alpha));
 
     // Frosted glass fill & inside stroke
-    let fill = if light {
-        theme::lerp_color(Color32::from_black_alpha(15), Color32::from_black_alpha(28), h)
+    if crate::renderer::active() == crate::renderer::Renderer::OpenGl {
+        let (tint, tint_alpha, sat, sheen) = if light {
+            (Color32::WHITE, 0.52 + 0.12 * h, 1.15, 0.18)
+        } else {
+            (Color32::from_rgb(0x22, 0x22, 0x28), 0.48 + 0.12 * h, 1.25, 0.12)
+        };
+        let cap = Rect::from_center_size(rect.center(), Vec2::splat(press * 2.0));
+        super::shell::paint_live_backdrop_blur(ui, resp.id.with("blur"), cap, press, tint, tint_alpha, sat, sheen, 1.0);
     } else {
-        theme::glass(0.12 + 0.08 * h)
-    };
+        let fill = if light {
+            theme::lerp_color(Color32::from_black_alpha(15), Color32::from_black_alpha(28), h)
+        } else {
+            theme::glass(0.12 + 0.08 * h)
+        };
+        ui.painter().circle_filled(rect.center(), press, fill);
+    }
     let stroke_col = if light {
         Color32::from_black_alpha((25.0 + 18.0 * h) as u8)
     } else {
         theme::glass(0.16 + 0.12 * h)
     };
-    ui.painter().circle_filled(rect.center(), press, fill);
     ui.painter().circle_stroke(rect.center(), press, egui::Stroke::new(1.0, stroke_col));
 
     let color = if theme::light() {
@@ -589,8 +599,17 @@ pub fn share_more_pill(
     let light = theme::light();
     let pill_shadow = if light { 18 } else { 35 };
     ui.painter().rect_filled(pill_rect.translate(vec2(0.0, 1.0)), 17.0, Color32::from_black_alpha(pill_shadow));
-    let pill_fill = if light { Color32::from_black_alpha(15) } else { theme::glass(0.12) };
-    ui.painter().rect_filled(pill_rect, 17.0, pill_fill);
+    if crate::renderer::active() == crate::renderer::Renderer::OpenGl {
+        let (tint, tint_alpha, sat, sheen) = if light {
+            (Color32::WHITE, 0.50, 1.15, 0.16)
+        } else {
+            (Color32::from_rgb(0x22, 0x22, 0x28), 0.46, 1.25, 0.10)
+        };
+        super::shell::paint_live_backdrop_blur(ui, ui.scope_id().with((id_salt, "pill-blur")), pill_rect, 17.0, tint, tint_alpha, sat, sheen, 1.0);
+    } else {
+        let pill_fill = if light { Color32::from_black_alpha(15) } else { theme::glass(0.12) };
+        ui.painter().rect_filled(pill_rect, 17.0, pill_fill);
+    }
     ui.painter().rect_stroke(pill_rect, 17.0, egui::Stroke::new(1.0, if light { Color32::from_black_alpha(25) } else { theme::glass(0.16) }), egui::StrokeKind::Inside);
 
     let mid_x = pill_rect.min.x + 35.0;
@@ -1241,9 +1260,44 @@ fn top_result(ui: &mut Ui, c: &Card, pick: bool, acts: &mut Vec<Action>) {    ui
         let playing = active == Some(true);
         let label = format!("{} {}", if playing { "Pause" } else { "Play" }, c.title);
         let p = named(ui.interact(pr, resp.id.with("play"), Sense::click()), &label).on_hover_cursor(egui::CursorIcon::PointingHand);
-        ui.painter().circle_filled(pc, 26.0, theme::with_alpha(Color32::WHITE, 0.4 + 0.6 * h));
+        let ph = theme::anim_bool(ui.ctx(), p.id.with("ph"), p.hovered(), 0.15);
+        let r = 26.0 + 2.0 * ph;
+        let play_rect = Rect::from_center_size(pc, Vec2::splat(r * 2.0));
+        let light = theme::light();
+        ui.painter().circle_filled(pc + vec2(0.0, 2.0), r, Color32::from_black_alpha(if light { 30 } else { 50 }));
+        if crate::renderer::active() == crate::renderer::Renderer::OpenGl {
+            let (tint_col, tint_alpha, sat, sheen) = if light {
+                (Color32::WHITE, 0.62 + 0.12 * ph, 1.25, 0.22)
+            } else {
+                (Color32::from_rgb(0x1a, 0x1c, 0x22), 0.52 + 0.12 * ph, 1.30, 0.18)
+            };
+            super::shell::paint_live_backdrop_blur(
+                ui,
+                egui::Id::unique("top-result-play-blur"),
+                play_rect,
+                r,
+                tint_col,
+                tint_alpha,
+                sat,
+                sheen,
+                0.4 + 0.6 * h,
+            );
+            let stroke_col = if light {
+                Color32::from_white_alpha(180)
+            } else {
+                Color32::from_white_alpha((55.0 + 25.0 * ph) as u8)
+            };
+            ui.painter().circle_stroke(pc, r, egui::Stroke::new(1.0, stroke_col));
+        } else {
+            ui.painter().circle_filled(pc, r, theme::with_alpha(Color32::WHITE, 0.4 + 0.6 * h));
+        }
         let nudge = if playing { 0.0 } else { 1.5 };
-        widgets::play_pause_glyph(ui, pc + vec2(nudge, 0.0), 10.0, Color32::from_gray(15), playing);
+        let glyph_col = if light {
+            Color32::from_rgb(0x18, 0x14, 0x1c)
+        } else {
+            Color32::WHITE
+        };
+        widgets::play_pause_glyph(ui, pc + vec2(nudge, 0.0), 10.0, glyph_col, playing);
         if p.clicked() {
             acts.push(match &c.target {
                 _ if active.is_some() => Action::TogglePlay,

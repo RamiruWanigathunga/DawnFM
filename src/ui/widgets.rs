@@ -270,7 +270,16 @@ pub fn pill(ui: &mut Ui, label: &str, glyph: Option<char>, primary: bool) -> Res
     ui.painter().rect_filled(r.translate(vec2(0.0, 1.5)), radius, Color32::from_black_alpha(shadow_alpha));
 
     // Frosted capsule fill and subtle inside stroke
-    ui.painter().rect_filled(r, radius, fill);
+    if !primary && crate::renderer::active() == crate::renderer::Renderer::OpenGl {
+        let (tint, tint_alpha, sat, sheen) = if light {
+            (Color32::WHITE, 0.52 + 0.12 * h, 1.15, 0.18)
+        } else {
+            (Color32::from_rgb(0x22, 0x22, 0x28), 0.48 + 0.12 * h, 1.25, 0.12)
+        };
+        super::shell::paint_live_backdrop_blur(ui, resp.id.with("pill-blur"), r, radius, tint, tint_alpha, sat, sheen, 1.0);
+    } else {
+        ui.painter().rect_filled(r, radius, fill);
+    }
     ui.painter().rect_stroke(r, radius, egui::Stroke::new(1.0, stroke_color), egui::StrokeKind::Inside);
 
     let mut x = r.left() + 18.0;
@@ -682,8 +691,42 @@ pub fn card(ui: &mut Ui, c: &Card, width: f32, liked: bool, acts: &mut Vec<Actio
         let playing = active == Some(true);
         let p = named(p, &format!("{} {}", if playing { "Pause" } else { "Play" }, c.title)).on_hover_cursor(egui::CursorIcon::PointingHand);
         let ph = theme::anim_bool(ui.ctx(), p.id.with("ph"), p.hovered(), 0.15);
-        ui.painter().circle_filled(center, 18.0 + 1.5 * ph, theme::shade((0.62 + 0.10 * ph) * h));
-        play_pause_glyph(ui, center, 8.5, theme::with_alpha(Color32::WHITE, h), playing);
+        let r = 18.0 + 1.5 * ph;
+        let button_rect = Rect::from_center_size(center, Vec2::splat(r * 2.0));
+        let light = theme::light();
+        ui.painter().circle_filled(center + vec2(0.0, 1.5), r, Color32::from_black_alpha((36.0 * h) as u8));
+        if crate::renderer::active() == crate::renderer::Renderer::OpenGl {
+            let (tint_col, tint_alpha, sat, sheen) = if light {
+                (Color32::WHITE, 0.60 + 0.12 * ph, 1.25, 0.22)
+            } else {
+                (Color32::from_rgb(0x1a, 0x1c, 0x22), 0.52 + 0.12 * ph, 1.30, 0.18)
+            };
+            super::shell::paint_live_backdrop_blur(
+                ui,
+                egui::Id::unique("card-hover-play-blur"),
+                button_rect,
+                r,
+                tint_col,
+                tint_alpha,
+                sat,
+                sheen,
+                h,
+            );
+            let stroke_col = if light {
+                Color32::from_white_alpha((180.0 * h) as u8)
+            } else {
+                Color32::from_white_alpha(((55.0 + 30.0 * ph) * h) as u8)
+            };
+            ui.painter().circle_stroke(center, r, egui::Stroke::new(1.0, stroke_col));
+        } else {
+            ui.painter().circle_filled(center, r, theme::shade((0.62 + 0.10 * ph) * h));
+        }
+        let glyph_col = if light {
+            theme::with_alpha(Color32::from_rgb(0x18, 0x14, 0x1c), h)
+        } else {
+            theme::with_alpha(Color32::WHITE, h)
+        };
+        play_pause_glyph(ui, center, 8.5, glyph_col, playing);
         play_hit = p.clicked();
     }
     let tcolor = theme::text();
