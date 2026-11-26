@@ -536,12 +536,23 @@ pub struct App {
 
     // account / misc
     logged_in: bool,
+    spotify_mode: bool,
+    spotify_user: Option<String>,
+    spotify_auth_busy: bool,
+    spotify_email: String,
+    spotify_code: String,
+    spotify_password: String,
+    spotify_login_pw: bool,
+    spotify_challenge: Option<crate::spotify::EmailCodeChallenge>,
+    spotify_library: Option<Library>,
+    spotify_artists: Option<Vec<Card>>,
     /// The Spotify transfer, running on the network runtime.
     transfer: Arc<crate::transfer::Transfer>,
     xfer: transfer::Setup,
     /// Listen together: the room we're in, if any.
     jam: jam::Session,
     signing_in: Arc<AtomicBool>,
+    spotify_web_signing_in: Arc<AtomicBool>,
     toast: Option<(String, f64)>,
 
     // updates
@@ -659,7 +670,13 @@ impl App {
         backend.set_hires_source(&hires_sources.join("\n"));
         let prefer_atmos = get("prefer_atmos").is_some_and(|v| v == "1");
         backend.set_prefer_atmos(prefer_atmos);
-        backend.request(Req::Home(None));
+        let spotify_mode = !logged_in && get("spotify_mode").is_some_and(|v| v == "1");
+        if spotify_mode {
+            backend.request(Req::SpotifyHome);
+        } else {
+            backend.request(Req::Home(None));
+        }
+        backend.request(Req::SpotifyAccount);
         if logged_in {
             backend.request(Req::Library);
             backend.request(Req::Account);
@@ -732,6 +749,16 @@ impl App {
             channels_asked: None,
             switching_to: None,
             sidebar_cache: None,
+            spotify_mode,
+            spotify_user: None,
+            spotify_auth_busy: false,
+            spotify_email: String::new(),
+            spotify_code: String::new(),
+            spotify_password: String::new(),
+            spotify_login_pw: false,
+            spotify_challenge: None,
+            spotify_library: None,
+            spotify_artists: None,
             queue: Queue::new(match get("repeat").as_deref() {
                 Some("all") => Repeat::All,
                 Some("one") => Repeat::One,
@@ -853,6 +880,7 @@ impl App {
             record_angle: 0.0,
             logged_in,
             signing_in: Default::default(),
+            spotify_web_signing_in: Default::default(),
             transfer: transfer_handle,
             xfer: Default::default(),
             jam: Default::default(),
@@ -968,7 +996,7 @@ impl App {
             return;
         }
         if self.search.as_ref().is_none_or(|s| s.query != q) {
-            self.backend.request(Req::Search(q.clone()));
+            self.backend.request(self.search_req(q.clone()));
         }
         self.search_pending = true;
         self.search_drop = Some(q);
@@ -1052,6 +1080,9 @@ impl App {
     /// Reload the current page's data in place: no page transition, the page stays as
     /// it is until the new data arrives.
     fn refresh(&mut self) {
+        if self.spotify_mode && matches!(self.page, Page::Library(LibTab::Playlists | LibTab::Albums | LibTab::Artists)) && self.spotify_user.is_some() {
+            self.backend.request(Req::SpotifyLibrary);
+        }
         let changed = self.page_changed;
         self.page_loaded();
         self.page_changed = changed;
@@ -1081,12 +1112,27 @@ impl App {
         }
         let req = match &self.page.clone() {
             Page::Home if !self.home_loading => {
-                self.home_loading = true;
-                Some(Req::Home(None))
+                if self.spotify_mode {
+                    if self.spotify_user.is_some() {
+                        self.home_loading = true;
+                        Some(Req::SpotifyHome)
+                    } else {
+                        None
+                    }
+                } else {
+                    self.home_loading = true;
+                    Some(Req::Home(None))
+                }
             }
-            Page::New => Some(Req::Explore(self.preferred_artist_ids())),
+            Page::New => {
+                if self.spotify_mode {
+                    self.spotify_user.is_some().then_some(Req::SpotifyExplore)
+                } else {
+                    Some(Req::Explore(self.preferred_artist_ids()))
+                }
+            }
             // The empty search is the page's landing state: nothing to ask for.
-            Page::Search(q) if !q.trim().is_empty() && self.search.as_ref().is_none_or(|s| &s.query != q) => Some(Req::Search(q.clone())),
+            Page::Search(q) if !q.trim().is_empty() && self.search.as_ref().is_none_or(|s| &s.query != q) => Some(self.search_req(q.clone())),
             Page::Album(id) | Page::Playlist(id) => {
                 let is_album = matches!(self.page, Page::Album(_));
                 if is_album {
@@ -1121,7 +1167,8 @@ impl App {
                 }
                 Some(Req::Artist(id.clone()))
             }
-            Page::Library(LibTab::History) if self.logged_in => Some(Req::History),
+            Page::Library(LibTab::History) if self.logged_in && !self.spotify_mode => Some(Req::History),
+            Page::Library(LibTab::Artists) if self.spotify_mode && self.spotify_user.is_some() => self.spotify_artists.is_none().then_some(Req::SpotifyLibrary),
             Page::Library(LibTab::Artists) if self.logged_in => {
                 // The "From your history" rows need History too.
                 if self.history.is_none() {
@@ -1139,11 +1186,13 @@ impl App {
                 Some(Req::Artists)
             }
             Page::Library(LibTab::Songs) => {
-                if self.logged_in {
-                    self.visit_list(LIKED_MUSIC, false);
+                let liked_id = self.active_liked_id();
+                if self.active_logged_in() {
+                    self.visit_list(liked_id, false);
                 }
                 None
             }
+            Page::Library(_) if self.spotify_mode && self.spotify_user.is_some() => self.spotify_library.is_none().then_some(Req::SpotifyLibrary),
             Page::Library(_) if self.logged_in => Some(Req::Library),
             _ => None,
         };
@@ -1154,9 +1203,9 @@ impl App {
             Page::Album(id) | Page::Playlist(id) => self.opened(id).is_some(),
             Page::Artist(id) => self.artist.as_ref().is_some_and(|a| &a.id == id),
             Page::Library(LibTab::History) => self.history.is_some(),
-            Page::Library(LibTab::Artists) => self.library_artists.is_some(),
-            Page::Library(LibTab::Songs) => self.opened(LIKED_MUSIC).is_some(),
-            Page::Library(_) => self.library.is_some(),
+            Page::Library(LibTab::Artists) => self.active_artists().is_some(),
+            Page::Library(LibTab::Songs) => self.opened(self.active_liked_id()).is_some(),
+            Page::Library(_) => self.active_library().is_some(),
             _ => false,
         };
         let coming = self.page_list().is_some_and(|id| self.lists.loading(id));
@@ -1164,6 +1213,10 @@ impl App {
         self.load_failed = false;
         match req {
             Some(Req::Library) => self.request_library(),
+            Some(Req::SpotifyLibrary) => {
+                self.library_requested = std::time::Instant::now();
+                self.backend.request(Req::SpotifyLibrary);
+            }
             Some(r) => self.backend.request(r),
             None => {}
         }
@@ -1173,8 +1226,66 @@ impl App {
     fn page_list(&self) -> Option<&str> {
         match &self.page {
             Page::Album(id) | Page::Playlist(id) => Some(id),
-            Page::Library(LibTab::Songs) => Some(LIKED_MUSIC),
+            Page::Library(LibTab::Songs) => Some(self.active_liked_id()),
             _ => None,
+        }
+    }
+
+    pub(super) fn active_liked_id(&self) -> &'static str {
+        if self.spotify_mode {
+            crate::spotify::SPOTIFY_LIKED_ID
+        } else {
+            LIKED_MUSIC
+        }
+    }
+
+    pub(super) fn active_library(&self) -> Option<&Library> {
+        if self.spotify_mode {
+            self.spotify_library.as_ref()
+        } else {
+            self.library.as_ref()
+        }
+    }
+
+    pub(super) fn active_artists(&self) -> Option<&[Card]> {
+        if self.spotify_mode {
+            self.spotify_artists.as_deref()
+        } else {
+            self.library_artists.as_deref()
+        }
+    }
+
+    pub(super) fn active_logged_in(&self) -> bool {
+        if self.spotify_mode {
+            self.spotify_user.is_some()
+        } else {
+            self.logged_in
+        }
+    }
+
+    pub(super) fn search_req(&self, query: String) -> Req {
+        if self.spotify_mode {
+            Req::SpotifySearch(query)
+        } else {
+            Req::Search(query)
+        }
+    }
+
+    pub(super) fn set_spotify_mode(&mut self, on: bool) {
+        if self.spotify_mode == on {
+            return;
+        }
+        self.spotify_mode = on;
+        self.search = None;
+        self.home = None;
+        self.home_loading = false;
+        self.explore = None;
+        if on && self.spotify_user.is_some() && self.spotify_library.is_none() {
+            self.request_library();
+        }
+        match &self.page {
+            Page::Home | Page::New | Page::Search(_) | Page::Library(_) => self.page_loaded(),
+            _ => {}
         }
     }
 
@@ -2108,6 +2219,7 @@ impl eframe::App for App {
         storage.set_string("repeat", repeat.into());
         let b = |v: bool| if v { "1" } else { "0" }.to_owned();
         storage.set_string("autoplay", b(self.autoplay));
+        storage.set_string("spotify_mode", b(self.spotify_mode));
         storage.set_string("recent_searches", serde_json::to_string(&self.recent_searches).unwrap_or_default());
         storage.set_string("jam_name", self.jam.name.clone());
         let cache = self.logged_in.then(|| AccountCache {

@@ -36,6 +36,7 @@ pub enum Provider {
     MusixmatchRich,
     LrcredRich,
     BLyricsSynced,
+    Spotify,
     UnisonSynced,
     BinimumSynced,
     LrclibSynced,
@@ -56,7 +57,7 @@ pub enum SyncKind {
 }
 
 impl Provider {
-    pub const ALL: [Provider; 16] = [
+    pub const ALL: [Provider; 17] = [
         Provider::BLyricsRich,
         Provider::UnisonRich,
         Provider::BinimumRich,
@@ -65,6 +66,7 @@ impl Provider {
         Provider::MusixmatchRich,
         Provider::LrcredRich,
         Provider::BLyricsSynced,
+        Provider::Spotify,
         Provider::UnisonSynced,
         Provider::BinimumSynced,
         Provider::LrclibSynced,
@@ -86,6 +88,7 @@ impl Provider {
             Provider::MusixmatchRich => "musixmatch-richsync",
             Provider::LrcredRich => "lrcred-richsynced",
             Provider::BLyricsSynced => "bLyrics-synced",
+            Provider::Spotify => "spotify",
             Provider::UnisonSynced => "unison-synced",
             Provider::BinimumSynced => "binimum-synced",
             Provider::LrclibSynced => "lrclib-synced",
@@ -104,6 +107,7 @@ impl Provider {
     pub fn name(self) -> &'static str {
         match self {
             Provider::BLyricsRich | Provider::BLyricsSynced => "Better Lyrics",
+            Provider::Spotify => "Spotify",
             Provider::UnisonRich | Provider::UnisonWord | Provider::UnisonSynced | Provider::UnisonPlain => "Unison",
             Provider::BinimumRich | Provider::BinimumSynced => "BiniLyrics",
             Provider::PortatoRich => "Better Lyrics Portato",
@@ -119,6 +123,7 @@ impl Provider {
             Provider::BLyricsRich | Provider::UnisonRich | Provider::BinimumRich => SyncKind::Syllable,
             Provider::UnisonWord | Provider::PortatoRich | Provider::MusixmatchRich | Provider::LrcredRich => SyncKind::Word,
             Provider::BLyricsSynced
+            | Provider::Spotify
             | Provider::UnisonSynced
             | Provider::BinimumSynced
             | Provider::LrclibSynced
@@ -183,6 +188,10 @@ pub struct Lyrics {
 }
 
 impl Lyrics {
+    pub fn from_raw(provider: Provider, lines: Vec<Line>, language: Option<String>, songwriters: Vec<String>) -> Option<Self> {
+        Self::new(provider, lines, language, songwriters)
+    }
+
     fn new(provider: Provider, lines: Vec<Line>, language: Option<String>, songwriters: Vec<String>) -> Option<Self> {
         if lines.is_empty() {
             return None;

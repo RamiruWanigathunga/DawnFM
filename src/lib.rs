@@ -34,6 +34,7 @@ pub mod proxy;
 pub mod renderer;
 pub mod shader;
 pub mod sponsorblock;
+pub mod spotify;
 pub mod stream;
 pub mod sync;
 pub mod theme;

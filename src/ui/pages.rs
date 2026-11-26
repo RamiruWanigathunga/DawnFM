@@ -982,6 +982,15 @@ fn home(app: &mut App, ui: &mut Ui, now: f64) {
         greeting
     };
     page_title(ui, title);
+    if app.spotify_mode && app.spotify_user.is_none() {
+        ui.add_space(10.0);
+        ui.label(RichText::new("Sign in to Spotify in Settings to see your Spotify playlists, saved albums, liked songs and mixes.").color(theme::text_dim()));
+        ui.add_space(12.0);
+        if pill(ui, "Open Settings", None, true).clicked() {
+            app.actions.push(Action::Go(Page::Settings));
+        }
+        return;
+    }
     if let Some(h) = &mut app.home
         && !h.chips.is_empty()
     {
@@ -1302,8 +1311,9 @@ pub fn collection(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
     let selecting = app.selection.on(&app.page);
     let mut start_select = false;
     let mut stop_select = false;
+    let active_lib = if app.spotify_mode { &app.spotify_library } else { &app.library };
     let photo = artist_id.as_ref().and_then(|a| app.artist_photos.get(a)).filter(|t| !t.is_empty());
-    let is_liked = id == "LM" || id == super::LIKED_MUSIC || id == "VLLM";
+    let is_liked = id == "LM" || id == super::LIKED_MUSIC || id == "VLLM" || id == crate::spotify::SPOTIFY_LIKED_ID;
     ui.add_space(18.0);
     ui.horizontal_top(|ui| {
         if !is_liked {
@@ -1323,8 +1333,8 @@ pub fn collection(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
             let target = if is_album { Target::Album(id.to_owned()) } else { Target::Playlist(id.to_owned()) };
             // Liked Music and Episodes for later are the account's own lists: they can't be
             // saved, removed, edited or deleted.
-            let auto = matches!(id, "LM" | "SE");
-            let saved = app.library.as_ref().is_some_and(|l| {
+            let auto = matches!(id, "LM" | "SE") || id == crate::spotify::SPOTIFY_LIKED_ID;
+            let saved = active_lib.as_ref().is_some_and(|l| {
                 let cards = if is_album { &l.albums } else { &l.playlists };
                 cards.iter().any(|card| card.target == target)
             });
@@ -2039,20 +2049,33 @@ pub(crate) fn played_artists(history: &[Track]) -> Vec<crate::model::Link> {
 }
 
 fn library(app: &mut App, ui: &mut Ui, tab: LibTab, now: f64) {
-    page_title(ui, "Library");
-    if !app.logged_in {
+    page_title(ui, if app.spotify_mode { "Spotify Library" } else { "Library" });
+    if !app.active_logged_in() {
         ui.add_space(10.0);
-        ui.label(RichText::new("Sign in to see your playlists, liked songs and history.").color(theme::text_dim()));
-        ui.add_space(12.0);
-        if pill(ui, "Sign in with Google", Some(icon::CIRCLE_USER), true).clicked() {
-            app.start_sign_in(ui.ctx());
+        if app.spotify_mode {
+            ui.label(RichText::new("Sign in to Spotify in Settings to see your playlists, liked songs, albums and artists.").color(theme::text_dim()));
+            ui.add_space(12.0);
+            if pill(ui, "Open Settings", None, true).clicked() {
+                app.actions.push(Action::Go(Page::Settings));
+            }
+        } else {
+            ui.label(RichText::new("Sign in to see your playlists, liked songs and history.").color(theme::text_dim()));
+            ui.add_space(12.0);
+            if pill(ui, "Sign in with Google", Some(icon::CIRCLE_USER), true).clicked() {
+                app.start_sign_in(ui.ctx());
+            }
         }
         return;
     }
     ui.add_space(12.0);
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 10.0;
-        for (t, label) in [(LibTab::Playlists, "Playlists"), (LibTab::Artists, "Artists"), (LibTab::Albums, "Albums"), (LibTab::Songs, "Liked songs"), (LibTab::History, "Recently played")] {
+        let tabs: &[(LibTab, &str)] = if app.spotify_mode {
+            &[(LibTab::Playlists, "Playlists"), (LibTab::Artists, "Artists"), (LibTab::Albums, "Albums"), (LibTab::Songs, "Liked songs")]
+        } else {
+            &[(LibTab::Playlists, "Playlists"), (LibTab::Artists, "Artists"), (LibTab::Albums, "Albums"), (LibTab::Songs, "Liked songs"), (LibTab::History, "Recently played")]
+        };
+        for &(t, label) in tabs {
             if chip(ui, label, tab == t).clicked() {
                 // Tabs swap in place (no history entry); the current one refreshes.
                 if tab == t {
@@ -2085,61 +2108,63 @@ fn library(app: &mut App, ui: &mut Ui, tab: LibTab, now: f64) {
             list(ui, &rows, &app.liked, h, true, plain, ListCtx { sel: &mut app.selection, page: &app.page, own: false, plays: false }, &mut app.actions);
         }
         LibTab::Artists => {
-            section_label(ui, "Subscribed artists", None);
-            if app.library_artists.is_none() {
+            section_label(ui, if app.spotify_mode { "Followed artists" } else { "Subscribed artists" }, None);
+            let Some(followed) = app.active_artists().map(|a| a.to_vec()) else {
                 placeholder_grid(app, ui, now, CARD, true, 12, false);
                 return;
-            }
-            let followed = app.library_artists.as_deref().unwrap_or_default();
+            };
             if followed.is_empty() {
                 ui.label(RichText::new("Artists you follow show up here.").color(theme::text_dim()));
             } else {
-                grid(ui, followed, &mut app.actions);
+                grid(ui, &followed, &mut app.actions);
             }
             // The artists behind the songs in History, newest first (limited to latest 10).
-            let played = app.history.as_deref().map(played_artists).unwrap_or_default();
-            if !played.is_empty() {
-                section_label(ui, "From your history", None);
-                let played_cards: Vec<Card> = played
-                    .into_iter()
-                    .take(HISTORY_ARTISTS_LIMIT)
-                    .filter_map(|a| {
-                        let id = a.id?;
-                        let thumbs = app.artist_photos.get(&id).cloned().filter(|t| !t.is_empty())
-                            .or_else(|| followed.iter().find(|c| matches!(&c.target, Target::Artist(cid) if cid == &id)).map(|c| c.thumbs.clone()))
-                            .or_else(|| app.artists_cache.get(&id).map(|(a, _)| if a.photo.is_empty() { a.banner.clone() } else { a.photo.clone() }))
-                            .or_else(|| app.artist.as_ref().filter(|a| a.id == id).map(|a| if a.photo.is_empty() { a.banner.clone() } else { a.photo.clone() }))
-                            .unwrap_or_default();
-                        if thumbs.is_empty() && !app.artist_photos.contains_key(&id) {
-                            app.artist_photos.insert(id.clone(), Vec::new());
-                            app.backend.request(crate::backend::Req::ArtistPhoto(id.clone()));
-                        }
-                        Some(Card {
-                            title: a.name,
-                            subtitle: String::new(),
-                            thumbs,
-                            target: Target::Artist(id),
-                            round: true,
-                            links: Vec::new(),
+            if !app.spotify_mode {
+                let played = app.history.as_deref().map(played_artists).unwrap_or_default();
+                if !played.is_empty() {
+                    section_label(ui, "From your history", None);
+                    let played_cards: Vec<Card> = played
+                        .into_iter()
+                        .take(HISTORY_ARTISTS_LIMIT)
+                        .filter_map(|a| {
+                            let id = a.id?;
+                            let thumbs = app.artist_photos.get(&id).cloned().filter(|t| !t.is_empty())
+                                .or_else(|| followed.iter().find(|c| matches!(&c.target, Target::Artist(cid) if cid == &id)).map(|c| c.thumbs.clone()))
+                                .or_else(|| app.artists_cache.get(&id).map(|(a, _)| if a.photo.is_empty() { a.banner.clone() } else { a.photo.clone() }))
+                                .or_else(|| app.artist.as_ref().filter(|a| a.id == id).map(|a| if a.photo.is_empty() { a.banner.clone() } else { a.photo.clone() }))
+                                .unwrap_or_default();
+                            if thumbs.is_empty() && !app.artist_photos.contains_key(&id) {
+                                app.artist_photos.insert(id.clone(), Vec::new());
+                                app.backend.request(crate::backend::Req::ArtistPhoto(id.clone()));
+                            }
+                            Some(Card {
+                                title: a.name,
+                                subtitle: String::new(),
+                                thumbs,
+                                target: Target::Artist(id),
+                                round: true,
+                                links: Vec::new(),
+                            })
                         })
-                    })
-                    .collect();
-                grid(ui, &played_cards, &mut app.actions);
-                ui.add_space(10.0);
+                        .collect();
+                    grid(ui, &played_cards, &mut app.actions);
+                    ui.add_space(10.0);
+                }
             }
         }
         // Liked Music, kept like any playlist.
         LibTab::Songs => {
-            if app.opened(super::LIKED_MUSIC).is_none() {
+            let liked_id = app.active_liked_id();
+            if app.opened(liked_id).is_none() {
                 placeholder_track_list(app, ui, now, true);
                 return;
             }
-            let more = app.receiving(super::LIKED_MUSIC);
-            let Some(o) = app.lists.get(super::LIKED_MUSIC) else { return };
+            let more = app.receiving(liked_id);
+            let Some(o) = app.lists.get(liked_id) else { return };
             let liked = &o.c.tracks;
             if !liked.is_empty() {
                 ui.horizontal(|ui| {
-                    play_pill(ui, &mut app.actions, &Target::Playlist(super::LIKED_MUSIC.into()), liked);
+                    play_pill(ui, &mut app.actions, &Target::Playlist(liked_id.into()), liked);
                     if pill(ui, &t!("shuffle"), Some(icon::SHUFFLE), false).clicked() {
                         let mut t = liked.clone();
                         super::shuffle(&mut t);
@@ -2155,18 +2180,19 @@ fn library(app: &mut App, ui: &mut Ui, tab: LibTab, now: f64) {
             }
         }
         _ => {
-            if app.library.is_none() {
-                let with_new = tab == LibTab::Playlists;
+            let Some(lib) = app.active_library().cloned() else {
+                let with_new = tab == LibTab::Playlists && !app.spotify_mode;
                 placeholder_grid(app, ui, now, CARD, false, 12, with_new);
                 return;
-            }
-            let Some(lib) = &app.library else { return };
+            };
             match tab {
                 LibTab::Playlists => {
-                    if pill(ui, "New playlist", None, false).clicked() {
-                        app.actions.push(Action::NewPlaylist(Vec::new()));
+                    if !app.spotify_mode {
+                        if pill(ui, "New playlist", None, false).clicked() {
+                            app.actions.push(Action::NewPlaylist(Vec::new()));
+                        }
+                        ui.add_space(14.0);
                     }
-                    ui.add_space(14.0);
                     grid(ui, &lib.playlists, &mut app.actions)
                 }
                 LibTab::Albums => grid(ui, &lib.albums, &mut app.actions),
@@ -2240,7 +2266,9 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
     settings_notifications(app, ui);
     settings_window(app, ui);
     settings_connections(app, ui);
-    super::transfer::settings_section(app, ui);
+    if !app.spotify_mode {
+        super::transfer::settings_section(app, ui);
+    }
     settings_network(app, ui);
     settings_shortcuts(ui);
     settings_updates(app, ui);
@@ -2301,43 +2329,184 @@ fn settings_account(app: &mut App, ui: &mut Ui) {
     let (mut sign_in, mut sign_out) = (false, false);
     // Asked again now and then while Settings shows: a failed ask, or a channel made since.
     let now = ui.input(|i| i.time);
-    if app.logged_in && app.channels_asked.is_none_or(|at| now - at > 60.0) {
+    if app.logged_in && !app.spotify_mode && app.channels_asked.is_none_or(|at| now - at > 60.0) {
         app.channels_asked = Some(now);
         app.backend.request(crate::backend::Req::Channels);
     }
-    settings_card(ui, |ui| {
-        if app.logged_in {
-            let name = app.account_name.clone().unwrap_or_else(|| "YouTube Music".to_owned());
-            setting_row(ui, &name, Some("Signed in with Google. Your home feed, library and likes come from this account. Saved in your macOS Keychain."), |ui| {
-                sign_out = pill_destructive(ui, "Sign out", Some(icon::LOG_OUT)).clicked();
-            });
-            // Also with one, when the one in use isn't it (a brand channel since deleted).
-            if app.channels.as_ref().is_some_and(|c| c.list.len() > 1 || !c.list.iter().any(|l| l.page_id == c.current)) {
-                divider(ui);
-                setting_row(ui, "Channel", Some("Your Google account and each YouTube channel it manages have their own library, likes, history and recommendations."), |ui| {
-                    channel_picker(app, ui);
+    if app.spotify_user.is_none() {
+        settings_card(ui, |ui| {
+            if app.logged_in {
+                let name = app.account_name.clone().unwrap_or_else(|| "YouTube Music".to_owned());
+                setting_row(ui, &name, Some("Signed in to YouTube Music with Google. Sign out to switch to Spotify. Saved in your macOS Keychain."), |ui| {
+                    sign_out = pill_destructive(ui, "Sign out", Some(icon::LOG_OUT)).clicked();
+                });
+                // Also with one, when the one in use isn't it (a brand channel since deleted).
+                if app.channels.as_ref().is_some_and(|c| c.list.len() > 1 || !c.list.iter().any(|l| l.page_id == c.current)) {
+                    divider(ui);
+                    setting_row(ui, "Channel", Some("Your Google account and each YouTube channel it manages have their own library, likes, history and recommendations."), |ui| {
+                        channel_picker(app, ui);
+                    });
+                }
+            } else {
+                setting_row(ui, "YouTube Music", Some("Sign in with Google for your YouTube Music home feed, library and likes."), |ui| {
+                    if busy {
+                        ui.spinner();
+                    } else {
+                        sign_in = pill(ui, "Sign in with Google", Some(icon::CIRCLE_USER), true).clicked();
+                    }
                 });
             }
-        } else {
-            setting_row(ui, "Not signed in", Some("Sign in to get your home feed, library and likes."), |ui| {
-                if busy {
+        });
+        if busy {
+            ui.add_space(6.0);
+            ui.label(RichText::new("Finish signing in in the window that opened.").font(theme::regular(11.0)).color(theme::text_dim()));
+        }
+        if sign_in {
+            app.start_sign_in(ui.ctx());
+        }
+        if sign_out {
+            app.backend.request(crate::backend::Req::Logout);
+        }
+    }
+    if !app.logged_in {
+        if app.spotify_user.is_none() {
+            ui.add_space(12.0);
+        }
+        settings_spotify(app, ui);
+    }
+}
+
+fn settings_spotify(app: &mut App, ui: &mut Ui) {
+    settings_card(ui, |ui| {
+        if let Some(username) = app.spotify_user.clone() {
+            setting_row(
+                ui,
+                &format!("Spotify ({username})"),
+                Some("Signed in to Spotify (Free & Premium). Sign out to switch to YouTube Music."),
+                |ui| {
+                    if pill_destructive(ui, "Sign out", Some(icon::LOG_OUT)).clicked() {
+                        app.backend.request(crate::backend::Req::SpotifyLogout);
+                    }
+                },
+            );
+            return;
+        }
+        if let Some(ch) = app.spotify_challenge.clone() {
+            setting_row(
+                ui,
+                "Verify Spotify login code",
+                Some(&format!("Enter the {}-character code sent to {}.", ch.code_length, ch.email)),
+                |_| {},
+            );
+            ui.add_space(8.0);
+            let enter = super::text_field(ui, "Verification code", &mut app.spotify_code, false, "123456")
+                .lost_focus()
+                && ui.input(|i| i.key_pressed(egui::Key::Enter));
+            ui.add_space(8.0);
+            ui.horizontal(|ui| {
+                if app.spotify_auth_busy {
                     ui.spinner();
                 } else {
-                    sign_in = pill(ui, "Sign in with Google", Some(icon::CIRCLE_USER), true).clicked();
+                    if pill(ui, "Verify", None, true).clicked() || enter {
+                        app.spotify_auth_busy = true;
+                        app.backend.request(crate::backend::Req::SpotifyEmailVerify {
+                            challenge: ch,
+                            code: app.spotify_code.trim().to_owned(),
+                        });
+                    }
+                    if pill(ui, "Cancel", None, false).clicked() {
+                        app.spotify_challenge = None;
+                        app.spotify_code.clear();
+                    }
                 }
             });
+            return;
+        }
+        let web_busy = app.spotify_web_signing_in.load(Ordering::Relaxed);
+        let mut web_sign_in = false;
+        let w = ui.available_width();
+        let (rect, _) = ui.allocate_exact_size(vec2(w, 72.0), Sense::hover());
+        let b = egui::Rect::from_min_size(pos2(rect.left(), rect.center().y - 22.0), vec2(44.0, 44.0));
+        super::transfer::badge(ui, b);
+        let x = b.right() + 16.0;
+        let tw = (rect.right() - x - 170.0).max(120.0);
+        ui.painter().text(pos2(x, rect.center().y - 10.0), Align2::LEFT_CENTER, "Spotify", theme::semibold(15.5), theme::text());
+        let g = widgets::galley_wrapped(
+            ui,
+            "Sign in with your Free or Premium Spotify account for Spotify playlists, albums and songs.",
+            theme::regular(11.0),
+            theme::text_dim(),
+            tw,
+            2,
+        );
+        ui.painter().galley(pos2(x, rect.center().y + 2.0), g, theme::text_dim());
+        let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect).layout(egui::Layout::right_to_left(egui::Align::Center)));
+        if web_busy {
+            child.spinner();
+        } else {
+            web_sign_in = pill(&mut child, "Sign in to Spotify", None, true).clicked();
+        }
+        if web_busy {
+            ui.add_space(4.0);
+            ui.label(RichText::new("Finish signing in in the window that opened.").font(theme::regular(11.0)).color(theme::text_dim()));
+        }
+        if web_sign_in {
+            app.start_spotify_account_sign_in(ui.ctx());
+        }
+        divider(ui);
+        setting_row(
+            ui,
+            "Or sign in directly",
+            Some("Use a Spotify Email code or Username & Password."),
+            |ui| {
+                if chip(ui, "Email code", !app.spotify_login_pw).clicked() {
+                    app.spotify_login_pw = false;
+                }
+                if chip(ui, "Password", app.spotify_login_pw).clicked() {
+                    app.spotify_login_pw = true;
+                }
+            },
+        );
+        ui.add_space(10.0);
+        if !app.spotify_login_pw {
+            let enter = super::text_field(ui, "Email", &mut app.spotify_email, false, "you@example.com")
+                .lost_focus()
+                && ui.input(|i| i.key_pressed(egui::Key::Enter));
+            ui.add_space(8.0);
+            if app.spotify_auth_busy {
+                ui.horizontal(|ui| {
+                    ui.spinner();
+                    if pill(ui, "Cancel", None, false).clicked() {
+                        app.spotify_auth_busy = false;
+                    }
+                });
+            } else if pill(ui, "Send login code", Some(icon::CIRCLE_USER), true).clicked() || enter {
+                app.spotify_auth_busy = true;
+                app.backend.request(crate::backend::Req::SpotifyEmailStart(app.spotify_email.trim().to_owned()));
+            }
+        } else {
+            super::text_field(ui, "Email or username", &mut app.spotify_email, false, "you@example.com");
+            ui.add_space(6.0);
+            let enter = super::dialogs::password_field(ui, "Password", &mut app.spotify_password, "Password")
+                .lost_focus()
+                && ui.input(|i| i.key_pressed(egui::Key::Enter));
+            ui.add_space(8.0);
+            if app.spotify_auth_busy {
+                ui.horizontal(|ui| {
+                    ui.spinner();
+                    if pill(ui, "Cancel", None, false).clicked() {
+                        app.spotify_auth_busy = false;
+                    }
+                });
+            } else if pill(ui, "Sign in to Spotify", Some(icon::CIRCLE_USER), true).clicked() || enter {
+                app.spotify_auth_busy = true;
+                app.backend.request(crate::backend::Req::SpotifyLogin {
+                    username: app.spotify_email.trim().to_owned(),
+                    password: app.spotify_password.clone(),
+                });
+            }
         }
     });
-    if busy {
-        ui.add_space(6.0);
-        ui.label(RichText::new("Finish signing in in the window that opened.").font(theme::regular(11.0)).color(theme::text_dim()));
-    }
-    if sign_in {
-        app.start_sign_in(ui.ctx());
-    }
-    if sign_out {
-        app.backend.request(crate::backend::Req::Logout);
-    }
 }
 
 fn channel_picker(app: &mut App, ui: &mut Ui) {

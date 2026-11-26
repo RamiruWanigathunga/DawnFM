@@ -465,6 +465,8 @@ impl App {
                 self.lists.edits.confirm_likes(std::slice::from_ref(&video_id), &[]);
                 if like {
                     self.liked.insert(video_id);
+                } else if crate::spotify::is_spotify_id(&video_id) {
+                    self.liked.remove(&video_id);
                 }
             }
             Resp::QuickPicksMore { seed, tracks } => {
@@ -580,6 +582,48 @@ impl App {
                 }
             }
             Resp::LoggedIn(v) => self.on_logged_in(v, now),
+            Resp::SpotifyAuth { username, challenge, message } => {
+                self.spotify_auth_busy = false;
+                let was_signed_in = self.spotify_user.is_some();
+                self.spotify_user = username.clone();
+                self.spotify_challenge = challenge;
+                if let Some(_u) = username {
+                    self.spotify_code.clear();
+                    self.spotify_password.clear();
+                    self.logged_in = false;
+                    self.account_name = None;
+                    self.channels = None;
+                    self.library = None;
+                    self.library_artists = None;
+                    self.history = None;
+                    self.sidebar_cache = None;
+                    self.liked.retain(|tid| crate::spotify::is_spotify_id(tid));
+                    self.set_spotify_mode(true);
+                    if !was_signed_in || self.spotify_library.is_none() {
+                        self.backend.request(Req::SpotifyLibrary);
+                        self.load_list(crate::spotify::SPOTIFY_LIKED_ID, false, false);
+                    }
+                    if self.home.is_none() && !self.home_loading {
+                        self.home_loading = true;
+                        self.backend.request(Req::SpotifyHome);
+                    }
+                } else if was_signed_in {
+                    self.spotify_library = None;
+                    self.spotify_artists = None;
+                    self.liked.retain(|tid| !crate::spotify::is_spotify_id(tid));
+                    self.set_spotify_mode(false);
+                }
+                if let Some(msg) = message {
+                    self.toast(msg);
+                }
+            }
+            Resp::SpotifyLibrary { library, artists, liked } => {
+                self.spotify_library = Some(library);
+                self.spotify_artists = Some(artists);
+                self.liked.retain(|tid| !crate::spotify::is_spotify_id(tid));
+                self.liked.extend(liked);
+                self.loading = false;
+            }
             Resp::Error(e) => self.on_error(e),
         }
     }
@@ -681,7 +725,13 @@ impl App {
     /// A playlist was edited, added to, removed from, saved or deleted; `message` says which.
     fn on_playlist_changed(&mut self, id: String, message: &'static str) {
         self.optimistic_save = None;
-        self.request_library();
+        if crate::spotify::is_spotify_id(&id) {
+            if self.spotify_user.is_some() {
+                self.backend.request(Req::SpotifyLibrary);
+            }
+        } else {
+            self.request_library();
+        }
         if message == "Playlist deleted" {
             // Its load is dropped too, and the queue stops waiting for it.
             self.lists.forget(&id);
@@ -747,6 +797,13 @@ impl App {
     /// library and likes load.
     fn on_logged_in(&mut self, v: bool, now: f64) {
         self.logged_in = v;
+        if v {
+            self.spotify_user = None;
+            self.spotify_challenge = None;
+            self.spotify_library = None;
+            self.spotify_artists = None;
+            self.spotify_mode = false;
+        }
         self.channels = None;
         self.channels_asked = None;
         // Recent searches belong to the account.
@@ -765,7 +822,7 @@ impl App {
         // account, and its likes aren't this one's.
         self.lists.clear();
         self.lists.edits = Default::default();
-        self.liked.clear();
+        self.liked.retain(|tid| crate::spotify::is_spotify_id(tid));
         self.unliking.clear();
         self.queue.fill = None;
         self.play_pending = None;
@@ -785,6 +842,7 @@ impl App {
 
     /// A request failed: pages waiting for it stop waiting, and the error shows.
     fn on_error(&mut self, e: String) {
+        self.spotify_auth_busy = false;
         if let Some(Dialog::Collaborate { info, busy, .. }) = &mut self.dialog {
             *busy = false;
             // Nothing to show if it never loaded.

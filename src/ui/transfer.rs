@@ -69,7 +69,7 @@ fn spotify_thumbs(art: &Option<String>) -> Vec<Thumb> {
 }
 
 /// The Spotify logo: a green rounded square with its three arcs.
-fn badge(ui: &Ui, rect: Rect) {
+pub(super) fn badge(ui: &Ui, rect: Rect) {
     ui.painter().rect_filled(rect, rect.width() * 0.27, SPOTIFY);
     let s = rect.width() / 24.0;
     let c = rect.center();
@@ -1399,10 +1399,7 @@ fn failed(app: &mut App, ui: &mut Ui, e: &str) {
 
 /// Settings › Import.
 pub fn settings_section(app: &mut App, ui: &mut Ui) {
-    let xfer = app.transfer.clone();
-    xfer.ensure_account(&app.backend);
     section_label(ui, "Import", None);
-    let account = xfer.account.lock_unpoisoned().clone();
     let mut open = false;
     settings_card(ui, |ui| {
         let w = ui.available_width();
@@ -1416,8 +1413,6 @@ pub fn settings_section(app: &mut App, ui: &mut Ui) {
         ui.painter().galley(pos2(x, rect.center().y + 2.0), g, theme::text_dim());
         let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect).layout(egui::Layout::right_to_left(egui::Align::Center)));
         open = pill(&mut child, "Open", None, true).clicked();
-        super::pages::divider(ui);
-        spotify_account_row(app, ui, &account, false);
     });
     if open {
         app.actions.push(Action::Go(Page::Transfer));

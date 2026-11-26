@@ -15,7 +15,7 @@ use tokio::runtime::Runtime;
 use crate::art::Art;
 use crate::audio::{AudioCmd, AudioHandle};
 use crate::lyrics::{self, LyricsSet};
-use crate::model::{self, Card, Target, Thumb, Track, sized};
+use crate::model::{self, Card, ShelfKind, Target, Thumb, Track, sized};
 use crate::stream::{self, Shared};
 use crate::{hires, innertube, jsc, webmusic, ytdlp, ytm, ytmapi};
 
@@ -110,6 +110,16 @@ pub enum Req {
     SetSubscribed { channel: String, subscribe: bool, params: Option<String> },
     SetCookie(String),
     Logout,
+    SpotifyAccount,
+    SpotifyEmailStart(String),
+    SpotifyEmailVerify { challenge: crate::spotify::EmailCodeChallenge, code: String },
+    SpotifyLogin { username: String, password: String },
+    SpotifyWebLogin(String),
+    SpotifyLogout,
+    SpotifySearch(String),
+    SpotifyLibrary,
+    SpotifyHome,
+    SpotifyExplore,
 }
 
 impl Req {
@@ -157,12 +167,19 @@ impl Req {
             Req::SetSubscribed { subscribe, .. } => if *subscribe { "Subscribe" } else { "Unsubscribe" },
             Req::SetCookie(_) => "Sign in",
             Req::Logout => "Sign out",
+            Req::SpotifyAccount => "Spotify account",
+            Req::SpotifyEmailStart(_) | Req::SpotifyEmailVerify { .. } | Req::SpotifyLogin { .. } | Req::SpotifyWebLogin(_) => "Spotify sign in",
+            Req::SpotifyLogout => "Spotify sign out",
+            Req::SpotifySearch(_) => "Spotify search",
+            Req::SpotifyLibrary => "Loading Spotify library",
+            Req::SpotifyHome => "Loading Spotify home",
+            Req::SpotifyExplore => "Loading Spotify discover",
         }
     }
 
     /// Background requests fail quietly (logged, no toast).
     fn quiet(&self) -> bool {
-        matches!(self, Req::Suggest { .. } | Req::Account | Req::Channels | Req::ServerQueue | Req::Art { .. } | Req::ArtistPhoto(_) | Req::AppleArtist { .. } | Req::AppleCover { .. } | Req::ArtistSignature { .. } | Req::Prefetch { .. } | Req::HomeMore(_) | Req::Lyrics(_) | Req::Segments { .. } | Req::LyricsExtras { .. })
+        matches!(self, Req::Suggest { .. } | Req::Account | Req::SpotifyAccount | Req::Channels | Req::ServerQueue | Req::Art { .. } | Req::ArtistPhoto(_) | Req::AppleArtist { .. } | Req::AppleCover { .. } | Req::ArtistSignature { .. } | Req::Prefetch { .. } | Req::HomeMore(_) | Req::Lyrics(_) | Req::Segments { .. } | Req::LyricsExtras { .. })
     }
 }
 
@@ -263,6 +280,7 @@ pub struct ArtistSub {
     pub params: Option<String>,
 }
 
+#[derive(Clone)]
 pub struct Library {
     pub playlists: Vec<Card>,
     pub albums: Vec<Card>,
@@ -336,6 +354,16 @@ pub enum Resp {
     /// (`None`: that song wouldn't start, and the music video plays after all).
     PlayingAs { generation: u64, listed: String, song: Option<Track> },
     LoggedIn(bool),
+    SpotifyAuth {
+        username: Option<String>,
+        challenge: Option<crate::spotify::EmailCodeChallenge>,
+        message: Option<String>,
+    },
+    SpotifyLibrary {
+        library: Library,
+        artists: Vec<Card>,
+        liked: Vec<String>,
+    },
     /// A past search left the account's history; the list already shows it gone.
     SearchForgotten,
     Error(String),
@@ -518,6 +546,10 @@ pub struct Backend {
     /// video and whether the account has Premium (which gets YouTube's own pairs). One
     /// cell each, so a prefetch and the play of the same video share a lookup.
     songs: Arc<std::sync::Mutex<std::collections::HashMap<String, SongCell>>>,
+    /// Native Spotify client (Login5 + spclient protobuf APIs).
+    spotify: Arc<crate::spotify::SpotifyClient>,
+    /// Matched YouTube Music stream tracks for `spotify:track:...` URIs.
+    spotify_matches: Arc<tokio::sync::Mutex<std::collections::HashMap<String, SongCell>>>,
 }
 
 impl Backend {
@@ -539,12 +571,13 @@ impl Backend {
         let translate = Arc::new(crate::translate::Client::new(http, &data_dir));
         let jsc = Arc::new(jsc::Solver::new(&data_dir));
         let api = Arc::new(ytmapi::Api::new(&data_dir));
+        let spotify = Arc::new(crate::spotify::SpotifyClient::new(data_dir.clone()));
         if crate::proxy::needs_relay()
             && let Err(e) = rt.block_on(crate::proxy::start_relay())
         {
             log::warn!("proxy relay: {e:#}");
         }
-        let backend = Self { rt: Arc::new(rt), api, tx, audio, wake, prefetched: Default::default(), current: Default::default(), data_dir, lyrics, translate, jsc, premium: Arc::new(tokio::sync::Mutex::new(Err(None))), hq: Default::default(), hires: Default::default(), atmos: Default::default(), reverted: Default::default(), songs: Default::default() };
+        let backend = Self { rt: Arc::new(rt), api, tx, audio, wake, prefetched: Default::default(), current: Default::default(), data_dir, lyrics, translate, jsc, premium: Arc::new(tokio::sync::Mutex::new(Err(None))), hq: Default::default(), hires: Default::default(), atmos: Default::default(), reverted: Default::default(), songs: Default::default(), spotify, spotify_matches: Default::default() };
         backend.keep_signed_in();
         Ok(backend)
     }
@@ -736,7 +769,7 @@ impl Backend {
         let (what, quiet) = (req.name(), req.quiet());
         let res: anyhow::Result<Option<Resp>> = async {
             Ok(Some(match req {
-                Req::Home(params) => Resp::Home(ytm::home(api, params.as_deref(), me).await?),
+                Req::Home(params) => Resp::Home(self.home(params.as_deref(), me).await?),
                 Req::HomeMore(token) => Resp::HomeMore(ytm::home_more(api, &token, me).await?),
                 Req::MoreQuickPicks(seed) => {
                     let tracks = ytm::radio(api, &seed, me, 0).await?;
@@ -752,11 +785,27 @@ impl Backend {
                     ytm::forget_search(api, &token).await?;
                     Resp::SearchForgotten
                 }
+                Req::Album { id, load } if crate::spotify::is_spotify_id(&id) => {
+                    Resp::Collection { load, c: self.spotify.album_page(&id).await?, more: false }
+                }
                 Req::Album { id, load } => Resp::Collection { load, c: ytm::album(api, &id).await?, more: false },
+                Req::Playlist { id, load, stream: false } if crate::spotify::is_spotify_id(&id) => {
+                    let (c, _) = self.spotify.playlist_page(&id, 0, 100).await?;
+                    Resp::Collection { load, c, more: false }
+                }
                 Req::Playlist { id, load, stream: false } => Resp::Collection { load, c: ytm::playlist(api, &id, me, None).await?, more: false },
+                Req::Playlist { id, load, stream: true } if crate::spotify::is_spotify_id(&id) => {
+                    self.stream_spotify_playlist(id, load).await?
+                }
                 Req::Playlist { id, load, stream: true } => self.stream_playlist(id, load, me).await?,
+                Req::Artist(id) if crate::spotify::is_spotify_id(&id) => Resp::Artist(self.spotify.artist_page(&id).await?),
                 Req::Artist(id) => Resp::Artist(ytm::artist(api, &id).await?),
                 // The artist page's header picture, cropped square where it's drawn.
+                Req::ArtistPhoto(id) if crate::spotify::is_spotify_id(&id) => {
+                    let a = self.spotify.artist_page(&id).await?;
+                    let thumbs = if a.photo.is_empty() { a.banner } else { a.photo };
+                    Resp::ArtistPhoto { thumbs, id }
+                }
                 Req::ArtistPhoto(id) => {
                     // The round avatar is the square photo, not the wide banner: a square
                     // cut of that crops the face.
@@ -836,6 +885,11 @@ impl Backend {
                     });
                     Resp::ArtistSignature { key, signature }
                 }
+                Req::Radio { seed, song_of: _ } if crate::spotify::is_spotify_id(&seed) => {
+                    let mut tracks = self.spotify.radio(&seed).await?;
+                    tracks.retain(|t| t.id != seed);
+                    Resp::Radio { seed, tracks }
+                }
                 Req::Radio { seed, song_of } => {
                     // A music video's radio is music videos; its song's is songs, as from the
                     // song itself. The lookup is shared with its play's (one per video).
@@ -848,6 +902,9 @@ impl Backend {
                 }
                 Req::PlayCollection { target } => {
                     let tracks = match &target {
+                        Target::Album(id) if crate::spotify::is_spotify_id(id) => self.spotify.album_page(id).await?.tracks,
+                        Target::Playlist(id) if crate::spotify::is_spotify_id(id) => self.spotify.playlist_page(id, 0, 100).await?.0.tracks,
+                        Target::Artist(id) if crate::spotify::is_spotify_id(id) => self.spotify.artist_page(id).await?.top,
                         Target::Album(id) => ytm::album(api, id).await?.tracks,
                         Target::Playlist(id) => ytm::playlist(api, id, me, None).await?.tracks,
                         Target::Artist(id) => ytm::artist(api, id).await?.top,
@@ -870,6 +927,10 @@ impl Backend {
                     let PrefetchExtra { song_of, track } = *extra;
                     self.prefetch(video_id, song_of, track).await?;
                     return Ok(None);
+                }
+                Req::Like { video_id, like } if crate::spotify::is_spotify_id(&video_id) => {
+                    self.spotify.set_saved(&video_id, like).await?;
+                    Resp::Liked { video_id, like }
                 }
                 Req::Like { video_id, like } => {
                     ytm::set_like(api, &video_id, like).await?;
@@ -909,9 +970,17 @@ impl Backend {
                     ytm::set_collaboration(api, &info, change).await?;
                     Resp::Collaboration(ytm::collaboration(api, &info.playlist_id).await?)
                 }
+                Req::SaveCollection { id, save } if crate::spotify::is_spotify_id(&id) => {
+                    self.spotify.set_saved(&id, save).await?;
+                    Resp::PlaylistChanged { id, message: if save { "Saved to library" } else { "Removed from library" } }
+                }
                 Req::SaveCollection { id, save } => {
                     ytm::save_collection(api, &id, save).await?;
                     Resp::PlaylistChanged { id, message: if save { "Saved to library" } else { "Removed from library" } }
+                }
+                Req::SetSubscribed { channel, subscribe, .. } if crate::spotify::is_spotify_id(&channel) => {
+                    self.spotify.set_saved(&channel, subscribe).await?;
+                    Resp::Subscribed { channel, subscribed: subscribe }
                 }
                 Req::SetSubscribed { channel, subscribe, params } => {
                     ytm::set_subscribed(api, &channel, subscribe, params.as_deref()).await?;
@@ -919,6 +988,7 @@ impl Backend {
                 }
                 Req::SetCookie(input) => {
                     self.set_cookie(&input).await?;
+                    self.spotify.logout().await;
                     *self.premium.lock().await = Err(None);
                     self.warm_signed_in();
                     log::info!("signed in");
@@ -928,6 +998,69 @@ impl Backend {
                     self.forget_session().await;
                     Resp::LoggedIn(false)
                 }
+                Req::SpotifyAccount => {
+                    let username = if self.is_logged_in() {
+                        None
+                    } else {
+                        self.spotify.restore_if_needed().await.ok().flatten()
+                    };
+                    Resp::SpotifyAuth { username, challenge: None, message: None }
+                }
+                Req::SpotifyEmailStart(email) => match self.spotify.start_email_login(&email).await? {
+                    crate::spotify::EmailLoginStep::SignedIn(u) => {
+                        self.forget_session().await;
+                        Resp::SpotifyAuth {
+                            username: Some(u),
+                            challenge: None,
+                            message: Some("Signed in to Spotify".into()),
+                        }
+                    }
+                    crate::spotify::EmailLoginStep::NeedsCode(ch) => Resp::SpotifyAuth {
+                        username: None,
+                        challenge: Some(ch),
+                        message: Some("Check your email for the Spotify verification code".into()),
+                    },
+                },
+                Req::SpotifyEmailVerify { challenge, code } => {
+                    let u = self.spotify.finish_email_login(&challenge, &code).await?;
+                    self.forget_session().await;
+                    Resp::SpotifyAuth {
+                        username: Some(u),
+                        challenge: None,
+                        message: Some("Signed in to Spotify".into()),
+                    }
+                }
+                Req::SpotifyLogin { username, password } => {
+                    let u = self.spotify.login_password(&username, &password).await?;
+                    self.forget_session().await;
+                    Resp::SpotifyAuth {
+                        username: Some(u),
+                        challenge: None,
+                        message: Some("Signed in to Spotify".into()),
+                    }
+                }
+                Req::SpotifyWebLogin(sp_dc) => {
+                    let u = self.spotify.login_sp_dc(&sp_dc).await?;
+                    self.forget_session().await;
+                    Resp::SpotifyAuth {
+                        username: Some(u),
+                        challenge: None,
+                        message: Some("Signed in to Spotify".into()),
+                    }
+                }
+                Req::SpotifyLogout => {
+                    self.spotify.logout().await;
+                    crate::login::forget(&self.spotify_login_profile());
+                    Resp::SpotifyAuth { username: None, challenge: None, message: Some("Signed out of Spotify".into()) }
+                }
+                Req::SpotifySearch(query) => Resp::Search(self.spotify.search(&query).await?),
+                Req::SpotifyLibrary => {
+                    let (library, artists) = self.spotify.library().await?;
+                    let liked = self.spotify.liked_uris().await;
+                    Resp::SpotifyLibrary { library, artists, liked }
+                }
+                Req::SpotifyHome => Resp::Home(self.spotify.home_page().await?),
+                Req::SpotifyExplore => Resp::Explore(self.spotify.explore_page().await?),
             }))
         }
         .await;
@@ -935,6 +1068,68 @@ impl Backend {
             log::warn!("{what} failed: {e:#}");
             (!quiet).then(|| Resp::Error(format!("{what} failed: {e}")))
         })
+    }
+
+    /// Home feed: signed-in feed first, plus curated default YTM catalogs as suggestions.
+    async fn home(&self, params: Option<&str>, me: bool) -> anyhow::Result<ytm::HomePage> {
+        let api = &*self.api;
+        if !me || params.is_some() {
+            return ytm::home(api, params, me).await;
+        }
+        let (personal, anon) = tokio::join!(ytm::home(api, None, true), ytm::home(api, None, false));
+        let mut page = personal?;
+        let Ok(default_feed) = anon else {
+            return Ok(page);
+        };
+        let card_key = |t: &Target| match t {
+            Target::Song(s) => format!("s:{}", s.id),
+            Target::Album(id) => format!("al:{id}"),
+            Target::Playlist(id) => format!("pl:{id}"),
+            Target::Artist(id) => format!("ar:{id}"),
+        };
+        let mut seen_titles: std::collections::HashSet<String> = page
+            .shelves
+            .iter()
+            .map(|s| s.title.trim().to_ascii_lowercase())
+            .collect();
+        let mut seen_cards: std::collections::HashSet<String> = page
+            .shelves
+            .iter()
+            .flat_map(|s| match &s.kind {
+                ShelfKind::Cards(cards) => cards.iter().map(|c| card_key(&c.target)).collect::<Vec<_>>(),
+                ShelfKind::Songs { .. } => Vec::new(),
+            })
+            .collect();
+        let mut added = 0usize;
+        for mut s in default_feed.shelves {
+            if added >= 8 {
+                break;
+            }
+            let key = s.title.trim().to_ascii_lowercase();
+            if key == "listen again" || seen_titles.contains(&key) {
+                continue;
+            }
+            let ShelfKind::Cards(ref cards) = s.kind else {
+                continue;
+            };
+            if cards.is_empty() {
+                continue;
+            }
+            let overlap = cards.iter().filter(|c| seen_cards.contains(&card_key(&c.target))).count();
+            if overlap * 2 >= cards.len() {
+                continue;
+            }
+            seen_titles.insert(key);
+            for c in cards {
+                seen_cards.insert(card_key(&c.target));
+            }
+            if s.strapline.is_none() {
+                s.strapline = Some("SUGGESTED".to_string());
+            }
+            page.shelves.push(s);
+            added += 1;
+        }
+        Ok(page)
     }
 
     /// Explore: the charts, and new albums by charting artists or the listener's own.
@@ -1038,6 +1233,22 @@ impl Backend {
 
         // Race all lyrics providers concurrently and stream results as soon as each arrives.
         let (ptx, mut prx) = tokio::sync::mpsc::unbounded_channel::<Vec<lyrics::Lyrics>>();
+        if crate::spotify::is_spotify_id(&video_id) {
+            let sp = self.spotify.clone();
+            let ptx = ptx.clone();
+            let vid = video_id.clone();
+            tokio::spawn(async move {
+                match sp.lyrics(&vid).await {
+                    Ok(Some((lines, lang))) => {
+                        if let Some(l) = lyrics::Lyrics::from_raw(lyrics::Provider::Spotify, lines, lang, Vec::new()) {
+                            let _ = ptx.send(vec![l]);
+                        }
+                    }
+                    Ok(None) => {}
+                    Err(e) => log::debug!("spotify lyrics {vid}: {e:#}"),
+                }
+            });
+        }
         for kind in 0..3u8 {
             let client = self.lyrics.clone();
             let ptx = ptx.clone();
@@ -1232,7 +1443,7 @@ impl Backend {
         // header); from the top, the non-seekable one starts sooner.
         let seek = !at.is_zero();
         let shared2 = shared.clone();
-        let report = (report && self.is_logged_in() && reports_plays()).then(|| (self.clone(), video_id.to_owned()));
+        let report = (report && !crate::spotify::is_spotify_id(video_id) && self.is_logged_in() && reports_plays()).then(|| (self.clone(), video_id.to_owned()));
         let open = move || -> anyhow::Result<crate::audio::TrackDecoder> {
             let mut d = stream::decoder(shared.clone(), seek)?;
             if seek {
@@ -1342,6 +1553,9 @@ impl Backend {
     /// is downloaded (that file plays, offline too). A failed lookup isn't remembered,
     /// so the next play tries again.
     async fn song_version(&self, listed: &str, song_of: Option<&Track>, wait: std::time::Duration) -> Option<Track> {
+        if crate::spotify::is_spotify_id(listed) {
+            return None;
+        }
         let video = song_of.filter(|t| t.id == listed && t.music_video)?;
         if crate::downloads::path(listed).is_some() {
             return None;
@@ -1501,6 +1715,12 @@ impl Backend {
                 Err(_) => log::info!("{video_id}: the hi-res sources gave no answer in {HIRES_WAIT:?}"),
             }
         }
+        let mapped = if crate::spotify::is_spotify_id(video_id) {
+            Some(self.resolve_spotify_ytm(video_id, track).await?)
+        } else {
+            None
+        };
+        let video_id = mapped.as_ref().map_or(video_id, |t| t.id.as_str());
         let hq = best || self.hq.load(Ordering::Relaxed);
         if best
             && !self.jsc.ready()
@@ -1551,6 +1771,12 @@ impl Backend {
     /// `format`: the container the caller needs (the visionOS player picks Opus or AAC
     /// from it). The hi-res source re-resolves by searching for `track` again.
     async fn resolve_from(&self, source: Source, video_id: &str, format: stream::Format, track: Option<&Track>) -> anyhow::Result<ResolvedStream> {
+        let mapped = if crate::spotify::is_spotify_id(video_id) {
+            Some(self.resolve_spotify_ytm(video_id, track).await?)
+        } else {
+            None
+        };
+        let video_id = mapped.as_ref().map_or(video_id, |t| t.id.as_str());
         let plain = |s: innertube::Stream, ua: &str| ResolvedStream {
             url: s.url,
             size: s.size,
@@ -1684,6 +1910,11 @@ impl Backend {
         self.data_dir.join("webview")
     }
 
+    /// Webview profile used by the Spotify account sign-in window.
+    pub fn spotify_login_profile(&self) -> PathBuf {
+        self.data_dir.join("webview-spotify")
+    }
+
     /// Report an error from outside the request flow (e.g. the sign-in window).
     pub fn report_error(&self, msg: String) {
         let _ = self.tx.send(Resp::Error(msg));
@@ -1774,6 +2005,65 @@ impl Backend {
             resp = Resp::CollectionMore { id: id.clone(), load, more: token.is_some() && have < limit, tracks, set_ids };
         }
         Ok(resp)
+    }
+
+    async fn stream_spotify_playlist(&self, id: String, load: u64) -> anyhow::Result<Resp> {
+        let (c, mut more) = self.spotify.playlist_page(&id, 0, 100).await?;
+        let mut offset = c.tracks.len();
+        let mut resp = Resp::Collection { load, c, more };
+        while more {
+            let _ = self.tx.send(resp);
+            self.wake();
+            let (tracks, set_ids, next_more) = self.spotify.playlist_more(&id, offset, 100).await?;
+            let count = tracks.len();
+            offset += count;
+            more = next_more && count > 0;
+            resp = Resp::CollectionMore {
+                id: id.clone(),
+                load,
+                tracks,
+                set_ids,
+                more,
+            };
+        }
+        Ok(resp)
+    }
+
+    async fn resolve_spotify_ytm(&self, sp_id: &str, track: Option<&Track>) -> anyhow::Result<Track> {
+        let cell = {
+            let mut map = self.spotify_matches.lock().await;
+            if map.len() >= 1000 {
+                map.retain(|_, c| !c.initialized());
+            }
+            map.entry(sp_id.to_string()).or_default().clone()
+        };
+        let sp_track_opt = track.cloned();
+        let this = self.clone();
+        let id_owned = sp_id.to_string();
+        let found = cell
+            .get_or_try_init(|| async move {
+                let sp_track = match sp_track_opt {
+                    Some(t) => t,
+                    None => this
+                        .spotify
+                        .hydrate_tracks(&[id_owned.clone()])
+                        .await?
+                        .into_iter()
+                        .next()
+                        .ok_or_else(|| anyhow::anyhow!("Spotify track metadata unavailable"))?,
+                };
+                crate::transfer::match_track_to_ytm(
+                    &this.api,
+                    &sp_track.title,
+                    &sp_track.artists,
+                    sp_track.duration,
+                )
+                .await
+            })
+            .await?;
+        found
+            .clone()
+            .ok_or_else(|| anyhow::anyhow!("No playable stream match found for Spotify track"))
     }
 
     pub fn is_logged_in(&self) -> bool {

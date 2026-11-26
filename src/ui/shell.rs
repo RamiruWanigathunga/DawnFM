@@ -325,7 +325,7 @@ pub fn sidebar(app: &mut App, ui: &mut Ui) {
             sidebar_search_content(app, ui);
         });
     } else {
-        if section(ui, "YouTube Music") {
+        if section(ui, if app.spotify_mode { "Spotify" } else { "YouTube Music" }) {
             nav(ui, glyphs::HOME, APPLE, &t!("home"), Page::Home, p == Page::Home, &mut go_to);
             nav(ui, glyphs::EXPLORE, APPLE, &t!("new"), Page::New, p == Page::New, &mut go_to);
         }
@@ -336,7 +336,9 @@ pub fn sidebar(app: &mut App, ui: &mut Ui) {
             icon_row(ui, icon::CIRCLE_USER, &t!("artists"), Page::Library(LibTab::Artists), lib(LibTab::Artists), &mut go_to);
             icon_row(ui, icon::DISC_3, &t!("albums"), Page::Library(LibTab::Albums), lib(LibTab::Albums), &mut go_to);
             icon_row(ui, icon::HEART, &t!("liked_songs"), Page::Library(LibTab::Songs), lib(LibTab::Songs), &mut go_to);
-            icon_row(ui, icon::HISTORY, &t!("recently_played"), Page::Library(LibTab::History), lib(LibTab::History), &mut go_to);
+            if !app.spotify_mode {
+                icon_row(ui, icon::HISTORY, &t!("recently_played"), Page::Library(LibTab::History), lib(LibTab::History), &mut go_to);
+            }
             nav(ui, glyphs::DOWNLOAD, APPLE, &t!("downloads"), Page::Downloads, p == Page::Downloads, &mut go_to);
         }
         ui.add_space(4.0);
@@ -344,7 +346,7 @@ pub fn sidebar(app: &mut App, ui: &mut Ui) {
 
         // Playlists that appeared since the order was last changed join it at the end, so a
         // drag can place any of them.
-        if let Some(l) = &app.library {
+        if let Some(l) = if app.spotify_mode { &app.spotify_library } else { &app.library } {
             for c in &l.playlists {
                 if let Target::Playlist(id) = &c.target
                     && !app.playlist_order.contains(id)
@@ -356,11 +358,19 @@ pub fn sidebar(app: &mut App, ui: &mut Ui) {
 
         let pl_h = (ui.available_height() - bottom_h).max(0.0);
         ui.allocate_ui(vec2(ui.available_width(), pl_h), |ui| {
-            if !app.logged_in {
-                ui.label(egui::RichText::new(t!("sign_in_to_see_playlists")).color(theme::text_dim()));
-                ui.add_space(8.0);
-                if widgets::pill(ui, &t!("sign_in"), None, false).clicked() {
-                    app.start_sign_in(ui.ctx());
+            if !app.active_logged_in() {
+                if app.spotify_mode {
+                    ui.label(egui::RichText::new("Sign in to Spotify to see your playlists.").color(theme::text_dim()));
+                    ui.add_space(8.0);
+                    if widgets::pill(ui, "Open Settings", None, false).clicked() {
+                        go_to = Some(Page::Settings);
+                    }
+                } else {
+                    ui.label(egui::RichText::new(t!("sign_in_to_see_playlists")).color(theme::text_dim()));
+                    ui.add_space(8.0);
+                    if widgets::pill(ui, &t!("sign_in"), None, false).clicked() {
+                        app.start_sign_in(ui.ctx());
+                    }
                 }
                 return;
             }
@@ -373,7 +383,8 @@ pub fn sidebar(app: &mut App, ui: &mut Ui) {
                 .max_height(pl_h)
                 .show(ui, |ui| {
                 // Last launch's list until the library arrives.
-                let Some(playlists) = app.library.as_ref().map(|l| &l.playlists).or(app.sidebar_cache.as_ref()) else {
+                let fallback_cache = if app.spotify_mode { None } else { app.sidebar_cache.as_ref() };
+                let Some(playlists) = (if app.spotify_mode { app.spotify_library.as_ref() } else { app.library.as_ref() }).map(|l| &l.playlists).or(fallback_cache).cloned() else {
                     // The spinner animates every frame: give up on a request that never answered.
                     if app.library_requested.elapsed() < std::time::Duration::from_secs(20) {
                         ui.horizontal(|ui| {
@@ -429,6 +440,7 @@ pub fn sidebar(app: &mut App, ui: &mut Ui) {
                     let is_liked = id == super::LIKED_MUSIC
                         || id == "LM"
                         || id == "VLLM"
+                        || id == crate::spotify::SPOTIFY_LIKED_ID
                         || c.thumbs.iter().any(|t| t.url.contains("/images/pbg/liked-songs"));
                     if is_liked {
                         let icon_fg = if selected {

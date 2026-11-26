@@ -5,7 +5,6 @@ use std::time::Duration;
 use crate::backend::Req;
 use crate::model::{Card, Target, Track};
 
-use super::lists::LIKED_MUSIC;
 use super::queue::QueueFill;
 use super::{Action, App, Dialog, LibTab, NpTab, Page, jam, transfer};
 
@@ -32,7 +31,7 @@ impl App {
                 self.queue_source = match &self.page {
                     Page::Album(id) => Some(Target::Album(id.clone())),
                     Page::Playlist(id) => Some(Target::Playlist(id.clone())),
-                    Page::Library(LibTab::Songs) => Some(Target::Playlist(LIKED_MUSIC.into())),
+                    Page::Library(LibTab::Songs) => Some(Target::Playlist(self.active_liked_id().into())),
                     Page::Artist(id) => Some(Target::Artist(id.clone())),
                     _ => None,
                 };
