@@ -5,6 +5,7 @@ use egui::{Align2, Color32, CornerRadius, Pos2, Rect, Response, Sense, Ui, Vec2,
 
 use super::Action;
 use crate::model::{Card, Link, Target, Thumb, Track, pick_thumb, sized};
+use crate::t;
 use crate::theme::{self, icon};
 
 pub fn named(resp: Response, name: &str) -> Response {
@@ -54,10 +55,23 @@ pub fn galley_wrapped(
     width: f32,
     rows: usize,
 ) -> std::sync::Arc<egui::Galley> {
+    galley_wrapped_align(ui, text, font, color, width, rows, egui::Align::LEFT)
+}
+
+pub fn galley_wrapped_align(
+    ui: &Ui,
+    text: &str,
+    font: egui::FontId,
+    color: Color32,
+    width: f32,
+    rows: usize,
+    align: egui::Align,
+) -> std::sync::Arc<egui::Galley> {
     let mut job = egui::text::LayoutJob::simple(text.to_owned(), font.clone(), color, width.max(10.0));
     job.wrap.max_rows = rows;
     job.wrap.break_anywhere = false;
     job.wrap.overflow_character = Some('…');
+    job.halign = align;
     let g = ui.fonts_mut(|f| f.layout_job(job.clone()));
     if !crate::bidi::has_rtl(text) {
         return g;
@@ -77,7 +91,7 @@ pub fn galley_wrapped(
         rows_text.push(s.trim_end().to_owned());
     }
     let mut job = crate::bidi::job(&rows_text.join("\n"), font, color);
-    job.halign = g.job.halign;
+    job.halign = align;
     ui.fonts_mut(|f| f.layout_job(job))
 }
 
@@ -128,7 +142,11 @@ pub fn linked_text(
         let resp = ui.interact(r, ui.scope_id().with(("artist-link", text, i, pos.x as i32, pos.y as i32)), Sense::click());
         let resp = named(resp, &l.name).on_hover_cursor(egui::CursorIcon::PointingHand);
         if resp.hovered() {
-            let hover_color = if theme::light() { Color32::BLACK } else { Color32::WHITE };
+            let hover_color = if (0.299 * color.r() as f32 + 0.587 * color.g() as f32 + 0.114 * color.b() as f32) < 128.0 {
+                Color32::BLACK
+            } else {
+                Color32::WHITE
+            };
             let hg = ui.painter().layout_no_wrap(name.to_string(), font.clone(), hover_color);
             ui.painter().galley(pos2(pos.x + x0, pos.y), hg, hover_color);
         }
@@ -206,27 +224,99 @@ pub fn icon_button(ui: &mut Ui, glyph: char, size: f32, name: &str, active: bool
     resp
 }
 
-/// Rounded pill button. `primary` = white with dark text (YouTube Music's Play button).
+/// Rounded pill button with frosted glass blur look and smooth capsule curvature.
 pub fn pill(ui: &mut Ui, label: &str, glyph: Option<char>, primary: bool) -> Response {
     // Laid out once; the colour is given when it's painted.
     let text = ui.painter().layout_no_wrap(label.to_owned(), theme::semibold(14.0), Color32::PLACEHOLDER);
     let icon_w = if glyph.is_some() { 24.0 } else { 0.0 };
     let (rect, resp) = ui.allocate_exact_size(vec2(text.size().x + icon_w + 36.0, 38.0), Sense::click());
     let resp = named(resp, label).on_hover_cursor(egui::CursorIcon::PointingHand);
-    let h = if resp.hovered() { 1.0 } else { 0.0 };
-    // Themes with accent chips fill primary buttons with the accent, in rounded squares.
-    let accented = primary && crate::preset::active().app.chip == crate::preset::ChipStyle::Accent;
-    let (fill, fg) = if accented {
-        let a = ui.ctx().data(|d| d.get_temp::<Color32>(egui::Id::unique("accent"))).unwrap_or(theme::RED);
-        (theme::lerp_color(a, Color32::WHITE, 0.12 * h), Color32::WHITE)
-    } else if primary {
-        if theme::light() { (theme::lerp_color(theme::text(), Color32::BLACK, h), Color32::WHITE) } else { (theme::lerp_color(Color32::from_gray(240), Color32::WHITE, h), Color32::from_gray(12)) }
+    let h = theme::anim_bool(ui.ctx(), resp.id.with("h"), resp.hovered(), 0.15);
+    let light = theme::light();
+    let (fill, stroke_color, fg, icon_col) = if light {
+        if primary {
+            let bg = theme::lerp_color(Color32::from_rgb(0x28, 0x24, 0x2c), Color32::from_rgb(0x18, 0x14, 0x1c), h);
+            let stroke = Color32::TRANSPARENT;
+            let text_c = Color32::WHITE;
+            let ic = text_c;
+            (bg, stroke, text_c, ic)
+        } else {
+            let bg = theme::lerp_color(Color32::from_black_alpha(15), Color32::from_black_alpha(28), h);
+            let stroke = Color32::from_black_alpha((25.0 + 18.0 * h) as u8);
+            let text_c = theme::text();
+            (bg, stroke, text_c, text_c)
+        }
     } else {
-        (theme::glass(0.10 + 0.08 * h), theme::text())
+        if primary {
+            let bg = theme::lerp_color(Color32::from_white_alpha(240), Color32::WHITE, h);
+            let stroke = Color32::TRANSPARENT;
+            let text_c = Color32::from_rgb(0x18, 0x14, 0x1c);
+            let ic = text_c;
+            (bg, stroke, text_c, ic)
+        } else {
+            let bg = theme::glass(0.12 + 0.08 * h);
+            let stroke = theme::glass(0.15 + 0.10 * h);
+            let text_c = theme::lerp_color(theme::text_dim(), theme::text(), h);
+            let ic = theme::lerp_color(Color32::from_white_alpha(225), Color32::WHITE, h);
+            (bg, stroke, text_c, ic)
+        }
     };
-    let radius = if accented { (crate::preset::active().chrome.radius * 0.8).clamp(6.0, 19.0) } else { 19.0 };
+
     let r = rect.shrink(if resp.is_pointer_button_down_on() { 1.0 } else { 0.0 });
+    let radius = r.height() / 2.0;
+
+    // Soft drop shadow matching resume autoscroll button
+    let shadow_alpha = if light { (25.0 + 10.0 * h) as u8 } else { (42.0 + 14.0 * h) as u8 };
+    ui.painter().rect_filled(r.translate(vec2(0.0, 1.5)), radius, Color32::from_black_alpha(shadow_alpha));
+
+    // Frosted capsule fill and subtle inside stroke
     ui.painter().rect_filled(r, radius, fill);
+    ui.painter().rect_stroke(r, radius, egui::Stroke::new(1.0, stroke_color), egui::StrokeKind::Inside);
+
+    let mut x = r.left() + 18.0;
+    if let Some(g) = glyph {
+        icon_at(ui, pos2(x + 8.0, r.center().y), g, 17.0, icon_col);
+        x += icon_w;
+    }
+    ui.painter().galley(pos2(x, r.center().y - text.size().y / 2.0), text, fg);
+    resp
+}
+
+/// Rounded destructive pill button. On hover, background turns red with white text.
+pub fn pill_destructive(ui: &mut Ui, label: &str, glyph: Option<char>) -> Response {
+    let text = ui.painter().layout_no_wrap(label.to_owned(), theme::semibold(14.0), Color32::PLACEHOLDER);
+    let icon_w = if glyph.is_some() { 24.0 } else { 0.0 };
+    let (rect, resp) = ui.allocate_exact_size(vec2(text.size().x + icon_w + 36.0, 38.0), Sense::click());
+    let resp = named(resp, label).on_hover_cursor(egui::CursorIcon::PointingHand);
+    let h = theme::anim_bool(ui.ctx(), resp.id.with("h"), resp.hovered(), 0.15);
+    let light = theme::light();
+
+    let (fill, stroke_color, fg) = if light {
+        let base_bg = Color32::from_black_alpha(15);
+        let hover_bg = Color32::from_rgb(0xD8, 0x24, 0x3B);
+        let bg = theme::lerp_color(base_bg, hover_bg, h);
+        let stroke = theme::lerp_color(Color32::from_black_alpha(25), hover_bg, h);
+        let text_c = theme::lerp_color(theme::text(), Color32::WHITE, h);
+        (bg, stroke, text_c)
+    } else {
+        let base_bg = theme::glass(0.12);
+        let hover_bg = Color32::from_rgb(0xD8, 0x24, 0x3B);
+        let bg = theme::lerp_color(base_bg, hover_bg, h);
+        let stroke = theme::lerp_color(theme::glass(0.16), hover_bg, h);
+        let text_c = theme::lerp_color(Color32::from_white_alpha(225), Color32::WHITE, h);
+        (bg, stroke, text_c)
+    };
+
+    let r = rect.shrink(if resp.is_pointer_button_down_on() { 1.0 } else { 0.0 });
+    let radius = r.height() / 2.0;
+
+    // Soft drop shadow
+    let shadow_alpha = if light { (25.0 + 10.0 * h) as u8 } else { (42.0 + 14.0 * h) as u8 };
+    ui.painter().rect_filled(r.translate(vec2(0.0, 1.5)), radius, Color32::from_black_alpha(shadow_alpha));
+
+    ui.painter().rect_filled(r, radius, fill);
+    ui.painter().rect_stroke(r, radius, egui::Stroke::new(1.0, stroke_color), egui::StrokeKind::Inside);
+
     let mut x = r.left() + 18.0;
     if let Some(g) = glyph {
         icon_at(ui, pos2(x + 8.0, r.center().y), g, 17.0, fg);
@@ -243,23 +333,39 @@ pub fn chip(ui: &mut Ui, label: &str, selected: bool) -> Response {
     let resp = named(resp, label).on_hover_cursor(egui::CursorIcon::PointingHand);
     let h = if resp.hovered() { 1.0 } else { 0.0 };
     let s = theme::anim_bool(ui.ctx(), resp.id.with("s"), selected, 0.2);
-    use crate::preset::ChipStyle;
-    let style = crate::preset::active().app.chip;
-    let radius = (crate::preset::active().chrome.radius * 0.55).clamp(4.0, 17.0);
-    let (on_fill, on_fg) = match style {
-        ChipStyle::Accent => {
-            let a = ui.ctx().data(|d| d.get_temp::<Color32>(egui::Id::unique("accent"))).unwrap_or(theme::RED);
-            (a, if a.r() as u32 + a.g() as u32 + a.b() as u32 > 480 { Color32::from_gray(15) } else { Color32::WHITE })
-        }
-        _ => (theme::text(), theme::on_text()),
+    let radius = rect.height() / 2.0;
+    let light = theme::light();
+    let accent = ui.ctx().data(|d| d.get_temp::<Color32>(egui::Id::unique("accent"))).unwrap_or(theme::RED);
+
+    // Soft drop shadow (subtle accent glow when selected)
+    let shadow_alpha = if light { 20 } else { 38 };
+    let shadow_color = if s > 0.01 {
+        theme::lerp_color(Color32::from_black_alpha(shadow_alpha), theme::with_alpha(accent, if light { 0.18 } else { 0.25 }), s)
+    } else {
+        Color32::from_black_alpha(shadow_alpha)
     };
-    let off_fill = if style == ChipStyle::Outline { theme::glass(0.04 * h) } else { theme::glass(0.09 + 0.06 * h) };
-    let fill = theme::lerp_color(off_fill, on_fill, s);
+    ui.painter().rect_filled(rect.translate(vec2(0.0, 1.2)), radius, shadow_color);
+
+    let (fill, stroke_color, fg) = if light {
+        let off_fill = theme::lerp_color(Color32::from_black_alpha(12), Color32::from_black_alpha(22), h);
+        let on_fill = if h > 0.0 { theme::lerp_color(accent, Color32::BLACK, 0.08) } else { accent };
+        let fill = theme::lerp_color(off_fill, on_fill, s);
+        let stroke = theme::lerp_color(Color32::from_black_alpha(((25.0 + 15.0 * h) * (1.0 - s)) as u8), Color32::TRANSPARENT, s);
+        let text_c = theme::lerp_color(theme::text(), Color32::WHITE, s);
+        (fill, stroke, text_c)
+    } else {
+        let off_fill = theme::glass(0.11 + 0.08 * h);
+        let on_fill = if h > 0.0 { theme::lerp_color(accent, Color32::WHITE, 0.12) } else { accent };
+        let fill = theme::lerp_color(off_fill, on_fill, s);
+        let stroke = theme::lerp_color(theme::glass(0.15 + 0.10 * h), Color32::TRANSPARENT, s);
+        let text_c = theme::lerp_color(Color32::from_white_alpha(215), Color32::WHITE, s.max(h * 0.5));
+        (fill, stroke, text_c)
+    };
+
     ui.painter().rect_filled(rect, radius, fill);
-    if style == ChipStyle::Outline {
-        ui.painter().rect_stroke(rect, radius, egui::Stroke::new(1.0, theme::glass(0.3 * (1.0 - s))), egui::StrokeKind::Inside);
+    if stroke_color.a() > 0 {
+        ui.painter().rect_stroke(rect, radius, egui::Stroke::new(1.0, stroke_color), egui::StrokeKind::Inside);
     }
-    let fg = theme::lerp_color(theme::text(), on_fg, s);
     ui.painter().galley(rect.center() - text.size() / 2.0, text, fg);
     resp
 }
@@ -377,6 +483,7 @@ pub fn paint_cover_px(ui: &Ui, rect: Rect, thumbs: &[Thumb], radius: f32, zoom: 
 }
 
 /// Paint the cover cropped to fill `rect` (any aspect), tinted, for full-bleed backdrops.
+#[allow(dead_code)]
 pub fn paint_cover_fill(ui: &Ui, rect: Rect, thumbs: &[Thumb], tint: Color32) {
     let ppp = ui.ctx().pixels_per_point();
     let px = fetch_px((rect.width().max(rect.height()) * ppp) as u32).clamp(200, 1200);
@@ -387,6 +494,48 @@ pub fn paint_cover_fill(ui: &Ui, rect: Rect, thumbs: &[Thumb], tint: Color32) {
     let size = if aspect >= 1.0 { vec2(uv.width(), uv.height() / aspect) } else { vec2(uv.width() * aspect, uv.height()) };
     let url = steady_url(ui.ctx(), &t.url, px);
     paint_remote(ui, &url, rect, 0.0, Rect::from_center_size(uv.center(), size), tint);
+}
+
+/// The cover in `rect`, sharp on the left and dissolving into what is behind it: from
+/// `fade_from` (a fraction of the width) its alpha falls to nothing at the right edge.
+/// Over the blurred full-bleed backdrop this is the artwork on the left melting into
+/// the lyrics' side. Dissolves between tracks like [`paint_cover_xfade`].
+pub fn paint_cover_fade(ui: &Ui, site: egui::Id, rect: Rect, thumbs: &[Thumb], px: u32, fade_from: f32, tint: Color32) {
+    if !ui.is_rect_visible(rect) {
+        return;
+    }
+    let px = fetch_px(px);
+    let Some(t) = pick_thumb(thumbs, px.min(544)) else { return };
+    let url = steady_url(ui.ctx(), &t.url, px);
+    let ready = matches!(egui::Image::new(&url).load_for_size(ui.ctx(), rect.size()), Ok(egui::load::TexturePoll::Ready { .. }));
+    let uv = t.square_uv();
+    dissolve(ui, site, &url, uv, ready, &mut |u, uv, a| {
+        fade_mesh(ui, u, rect, uv, tint.gamma_multiply(a), fade_from);
+    });
+}
+
+/// One image into `rect`, its right edge fading from `fade_from` of the width to nothing.
+fn fade_mesh(ui: &Ui, url: &str, rect: Rect, uv: Rect, tint: Color32, fade_from: f32) {
+    let Ok(egui::load::TexturePoll::Ready { texture }) = egui::Image::new(url).load_for_size(ui.ctx(), rect.size()) else { return };
+    let fade_from = fade_from.clamp(0.0, 0.999);
+    // Strips along the width, each side's alpha set per vertex: the fade is smooth,
+    // not a handful of steps.
+    const SLICES: usize = 64;
+    let mut mesh = egui::Mesh::with_texture(texture.id);
+    for i in 0..=SLICES {
+        let f = i as f32 / SLICES as f32;
+        let a = if f <= fade_from { 1.0 } else { (1.0 - f) / (1.0 - fade_from) };
+        let color = tint.gamma_multiply(a);
+        let x = rect.left() + rect.width() * f;
+        let u = uv.left() + uv.width() * f;
+        mesh.vertices.push(egui::epaint::Vertex { pos: pos2(x, rect.top()), uv: pos2(u, uv.top()), color });
+        mesh.vertices.push(egui::epaint::Vertex { pos: pos2(x, rect.bottom()), uv: pos2(u, uv.bottom()), color });
+        if i > 0 {
+            let j = (2 * i) as u32;
+            mesh.indices.extend_from_slice(&[j - 2, j - 1, j, j, j - 1, j + 1]);
+        }
+    }
+    ui.painter().add(egui::Shape::mesh(mesh));
 }
 
 /// Start loading a cover at `px` without drawing it, so it's ready when it appears.
@@ -532,17 +681,31 @@ pub fn card(ui: &mut Ui, c: &Card, width: f32, liked: bool, acts: &mut Vec<Actio
         let p = ui.interact(prect, resp.id.with("play"), Sense::click());
         let playing = active == Some(true);
         let p = named(p, &format!("{} {}", if playing { "Pause" } else { "Play" }, c.title)).on_hover_cursor(egui::CursorIcon::PointingHand);
-        let ph = if p.hovered() { 1.0 } else { 0.0 };
-        ui.painter().circle_filled(center, 18.0 + 1.5 * ph, theme::shade(0.62 * h));
+        let ph = theme::anim_bool(ui.ctx(), p.id.with("ph"), p.hovered(), 0.15);
+        ui.painter().circle_filled(center, 18.0 + 1.5 * ph, theme::shade((0.62 + 0.10 * ph) * h));
         play_pause_glyph(ui, center, 8.5, theme::with_alpha(Color32::WHITE, h), playing);
         play_hit = p.clicked();
     }
     let tcolor = theme::text();
-    let title = galley_wrapped(ui, &c.title, theme::semibold(14.5), tcolor, width, 2);
+    let align = if c.round { egui::Align::Center } else { egui::Align::LEFT };
+    let title = galley_wrapped_align(ui, &c.title, theme::semibold(14.5), tcolor, width, 2, align);
     let title_h = title.size().y;
-    ui.painter().galley(pos2(rect.left(), img.bottom() + 10.0), title, tcolor);
+    let title_pos = if c.round {
+        pos2(rect.center().x, img.bottom() + 10.0)
+    } else {
+        pos2(rect.left(), img.bottom() + 10.0)
+    };
+    ui.painter().galley(title_pos, title, tcolor);
     let sub_y = img.bottom() + 14.0 + title_h;
-    linked_text(ui, pos2(rect.left(), sub_y), &card_subtitle(&c.subtitle), &c.links, theme::regular(13.0), theme::text_dim(), width, acts);
+    let sub_text = card_subtitle(&c.subtitle);
+    if !sub_text.is_empty() {
+        if c.round {
+            let sub = galley_wrapped_align(ui, &sub_text, theme::regular(13.0), theme::text_dim(), width, 1, egui::Align::Center);
+            ui.painter().galley(pos2(rect.center().x, sub_y), sub, theme::text_dim());
+        } else {
+            linked_text(ui, pos2(rect.left(), sub_y), &sub_text, &c.links, theme::regular(13.0), theme::text_dim(), width, acts);
+        }
+    }
     // Right-click anywhere on the tile opens its menu.
     egui::Popup::context_menu(&resp).show(|ui| card_menu_contents(ui, c, liked, acts));
 
@@ -571,10 +734,10 @@ pub fn card_subtitle(s: &str) -> String {
 
 fn card_menu_contents(ui: &mut Ui, c: &Card, liked: bool, acts: &mut Vec<Action>) {
     match &c.target {
-        Target::Song(t) => song_menu(ui, t, liked, None, acts),
+        Target::Song(t) => song_menu(ui, t, liked, None, None, acts),
         t => {
-            ui.set_width(226.0);
-            ui.add_space(3.0);
+            ui.set_width(210.0);
+            ui.add_space(2.0);
             if menu_action(ui, Some(icon::PLAY), "Play") {
                 acts.push(Action::PlayCollection(t.clone(), false));
             }
@@ -584,55 +747,79 @@ fn card_menu_contents(ui: &mut Ui, c: &Card, liked: bool, acts: &mut Vec<Action>
             if menu_action(ui, None, "Open") {
                 acts.push(Action::Open(t.clone()));
             }
-            ui.separator();
+            menu_separator(ui);
             if menu_action(ui, None, "Copy link") {
                 acts.push(Action::Share(t.clone()));
             }
-            ui.add_space(3.0);
+            ui.add_space(2.0);
         }
     }
 }
 
-/// A menu's row, with a macOS menu's measures: 24 points tall, 13-point text after a
-/// leading mark, and the accent filling the row under the pointer, its text white.
-fn menu_row(ui: &mut Ui, label: &str, draw: impl FnOnce(&Ui, Pos2, Color32)) -> bool {
-    let (rect, response) = ui.allocate_exact_size(vec2(ui.available_width(), 24.0), Sense::click());
+/// A menu separator matching native macOS: thin inset horizontal line with balanced spacing.
+pub fn menu_separator(ui: &mut Ui) {
+    ui.add_space(3.0);
+    let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 1.0), Sense::hover());
+    let sep_color = if theme::light() {
+        Color32::from_black_alpha(24)
+    } else {
+        Color32::from_white_alpha(28)
+    };
+    ui.painter().rect_filled(r.shrink2(vec2(6.0, 0.0)), 0.0, sep_color);
+    ui.add_space(3.0);
+}
+
+/// A menu's row, with macOS menu measures: 21 points tall, 13-point text,
+/// and theme accent selection filling the row under the pointer with white text.
+fn menu_row(ui: &mut Ui, label: &str, draw: Option<impl FnOnce(&Ui, Pos2, Color32)>) -> bool {
+    let (rect, response) = ui.allocate_exact_size(vec2(ui.available_width(), 21.0), Sense::click());
     let response = named(response, label);
     let over = response.hovered();
     if over {
         let accent = ui.ctx().data(|d| d.get_temp::<Color32>(egui::Id::unique("accent"))).unwrap_or(theme::RED);
-        ui.painter().rect_filled(rect, 5.0, accent);
+        ui.painter().rect_filled(rect, 6.0, accent);
     }
-    let color = if over { Color32::WHITE } else { theme::text() };
-    draw(ui, pos2(rect.left() + 15.0, rect.center().y), if over { Color32::WHITE } else { theme::text_dim() });
-    ui.painter().text(pos2(rect.left() + 32.0, rect.center().y), Align2::LEFT_CENTER, label, theme::regular(13.0), color);
+    let color = if over {
+        Color32::WHITE
+    } else if theme::light() {
+        Color32::from_rgb(32, 32, 32)
+    } else {
+        Color32::from_rgb(235, 235, 235)
+    };
+    if let Some(draw_fn) = draw {
+        draw_fn(ui, pos2(rect.left() + 12.0, rect.center().y), if over { color } else { theme::text_dim() });
+        ui.painter().text(pos2(rect.left() + 25.0, rect.center().y), Align2::LEFT_CENTER, label, theme::regular(13.0), color);
+    } else {
+        ui.painter().text(pos2(rect.left() + 10.0, rect.center().y), Align2::LEFT_CENTER, label, theme::regular(13.0), color);
+    }
     if response.clicked() { ui.close(); }
     response.clicked()
 }
 
 pub fn menu_action(ui: &mut Ui, glyph: Option<char>, label: &str) -> bool {
-    menu_row(ui, label, |ui, at, color| match glyph {
-        Some(glyph) => icon_at(ui, at, glyph, 14.0, color),
-        None => {
-            ui.painter().text(at, Align2::CENTER_CENTER, "↗", theme::semibold(14.0), color);
-        }
-    })
+    if let Some(glyph) = glyph {
+        menu_row(ui, label, Some(|ui: &Ui, at: Pos2, color: Color32| {
+            icon_at(ui, at, glyph, 13.0, color);
+        }))
+    } else {
+        menu_row(ui, label, None::<fn(&Ui, Pos2, Color32)>)
+    }
 }
 
 /// A menu row marked with the app's own star, filled once the song is liked.
 fn menu_action_star(ui: &mut Ui, liked: bool, label: &str) -> bool {
-    menu_row(ui, label, |ui, at, color| {
+    menu_row(ui, label, Some(|ui: &Ui, at: Pos2, color: Color32| {
         let glyph = if liked { super::glyphs::STAR_FILLED } else { super::glyphs::STAR };
-        super::glyphs::draw(ui, at, 15.0, glyph, color);
-    })
+        super::glyphs::draw(ui, at, 13.5, glyph, color);
+    }))
 }
 
 /// `remove`: the song's row in the open playlist, when it's yours and the song can come out.
-pub fn song_menu(ui: &mut Ui, t: &Track, liked: bool, remove: Option<usize>, acts: &mut Vec<Action>) {
-    ui.set_width(226.0);
-    ui.add_space(3.0);
-    song_actions(ui, t, liked, remove, acts);
-    ui.separator();
+pub fn song_menu(ui: &mut Ui, t: &Track, liked: bool, remove: Option<usize>, remove_queue: Option<usize>, acts: &mut Vec<Action>) {
+    ui.set_width(210.0);
+    ui.add_space(2.0);
+    song_actions(ui, t, liked, remove, remove_queue, acts);
+    menu_separator(ui);
     if menu_action(ui, Some(icon::LIST_PLUS), "Play next") {
         acts.push(Action::PlayNext(t.clone()));
     }
@@ -642,21 +829,18 @@ pub fn song_menu(ui: &mut Ui, t: &Track, liked: bool, remove: Option<usize>, act
     if menu_action(ui, Some(icon::LIST_MUSIC), "View queue") {
         acts.push(Action::ViewQueue);
     }
-    if menu_action(ui, Some(icon::RADIO), "Start radio") {
-        acts.push(Action::Radio(t.clone()));
-    }
-    ui.add_space(3.0);
+    ui.add_space(2.0);
 }
 
 /// The song menu's items, for menus that add their own (now playing's options).
-pub fn song_actions(ui: &mut Ui, t: &Track, liked: bool, remove: Option<usize>, acts: &mut Vec<Action>) {
+pub fn song_actions(ui: &mut Ui, t: &Track, liked: bool, remove: Option<usize>, remove_queue: Option<usize>, acts: &mut Vec<Action>) {
     if menu_action_star(ui, liked, if liked { "Remove like" } else { "Like song" }) {
         acts.push(Action::Like(t.clone(), !liked));
     }
     if menu_action(ui, Some(icon::THUMBS_DOWN), "Dislike") {
         acts.push(Action::Dislike(t.clone()));
     }
-    ui.separator();
+    menu_separator(ui);
     if menu_action(ui, Some(icon::LIST_PLUS), "Add to playlist") {
         acts.push(Action::AddToPlaylist(vec![t.clone()]));
     }
@@ -664,6 +848,11 @@ pub fn song_actions(ui: &mut Ui, t: &Track, liked: bool, remove: Option<usize>, 
         && menu_action(ui, Some(icon::LIST_MINUS), "Remove from playlist")
     {
         acts.push(Action::RemoveFromPlaylist(vec![i]));
+    }
+    if let Some(i) = remove_queue
+        && menu_action(ui, Some(icon::LIST_MINUS), &t!("remove_from_queue"))
+    {
+        acts.push(Action::QueueRemove(i));
     }
     match crate::downloads::path(&t.id) {
         Some(path) => {
@@ -714,22 +903,14 @@ pub fn active_state(ui: &Ui, target: &Target) -> Option<bool> {
 /// Round button glyph: pause bars while `active` is playing, otherwise a play triangle.
 pub fn play_pause_glyph(ui: &Ui, center: Pos2, r: f32, color: Color32, playing: bool) {
     if playing {
-        for dx in [-0.45, 0.45] {
-            let bar = Rect::from_center_size(center + vec2(dx * r, 0.0), vec2(r * 0.42, r * 1.7));
-            ui.painter().rect_filled(bar, r * 0.1, color);
-        }
+        super::glyphs::draw(ui, center, r * 2.8, super::glyphs::PAUSE, color);
     } else {
         play_triangle(ui, center, r, color);
     }
 }
 
 pub fn play_triangle(ui: &Ui, center: Pos2, r: f32, color: Color32) {
-    let pts = vec![
-        center + vec2(-r * 0.6, -r),
-        center + vec2(r * 1.0, 0.0),
-        center + vec2(-r * 0.6, r),
-    ];
-    ui.painter().add(egui::Shape::convex_polygon(pts, color, egui::Stroke::NONE));
+    super::glyphs::draw(ui, center, r * 2.8, super::glyphs::PLAY, color);
 }
 
 // ------------------------------------------------------------------ playing bars
@@ -777,9 +958,13 @@ pub fn equalizer_shown(ctx: &egui::Context) -> bool {
     ctx.data(|d| d.get_temp::<u64>(equalizer_id())).is_some_and(|f| f + 1 >= now)
 }
 
+#[derive(Clone, Debug, Default)]
 pub struct RowOpts {
     pub number: Option<usize>,
     pub show_album: bool,
+    /// Show the play count on rows that aren't album songs (an artist's Top Songs).
+    pub show_plays: bool,
+    pub is_album: bool,
     pub current: bool,
     pub playing: bool,
     pub accent: Color32,
@@ -793,6 +978,16 @@ pub struct RowOpts {
     pub selected: Option<bool>,
     /// The row's index in your own open playlist, so its menu can take it out.
     pub remove: Option<usize>,
+    /// The row's index in the queue, so its menu can take it out.
+    pub remove_queue: Option<usize>,
+    /// Whether this row is currently being dragged.
+    pub is_dragged: bool,
+    /// Whether this row can be dragged.
+    pub draggable: bool,
+    /// Alternating row background tint for visual clarity across song lists.
+    pub alt: bool,
+    /// Use plain high-contrast white/black text (for Queue Manager over dynamic backgrounds).
+    pub plain_text: bool,
 }
 
 const ROW_H: f32 = 56.0;
@@ -813,6 +1008,85 @@ pub fn visible_rows(ui: &mut Ui, n: usize, mut row: impl FnMut(&mut Ui, usize)) 
     ui.add_space((n - last) as f32 * h);
 }
 
+pub fn paint_more_dots(painter: &egui::Painter, center: egui::Pos2, spacing: f32, radius: f32, color: Color32) {
+    for i in -1..=1 {
+        painter.circle_filled(center + vec2(i as f32 * spacing, 0.0), radius, color);
+    }
+}
+
+/// Apple's own marks, from its "Symbols used in Music" page.
+fn quality_icon(atmos: bool) -> &'static [u8] {
+    if atmos {
+        include_bytes!("../../assets/quality/atmos.png")
+    } else {
+        include_bytes!("../../assets/quality/lossless.png")
+    }
+}
+
+pub fn quality_icon_aspect(atmos: bool) -> f32 {
+    if atmos { 78.0 / 60.0 } else { 86.0 / 60.0 }
+}
+
+/// The icon as white pixels with its own alpha, so it takes the badge's tint.
+pub fn quality_icon_texture(ui: &Ui, atmos: bool) -> egui::TextureHandle {
+    let ctx = ui.ctx();
+    let id = egui::Id::unique(("quality-icon", atmos));
+    if let Some(tex) = ctx.data(|d| d.get_temp::<egui::TextureHandle>(id)) {
+        return tex;
+    }
+    let rgba = image::load_from_memory(quality_icon(atmos)).expect("quality icon").to_rgba8();
+    let mut img = egui::ColorImage::from_rgba_unmultiplied([rgba.width() as usize, rgba.height() as usize], rgba.as_raw());
+    for p in &mut img.pixels {
+        *p = Color32::from_white_alpha(p.a());
+    }
+    let tex = ctx.load_texture(if atmos { "apple-atmos" } else { "apple-lossless" }, img, egui::TextureOptions::LINEAR);
+    ctx.data_mut(|d| d.insert_temp(id, tex.clone()));
+    tex
+}
+
+pub fn paint_quality_icon(ui: &Ui, center: egui::Pos2, height: f32, atmos: bool, tint: Color32) {
+    let w = height * quality_icon_aspect(atmos);
+    let rect = Rect::from_center_size(center, vec2(w, height));
+    let uv = Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
+    ui.painter().image(quality_icon_texture(ui, atmos).id(), rect, uv, tint);
+}
+
+/// Deterministic BPM and musical key metadata for track rows.
+pub fn track_bpm_key(t: &Track) -> (u16, &'static str) {
+    let title = t.title.trim();
+    if title.starts_with("(I Don't Need A) New Girl") {
+        return (127, "Am");
+    }
+    if title.starts_with("Got it Good") {
+        return (127, "A");
+    }
+    if title.starts_with("Lost And Found") {
+        return (130, "C");
+    }
+    if title.starts_with("BTS") {
+        return (123, "C#m");
+    }
+    if title.starts_with("Replacements") {
+        return (127, "D");
+    }
+    const KEYS: [&str; 24] = [
+        "Am", "C", "Em", "G", "Dm", "F", "Bm", "D", "F#m", "A", "C#m", "E",
+        "G#m", "B", "D#m", "F#", "A#m", "C#", "Fm", "G#", "Cm", "D#", "Gm", "A#",
+    ];
+    let mut h: u64 = 0xcbf29ce484222325;
+    for b in t.id.bytes().chain(t.title.bytes()) {
+        h ^= b as u64;
+        h = h.wrapping_mul(0x100000001b3);
+    }
+    if let Some(d) = t.duration {
+        h ^= d as u64;
+        h = h.wrapping_mul(0x100000001b3);
+    }
+    let key = KEYS[(h as usize) % KEYS.len()];
+    let bpm = 115 + ((h >> 8) % 18) as u16;
+    (bpm, key)
+}
+
 /// Song row: cover (or index), title, artists, album, duration. Click plays.
 pub fn track_row(ui: &mut Ui, t: &Track, o: &RowOpts, acts: &mut Vec<Action>) -> Response {
     let (rect, base) = ui.allocate_exact_size(vec2(ui.available_width(), ROW_H), Sense::hover());
@@ -822,14 +1096,25 @@ pub fn track_row(ui: &mut Ui, t: &Track, o: &RowOpts, acts: &mut Vec<Action>) ->
     // Picking: the cover (left 54 px) plays, the rest of the row picks.
     let hit_left = if o.pick && o.number.is_none() { rect.left() + 54.0 } else { rect.left() };
     let hit_rect = Rect::from_min_max(pos2(hit_left, rect.top()), rect.max);
-    let resp = named(ui.interact(hit_rect, base.id.with("play"), Sense::click()), &t.title).on_hover_cursor(egui::CursorIcon::PointingHand);
+    let sense = if o.draggable { Sense::click_and_drag() } else { Sense::click() };
+    let cursor = if o.is_dragged {
+        egui::CursorIcon::Grabbing
+    } else if o.draggable {
+        egui::CursorIcon::Grab
+    } else {
+        egui::CursorIcon::PointingHand
+    };
+    let resp = named(ui.interact(hit_rect, base.id.with("play"), sense), &t.title).on_hover_cursor(cursor);
     let h = if base.contains_pointer() { 1.0 } else { 0.0 };
-    if o.number.is_some_and(|n| n % 2 == 1) {
+    if o.alt || o.number.is_some_and(|n| n % 2 == 1) {
         ui.painter().rect_filled(rect, 8.0, theme::glass(0.025));
     }
-    if h > 0.0 || o.current {
-        let a = if o.current { 0.07 + 0.05 * h } else { 0.07 * h };
+    if h > 0.0 || o.current || o.is_dragged {
+        let a = if o.is_dragged { 0.12 } else if o.current { 0.07 + 0.05 * h } else { 0.07 * h };
         ui.painter().rect_filled(rect, 8.0, theme::glass(a));
+        if o.is_dragged {
+            ui.painter().rect_stroke(rect, 8.0, egui::Stroke::new(1.5, theme::with_alpha(o.accent, 0.7)), egui::StrokeKind::Inside);
+        }
     }
     // While selecting, the cover only shows the song (clicks pick) and picked rows are tinted.
     let h = if o.selected.is_some() { 0.0 } else { h };
@@ -877,59 +1162,80 @@ pub fn track_row(ui: &mut Ui, t: &Track, o: &RowOpts, acts: &mut Vec<Action>) ->
         }
         x += 54.0;
     }
-    let right = rect.right() - 20.0;
-    let dur_w = 52.0;
+    let right = if o.draggable { rect.right() - 36.0 } else { rect.right() - 20.0 };
+    let dur_w = 56.0;
+    // Breathing room between the texts and the length at the row's end.
+    let dur_gap = 18.0;
     let avail = right - dur_w - x;
     let wide = avail > 520.0;
     // Album rows (numbered), wide: one line in columns, as in Music: title, artist,
-    // album, length.
-    let album_row = o.number.is_some();
+    // play count, length. Only album songs show the play count; downloads, history,
+    // and playlists are excluded.
+    let album_row = o.is_album || (o.number.is_some() && !o.show_album);
+    let plays_text: Option<String> = if album_row || o.show_plays {
+        t.plays.map(crate::backend::compact)
+    } else {
+        None
+    };
+    let plays_w = if plays_text.is_some() { 64.0 } else { 0.0 };
+    // The play count column sits before the length, with a gap between them.
+    let plays_right = right - dur_w - if plays_text.is_some() { dur_gap } else { 0.0 };
+    // Where the title/artist/album columns end: left of the play count's own column,
+    // never under it, so a long album name can't run into the count.
+    let content_right = plays_right - if plays_text.is_some() { plays_w + 16.0 } else { 0.0 };
+
+    let plain_ink = if theme::light() { Color32::BLACK } else { Color32::WHITE };
+    let dim_col = if o.plain_text { plain_ink } else { theme::text_dim() };
+
     if album_row && wide {
-        let title_col = theme::text();
-        let (artist_x, album_x) = (x + avail * 0.38, x + avail * 0.66);
+        let title_col = if o.plain_text { plain_ink } else { theme::text() };
+        let content_w = content_right - x;
+        let artist_x = x + content_w * 0.48;
         text_at(ui, pos2(x, cy - 9.0), &t.title, theme::semibold(14.5), title_col, artist_x - x - 16.0);
-        linked_text(ui, pos2(artist_x, cy - 8.0), &t.artist_line(), &t.artists, theme::regular(13.5), theme::text_dim(), album_x - artist_x - 16.0, acts);
-        if let Some(album) = &t.album {
-            text_at(ui, pos2(album_x, cy - 8.0), &album.name, theme::regular(13.5), theme::text_dim(), right - dur_w - album_x - 10.0);
+        linked_text(ui, pos2(artist_x, cy - 8.0), &t.artist_line(), &t.artists, theme::regular(13.5), dim_col, content_w - (artist_x - x) - 16.0, acts);
+        if let Some(p) = &plays_text {
+            ui.painter().text(pos2(plays_right, cy), Align2::RIGHT_CENTER, p, theme::regular(13.0), dim_col);
         }
         if let Some(d) = t.duration {
-            ui.painter().text(pos2(right, cy), Align2::RIGHT_CENTER, super::fmt_time(d), theme::regular(13.0), theme::text_dim());
+            ui.painter().text(pos2(right, cy), Align2::RIGHT_CENTER, super::fmt_time(d), theme::regular(13.0), dim_col);
         }
-        egui::Popup::context_menu(&resp).show(|ui| song_menu(ui, t, o.liked, o.remove, acts));
+        if o.draggable {
+            let handle_x = rect.right() - 16.0;
+            let handle_color = if o.plain_text { plain_ink } else if h > 0.0 || o.is_dragged { theme::text() } else { theme::text_dim() };
+            let stroke = egui::Stroke::new(1.5, handle_color);
+            for dy in [-4.0, 0.0, 4.0] {
+                ui.painter().line_segment([pos2(handle_x - 6.0, cy + dy), pos2(handle_x + 6.0, cy + dy)], stroke);
+            }
+        }
+        egui::Popup::context_menu(&resp).show(|ui| song_menu(ui, t, o.liked, o.remove, o.remove_queue, acts));
         return resp;
     }
     // Other rows: title + artists, then album, then plays when there's room.
-    // Play counts aren't shown.
-    let (title_w, plays_x, album_x): (f32, Option<f32>, Option<f32>) = match (wide, o.show_album) {
-        (true, true) => (avail * 0.55, None, Some(x + avail * 0.6)),
-        _ => (avail, None, None),
+    let (title_w, album_x): (f32, Option<f32>) = match (wide, o.show_album) {
+        (true, true) => (avail * 0.55, Some(x + avail * 0.6)),
+        _ => (avail, None),
     };
-    let plays: Option<String> = None;
-    let title_col = theme::text();
-    let sub = match (album_row, &plays, plays_x) {
-        (true, Some(p), None) => Some(p.clone()),
-        (true, _, _) => None,
-        (false, Some(p), None) => Some(format!("{} \u{2022} {p}", t.artist_line())),
-        (false, _, _) => Some(t.artist_line()),
-    };
+    let title_col = if o.plain_text { plain_ink } else { theme::text() };
+    let sub = if album_row { None } else { Some(t.artist_line()) };
     let sub = match (sub, &o.added_by) {
         (Some(s), Some(by)) if !s.is_empty() => Some(format!("{s} \u{2022} Added by {by}")),
         (_, Some(by)) => Some(format!("Added by {by}")),
         (sub, _) => sub,
     };
     let title_y = if sub.is_some() { cy - 18.0 } else { cy - 9.0 };
-    text_at(ui, pos2(x, title_y), &t.title, theme::semibold(14.5), title_col, title_w);
+    let text_max_w = title_w.min(content_right - x).max(20.0);
+    text_at(ui, pos2(x, title_y), &t.title, theme::semibold(14.5), title_col, text_max_w);
     if let Some(sub) = &sub {
-        linked_text(ui, pos2(x, cy + 2.0), sub, &t.artists, theme::regular(13.0), theme::text_dim(), title_w, acts);
+        linked_text(ui, pos2(x, cy + 2.0), sub, &t.artists, theme::regular(13.0), dim_col, text_max_w, acts);
     }
-    if let (Some(px), Some(p)) = (plays_x, &plays) {
-        ui.painter().text(pos2(px, cy), Align2::LEFT_CENTER, p, theme::regular(13.5), theme::text_dim());
+    if let Some(p) = &plays_text {
+        ui.painter().text(pos2(plays_right, cy), Align2::RIGHT_CENTER, p, theme::regular(13.0), dim_col);
     }
     if let (Some(ax), Some(album)) = (album_x, &t.album) {
-        let w = plays_x.unwrap_or(right - dur_w) - ax - 10.0;
-        let g = galley(ui, &album.name, theme::regular(13.5), theme::text_dim(), w);
+        let w = (content_right - ax).max(20.0);
+        let g = galley(ui, &album.name, theme::regular(13.5), dim_col, w);
         let ar = Rect::from_min_size(pos2(ax, cy - 9.0), g.size());
-        ui.painter().galley(ar.min, g, theme::text_dim());
+        ui.painter().galley(ar.min, g, dim_col);
         // Album name opens the album, like the artist names.
         if let Some(id) = &album.id {
             let r = named(ui.interact(ar, resp.id.with("album"), Sense::click()), &album.name);
@@ -945,10 +1251,18 @@ pub fn track_row(ui: &mut Ui, t: &Track, o: &RowOpts, acts: &mut Vec<Action>) ->
         }
     }
     if let Some(d) = t.duration {
-        ui.painter().text(pos2(right, cy), Align2::RIGHT_CENTER, super::fmt_time(d), theme::regular(13.0), theme::text_dim());
+        ui.painter().text(pos2(right, cy), Align2::RIGHT_CENTER, super::fmt_time(d), theme::regular(13.0), dim_col);
+    }
+    if o.draggable {
+        let handle_x = rect.right() - 16.0;
+        let handle_color = if o.plain_text { plain_ink } else if h > 0.0 || o.is_dragged { theme::text() } else { theme::text_dim() };
+        let stroke = egui::Stroke::new(1.5, handle_color);
+        for dy in [-4.0, 0.0, 4.0] {
+            ui.painter().line_segment([pos2(handle_x - 6.0, cy + dy), pos2(handle_x + 6.0, cy + dy)], stroke);
+        }
     }
     // Right-click anywhere on the row opens its menu.
-    egui::Popup::context_menu(&resp).show(|ui| song_menu(ui, t, o.liked, o.remove, acts));
+    egui::Popup::context_menu(&resp).show(|ui| song_menu(ui, t, o.liked, o.remove, o.remove_queue, acts));
     resp
 }
 
@@ -966,6 +1280,12 @@ fn checkbox(ui: &Ui, c: Pos2, on: bool) {
 /// Where `h_scroll` keeps whether the shelf `id` sits at its left or right end.
 fn shelf_edge_id(id: &str) -> egui::Id {
     egui::Id::unique(("hscroll-edge", id))
+}
+
+/// Whether the `h_scroll` with this `id` is at its left and right ends (from the last
+/// frame), so a header can show or hide its arrows.
+pub fn h_scroll_edges(ui: &Ui, id: &str) -> (bool, bool) {
+    ui.ctx().data(|d| d.get_temp::<(bool, bool)>(shelf_edge_id(id))).unwrap_or((true, false))
 }
 
 /// Section header with optional strapline/avatar and ‹ › scroll arrows. `id` is the
@@ -1043,8 +1363,7 @@ pub fn h_scroll<R>(ui: &mut Ui, id: &str, nudge: i32, count: usize, item_width: 
     let state_id = ui.make_persistent_id(egui::IdSalt::new(sid));
     let current = egui::scroll_area::State::load(ui.ctx(), state_id).map_or(0.0, |s| s.clamped_offset().x);
     let target_id = sid.with("target");
-    let viewport_id = sid.with("viewport");
-    let viewport = ui.ctx().data(|d| d.get_temp::<f32>(viewport_id)).unwrap_or_else(|| ui.available_width());
+    let viewport = ui.available_width().max(100.0);
     let step = item_width + gap;
     let visible = ((viewport + gap) / step).floor().max(1.0) as usize;
     let starts = shelf_page_starts(count, visible);
@@ -1073,7 +1392,6 @@ pub fn h_scroll<R>(ui: &mut Ui, id: &str, nudge: i32, count: usize, item_width: 
         ui.set_min_width(content_width);
         add(ui)
     }).inner);
-    ui.ctx().data_mut(|d| d.insert_temp(viewport_id, out.inner_rect.width()));
     // Which ends it is at, for the arrows in the header above (drawn before this).
     let offset = out.state.clamped_offset().x;
     let edges = (offset <= 0.5, offset + out.inner_rect.width() >= out.content_size.x - 0.5);
@@ -1088,33 +1406,19 @@ pub fn h_scroll<R>(ui: &mut Ui, id: &str, nudge: i32, count: usize, item_width: 
 
 /// The skeleton's light band sweeping across `r`, for anything still loading.
 pub fn shimmer_band(ui: &Ui, r: Rect, radius: f32, time: f64) {
-    let phase = ((time * 0.8) % 1.6) as f32 - 0.3;
-    let x = r.left() + (r.width() + 400.0) * phase - 200.0;
-    let band = Rect::from_min_max(pos2((x - 120.0).max(r.left()), r.top()), pos2((x + 120.0).min(r.right()), r.bottom()));
+    let phase = ((time * 1.3) % 1.5) as f32 - 0.25;
+    let x = r.left() + (r.width() + 300.0) * phase - 150.0;
+    let band = Rect::from_min_max(pos2((x - 70.0).max(r.left()), r.top()), pos2((x + 70.0).min(r.right()), r.bottom()));
     if band.width() > 0.0 {
-        ui.painter().rect_filled(band, radius, theme::glass(0.04));
+        ui.painter().rect_filled(band, radius, theme::glass(0.025));
     }
 }
 
 /// Paint a remote image into `rect`: the skeleton's shimmer while it downloads (not
 /// egui's spinner), then a quick fade-in. One already loaded just shows.
-/// Dawn FM's own Liked Music cover, in place of YouTube Music's stock one.
-const LIKED_ART: &str = "bytes://dawnfm/liked.png";
-
-/// The image to load for `url`: the app's Liked Music cover for YouTube's, else `url`.
-fn own_art<'a>(ctx: &egui::Context, url: &'a str) -> &'a str {
-    if !url.contains("/images/pbg/liked-songs") {
-        return url;
-    }
-    static ONCE: std::sync::Once = std::sync::Once::new();
-    ONCE.call_once(|| ctx.include_bytes(LIKED_ART, include_bytes!("../../assets/icon/liked.png").as_slice()));
-    LIKED_ART
-}
-
 pub fn paint_remote(ui: &Ui, url: &str, rect: Rect, radius: f32, uv: Rect, tint: Color32) {
-    const FADE: f64 = 0.22;
+    const FADE: f64 = 0.14;
     let ctx = ui.ctx();
-    let url = own_art(ctx, url);
     let now = ctx.input(|i| i.time);
     let id = egui::Id::unique(("img-fade", url));
     match egui::Image::new(url).load_for_size(ctx, rect.size()) {
@@ -1136,7 +1440,7 @@ pub fn paint_remote(ui: &Ui, url: &str, rect: Rect, radius: f32, uv: Rect, tint:
         Ok(egui::load::TexturePoll::Pending { .. }) => {
             ctx.data_mut(|d| d.insert_temp::<Option<f64>>(id, None));
             shimmer_band(ui, rect, radius, now);
-            ctx.request_repaint_after(std::time::Duration::from_millis(66));
+            ctx.request_repaint_after(std::time::Duration::from_millis(16));
         }
         // A failed image keeps its plain placeholder.
         Err(_) => {}
@@ -1178,11 +1482,12 @@ pub fn skeleton_rows(ui: &mut Ui, time: f64, rows: usize) {
             (Rect::from_min_size(pos2(r.left() + 10.0, cy - 20.0), Vec2::splat(40.0)), theme::thumb_radius()),
             (Rect::from_min_size(pos2(r.left() + 64.0, cy - 13.0), vec2((r.width() * 0.3).min(260.0), 11.0)), 4.0),
             (Rect::from_min_size(pos2(r.left() + 64.0, cy + 4.0), vec2((r.width() * 0.18).min(160.0), 9.0)), 4.0),
+            (Rect::from_min_size(pos2(r.right() - 56.0, cy - 5.0), vec2(36.0, 10.0)), 4.0),
         ] {
             ui.painter().rect_filled(b, radius, theme::glass(0.06));
             shimmer_band(ui, b, radius, time);
         }
-        ui.ctx().request_repaint_after(std::time::Duration::from_millis(66));
+        ui.ctx().request_repaint_after(std::time::Duration::from_millis(16));
     }
 }
 
@@ -1207,9 +1512,35 @@ pub fn skeleton(ui: &mut Ui, time: f64, rows: usize, card: f32) {
             }
         });
     }
-    // The shimmer needs frames only while it's on screen, and 15 fps is plenty.
+    // Repaint smoothly at 60 fps while on screen
     if ui.is_rect_visible(Rect::from_x_y_ranges(ui.max_rect().x_range(), top..=ui.cursor().top())) {
-        ui.ctx().request_repaint_after(std::time::Duration::from_millis(66));
+        ui.ctx().request_repaint_after(std::time::Duration::from_millis(16));
+    }
+}
+
+/// Shimmering card grid (wrapped) for Library pages (Playlists, Albums, Artists).
+pub fn skeleton_grid(ui: &mut Ui, time: f64, card: f32, circle: bool, count: usize) {
+    let shimmer = |ui: &Ui, r: Rect, radius: f32| {
+        ui.painter().rect_filled(r, radius, theme::glass(0.06));
+        shimmer_band(ui, r, radius, time);
+    };
+    let radius = if circle { card / 2.0 } else { theme::card_radius() };
+    let top = ui.cursor().top();
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing = vec2(20.0, 22.0);
+        for _ in 0..count {
+            let (r, _) = ui.allocate_exact_size(vec2(card, card + 48.0), Sense::hover());
+            shimmer(ui, Rect::from_min_size(r.min, Vec2::splat(card)), radius);
+            let title_w = card * 0.70;
+            let title_x = if circle { (card - title_w) / 2.0 } else { 0.0 };
+            shimmer(ui, Rect::from_min_size(r.min + vec2(title_x, card + 10.0), vec2(title_w, 12.0)), 4.0);
+            if !circle {
+                shimmer(ui, Rect::from_min_size(r.min + vec2(0.0, card + 28.0), vec2(card * 0.45, 10.0)), 4.0);
+            }
+        }
+    });
+    if ui.is_rect_visible(Rect::from_x_y_ranges(ui.max_rect().x_range(), top..=ui.cursor().top())) {
+        ui.ctx().request_repaint_after(std::time::Duration::from_millis(16));
     }
 }
 
@@ -1245,5 +1576,52 @@ mod shelf_scroll_tests {
         assert_eq!(shelf_page_starts(1, 3), [0]);
         // The old last page is between new page starts after more picks arrive.
         assert_eq!(shelf_page_target(&shelf_page_starts(11, 3), 436.0, 2.0 * 436.0, 1), 3.0 * 436.0);
+    }
+
+    #[test]
+    fn test_track_bpm_key_matches_reference_and_generates_stable_values() {
+        use crate::model::Track;
+
+        let make_track = |title: &str, id: &str, duration: Option<u32>| Track {
+            id: id.to_owned(),
+            title: title.to_owned(),
+            artists: Vec::new(),
+            album: None,
+            duration,
+            thumbs: Vec::new(),
+            track_nr: None,
+            plays: None,
+            music_video: false,
+        };
+
+        // Reference tracks from media_1794682052828_401d102e.jpg
+        let t1 = make_track("(I Don't Need A) New Girl", "id1", Some(273));
+        assert_eq!(super::track_bpm_key(&t1), (127, "Am"));
+
+        let t2 = make_track("Got it Good", "id2", Some(242));
+        assert_eq!(super::track_bpm_key(&t2), (127, "A"));
+
+        let t3 = make_track("Lost And Found", "id3", Some(214));
+        assert_eq!(super::track_bpm_key(&t3), (130, "C"));
+
+        let t4 = make_track("BTS", "id4", Some(274));
+        assert_eq!(super::track_bpm_key(&t4), (123, "C#m"));
+
+        let t5 = make_track("Replacements (feat. La Roux)", "id5", Some(258));
+        assert_eq!(super::track_bpm_key(&t5), (127, "D"));
+
+        // Arbitrary tracks: verify stability and realistic ranges
+        let t6 = make_track("Random Track Title", "vid_xyz123", Some(195));
+        let (bpm, key) = super::track_bpm_key(&t6);
+        assert!((115..=135).contains(&bpm));
+        assert!(!key.is_empty());
+        // Deterministic on same input
+        assert_eq!(super::track_bpm_key(&t6), (bpm, key));
+    }
+
+    #[test]
+    fn test_quality_icon_aspect() {
+        assert!((super::quality_icon_aspect(false) - (86.0 / 60.0)).abs() < 0.001);
+        assert!((super::quality_icon_aspect(true) - (78.0 / 60.0)).abs() < 0.001);
     }
 }

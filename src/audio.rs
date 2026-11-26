@@ -531,6 +531,15 @@ pub struct AudioHandle {
 }
 
 impl AudioHandle {
+    /// Creates a headless dummy audio handle that does not touch hardware or threads.
+    pub fn dummy() -> Self {
+        let (tx, _rx) = crossbeam_channel::unbounded();
+        Self {
+            tx,
+            status: Arc::new(AudioStatus::default()),
+        }
+    }
+
     pub fn send(&self, cmd: AudioCmd) {
         let _ = self.tx.send(cmd);
     }

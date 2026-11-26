@@ -593,6 +593,36 @@ fn local_tz() -> (String, i32) {
     (name, utc_offset_minutes())
 }
 
+#[cfg(windows)]
+fn utc_offset_minutes() -> i32 {
+    #[repr(C)]
+    struct SystemTime([u16; 8]);
+    #[repr(C)]
+    struct TimeZoneInformation {
+        bias: i32,
+        standard_name: [u16; 32],
+        standard_date: SystemTime,
+        standard_bias: i32,
+        daylight_name: [u16; 32],
+        daylight_date: SystemTime,
+        daylight_bias: i32,
+    }
+    unsafe extern "system" {
+        fn GetTimeZoneInformation(info: *mut TimeZoneInformation) -> u32;
+    }
+    // SAFETY: a plain out-parameter struct with the documented layout.
+    unsafe {
+        let mut info: TimeZoneInformation = std::mem::zeroed();
+        match GetTimeZoneInformation(&mut info) {
+            1 => -(info.bias + info.standard_bias),
+            2 => -(info.bias + info.daylight_bias),
+            0 => -info.bias,
+            _ => 0,
+        }
+    }
+}
+
+#[cfg(unix)]
 fn utc_offset_minutes() -> i32 {
     // SAFETY: localtime_r fills the out-parameter from a valid time_t.
     unsafe {
@@ -600,6 +630,11 @@ fn utc_offset_minutes() -> i32 {
         let mut tm: libc::tm = std::mem::zeroed();
         if libc::localtime_r(&now, &mut tm).is_null() { 0 } else { (tm.tm_gmtoff / 60) as i32 }
     }
+}
+
+#[cfg(not(any(windows, unix)))]
+fn utc_offset_minutes() -> i32 {
+    0
 }
 
 #[cfg(test)]

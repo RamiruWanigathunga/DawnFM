@@ -19,7 +19,7 @@ use std::time::Duration;
 
 use bytes::Bytes;
 
-const BLOCK: u64 = 64 * 1024;
+pub const BLOCK: u64 = 64 * 1024;
 const WORKERS: usize = 4;
 /// Tries per block before the download gives up, waiting a little longer each time
 /// (about half a minute in all): long enough to ride out a dropped connection.
@@ -32,14 +32,14 @@ const STALL: Duration = Duration::from_secs(20);
 const MAX_REFRESHES: u32 = 2;
 /// A prefetch only fetches this much (~16 s of audio) until playback actually opens it:
 /// enough to start at once, without holding a whole extra song in memory.
-const HEAD_BLOCKS: usize = 8;
-/// Files larger than this (about 20 minutes at 256 kbps: long mixes, whole albums in
+pub const HEAD_BLOCKS: usize = 8;
+/// Files larger than this (about 6 minutes at 256 kbps: long tracks, mixes, albums in
 /// one video) aren't kept whole. Each reader keeps a window around where it reads,
-/// `AHEAD` blocks forward (about 5 minutes at 256 kbps) and `BEHIND` back; the rest is dropped and
+/// `AHEAD` blocks forward (about 1.5 minutes at 256 kbps) and `BEHIND` back; the rest is dropped and
 /// fetched again if a seek goes back to it.
-const WINDOWED_FROM: u64 = 40 * 1024 * 1024;
-const AHEAD: usize = 160;
-const BEHIND: usize = 32;
+pub const WINDOWED_FROM: u64 = 12 * 1024 * 1024;
+pub const AHEAD: usize = 48;
+pub const BEHIND: usize = 16;
 
 /// Resolves a fresh stream URL for the same video.
 pub type Refresh = Arc<dyn Fn() -> Pin<Box<dyn Future<Output = anyhow::Result<String>> + Send>> + Send + Sync>;
@@ -240,7 +240,7 @@ impl Shared {
     }
 
     /// The start of block `idx` arriving: readers may take it already.
-    fn grow(&self, idx: usize, chunk: &[u8]) {
+    pub fn grow(&self, idx: usize, chunk: &[u8]) {
         let mut inner = self.inner.lock_unpoisoned();
         let p = &mut inner.partial[idx];
         if p.capacity() == 0 {
@@ -251,17 +251,17 @@ impl Shared {
     }
 
     /// Block `idx` starts over (a retry fetches it from its start again).
-    fn restart(&self, idx: usize) {
+    pub fn restart(&self, idx: usize) {
         self.inner.lock_unpoisoned().partial[idx].clear();
     }
 
     /// Block `idx` has fully arrived through `grow`.
-    fn complete(&self, idx: usize) {
+    pub fn complete(&self, idx: usize) {
         let data = std::mem::take(&mut self.inner.lock_unpoisoned().partial[idx]);
         self.put(idx, Bytes::from(data));
     }
 
-    fn put(&self, idx: usize, data: Bytes) {
+    pub fn put(&self, idx: usize, data: Bytes) {
         let mut inner = self.inner.lock_unpoisoned();
         inner.blocks[idx] = Some(data);
         inner.in_flight[idx] = false;
@@ -280,6 +280,31 @@ impl Shared {
             }
         }
         self.ready.notify_all();
+    }
+
+    pub fn is_block_present(&self, idx: usize) -> bool {
+        let inner = self.inner.lock_unpoisoned();
+        inner.blocks.get(idx).map_or(false, |b| b.is_some())
+    }
+
+    pub fn block_count(&self) -> usize {
+        self.inner.lock_unpoisoned().blocks.len()
+    }
+
+    pub fn is_windowed(&self) -> bool {
+        self.inner.lock_unpoisoned().windowed
+    }
+
+    pub fn fetched_count(&self) -> usize {
+        self.inner.lock_unpoisoned().fetched
+    }
+
+    pub fn in_flight_count(&self) -> usize {
+        self.inner.lock_unpoisoned().in_flight.iter().filter(|&&f| f).count()
+    }
+
+    pub fn limit(&self) -> usize {
+        self.inner.lock_unpoisoned().limit
     }
 
     fn fail(&self, err: String) {

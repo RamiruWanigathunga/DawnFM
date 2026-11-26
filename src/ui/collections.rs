@@ -4,7 +4,7 @@
 use std::collections::HashSet;
 
 use crate::backend::{Collection, Req};
-use crate::model::{ShelfKind, Target, Track};
+use crate::model::{Card, ShelfKind, Target, Track};
 
 use super::lists::{Arrival, Done, LIKED_MUSIC, Opened, Start};
 use super::queue::QueueFill;
@@ -99,12 +99,17 @@ impl App {
             crate::images::prefetch_thumbs(&self.backend, prefetch_urls);
         }
 
+        if c.is_album {
+            self.request_album_art(&c.id, &c.thumbs);
+        }
+
         let id = c.id.clone();
         let keep = self.keep_lists();
         let keep: Vec<&str> = keep.iter().map(String::as_str).collect();
         let Some(arrival) = self.lists.arrived(load, c, more, &keep) else { return };
         if self.page_list() == Some(id.as_str()) {
             self.loading = false;
+            self.scroll_top = true;
         }
         if id == LIKED_MUSIC
             && let Some(o) = self.lists.get(LIKED_MUSIC)
@@ -187,6 +192,17 @@ impl App {
     pub(super) fn request_library(&mut self) {
         self.library_requested = std::time::Instant::now();
         self.backend.request(Req::Library);
+    }
+
+    /// Show `card` as in (or out of) the library at once, before YouTube Music confirms;
+    /// the list it sends back replaces this.
+    pub(super) fn set_saved(&mut self, card: &Card, save: bool) {
+        let Some(lib) = &mut self.library else { return };
+        let list = if matches!(card.target, Target::Album(_)) { &mut lib.albums } else { &mut lib.playlists };
+        list.retain(|c| c.target != card.target);
+        if save {
+            list.insert(0, card.clone());
+        }
     }
 
     pub(super) fn preferred_artist_ids(&self) -> Vec<String> {

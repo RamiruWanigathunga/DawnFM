@@ -1,3 +1,4 @@
 site/** linguist-documentation
 assets/ejs/** linguist-vendored
 macos/** text eol=lf
+out/** binary

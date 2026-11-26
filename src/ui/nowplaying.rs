@@ -4,27 +4,27 @@
 
 use egui::{Color32, Rect, Sense, Ui, Vec2, pos2, vec2};
 
-use super::widgets::{self, icon_button, named, text_at};
+use super::widgets::{self, icon_at, named, text_at};
 use super::{Action, App, NpTab, Repeat, karaoke};
+use crate::i18n::t;
 use crate::lyrics::{Lyrics, Sync, SyncKind};
 use crate::shader::Params;
 use crate::theme::{self, icon};
 
-pub fn overlay(app: &mut App, ctx: &egui::Context, now: f64) {
+pub fn overlay(app: &mut App, ctx: &egui::Context, now: f64, screen: Rect) {
     use crate::preset::BgMode;
     let t = theme::anim_bool(ctx, "np-open", app.np_open && app.current().is_some(), 0.42);
     if t <= 0.001 {
         return;
     }
-    let screen = ctx.content_rect();
     // The player brings its own transport, so it takes the whole window: the capsule
     // under it belongs to the pages it covers.
-    let full = screen;
+    let full = if ctx.viewport_rect().is_positive() { ctx.viewport_rect() } else { screen };
     let rect = full.translate(vec2(0.0, full.height() * (1.0 - t)));
     let look = app.look();
     let b = &look.background;
     egui::Area::new(egui::Id::unique("now-playing"))
-        .order(egui::Order::Middle)
+        .order(egui::Order::Foreground)
         .fixed_pos(rect.min)
         .show(ctx, |ui| {
             // Swallow input so the page underneath doesn't react.
@@ -34,44 +34,12 @@ pub fn overlay(app: &mut App, ctx: &egui::Context, now: f64) {
                 super::titlebar::drag_area(ui, Rect::from_min_size(rect.min, vec2(rect.width(), super::titlebar::HEIGHT)), "now-playing");
             }
             let painter = ui.painter_at(rect);
-            let art = matches!(b.mode, BgMode::Kawarp | BgMode::CoverStatic);
-            if b.mode == BgMode::CoverFullbleed {
-                // The cover itself fills the screen behind a scrim. With the lyrics-only
-                // layout on a wide window it fills the height on the left instead and
-                // fades out toward the lyrics (reCover).
-                // What it fades into is the dominant / most-used colour of the artwork,
-                // managed so it is neither too dark nor too white, gliding to the next song's.
-                let dom = app.dominant_color().to_array();
-                let ch = |i: usize| theme::anim(ctx, ("np-dom-shade", i), f32::from(dom[i]), 0.9).round() as u8;
-                let solid = Color32::from_rgb(ch(0), ch(1), ch(2));
-                painter.rect_filled(rect, 0.0, solid);
-
-                if let Some(track) = app.shown().or_else(|| app.current()) {
-                    let side_by_side = look.cover.layout == crate::preset::Layout::LyricsOnly && rect.width() >= 860.0;
-                    let area = if side_by_side { Rect::from_min_size(rect.min, Vec2::splat(rect.height())) } else { rect };
-                    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(area));
-                    child.set_clip_rect(area);
-                    widgets::paint_cover_fill(&child, area, &track.thumbs, Color32::from_gray((b.np_dim.clamp(0.0, 1.0) * 255.0) as u8));
-                    if side_by_side {
-                        // Smooth multi-stop horizontal gradient fade from artwork to the background,
-                        // painted on child's painter directly over the cover image so it blends seamlessly into solid.
-                        let fade_start = area.center().x - area.width() * 0.15;
-                        let fade_w = area.right() - fade_start;
-                        let step1 = fade_start + fade_w * 0.35;
-                        let step2 = fade_start + fade_w * 0.70;
-                        let r1 = Rect::from_min_max(pos2(fade_start, area.top()), pos2(step1, area.bottom()));
-                        let r2 = Rect::from_min_max(pos2(step1, area.top()), pos2(step2, area.bottom()));
-                        let r3 = Rect::from_min_max(pos2(step2, area.top()), area.max);
-                        let c1 = theme::with_alpha(solid, 0.30);
-                        let c2 = theme::with_alpha(solid, 0.70);
-                        let cp = child.painter();
-                        super::shell::hgradient(cp, r1, Color32::TRANSPARENT, c1);
-                        super::shell::hgradient(cp, r2, c1, c2);
-                        super::shell::hgradient(cp, r3, c2, solid);
-                    }
-                }
-            } else if let Some(bg) = app.bg.as_ref().filter(|_| art) {
+            let art = matches!(b.mode, BgMode::Kawarp | BgMode::CoverStatic | BgMode::CoverFullbleed);
+            if let Some(bg) = app.bg.as_ref().filter(|_| art) {
                 let blend = theme::ease_in_out(((now - app.art_changed) / 1.4) as f32);
+                if blend < 1.0 || (b.mode != BgMode::CoverStatic && app.playing()) {
+                    super::animate(ctx);
+                }
                 let level = if app.reactive_bg && app.playing() { app.audio.status.level() * b.reactive } else { 0.0 };
                 bg.paint(
                     &painter,
@@ -88,7 +56,10 @@ pub fn overlay(app: &mut App, ctx: &egui::Context, now: f64) {
             } else if b.mode == BgMode::Solid {
                 painter.rect_filled(rect, 0.0, look.solid());
             } else {
-                painter.rect_filled(rect, 0.0, theme::lerp_color(theme::bg(), app.accent_color(), 0.25));
+                let dom = app.dominant_color().to_array();
+                let ch = |i: usize| theme::anim(ctx, ("np-dom-shade", i), f32::from(dom[i]), 0.9).round() as u8;
+                let solid = Color32::from_rgb(ch(0), ch(1), ch(2));
+                painter.rect_filled(rect, 0.0, solid);
             }
             let k = b.scrim / 0.3;
             if app.bg_is_light() {
@@ -97,9 +68,15 @@ pub fn overlay(app: &mut App, ctx: &egui::Context, now: f64) {
             } else {
                 super::shell::vgradient(ui.painter(), rect, theme::shade((0.06 * k).min(0.5)), theme::shade((0.16 * k).min(0.5)));
             }
-            let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect.shrink2(vec2(32.0, 20.0))));
+            let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect));
             body(app, &mut child, now);
         });
+}
+
+fn paint_np_capsule(ui: &Ui, rect: Rect) {
+    let r = rect.height() / 2.0;
+    ui.painter().rect_filled(rect, r, theme::glass(0.14));
+    ui.painter().rect_stroke(rect, r, egui::Stroke::new(1.0, theme::glass(0.22)), egui::StrokeKind::Inside);
 }
 
 fn body(app: &mut App, ui: &mut Ui, now: f64) {
@@ -121,43 +98,53 @@ fn body(app: &mut App, ui: &mut Ui, now: f64) {
     // 860 points, and below that the cover gives way to the panel.
     let narrow = area.width() - 64.0 < 860.0;
     // Header: on the window buttons' line, when the app draws them.
-    let lift = 20.0 - f32::from(super::titlebar::top_margin(20, 44.0));
-    let header = Rect::from_min_size(area.min - vec2(0.0, if app.fullscreen { 0.0 } else { lift }), vec2(area.width(), 44.0));
-    let mut hui = ui.new_child(egui::UiBuilder::new().max_rect(header).layout(egui::Layout::left_to_right(egui::Align::Center)));
-    let mut close = false;
-    hui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-        ui.add_space(super::titlebar::right_gap(ui.ctx(), ui.max_rect(), 0.0));
-        // The player's own close (minimise back to the pages), top right: the macOS
-        // window buttons have the top left.
-        close = icon_button(ui, icon::CHEVRON_DOWN, 22.0, "Minimise now playing", false).clicked();
-        // Its actions (like, download, share…) are for what's heard: a song version
-        // standing in for the music video. It lives beside the star under the cover;
-        // only when the cover column is hidden (a narrow window showing lyrics) does
-        // it stay up here.
-        let beside = !narrow && cs.layout == Layout::LyricsOnly && look.background.mode == crate::preset::BgMode::CoverFullbleed;
-        let cover_hidden = (narrow || cs.layout == Layout::LyricsOnly) && !beside && app.np_tab != NpTab::Art && !no_lyrics;
-        if cover_hidden {
-            let (r, _) = ui.allocate_exact_size(vec2(34.0, 34.0), Sense::hover());
-            options_menu(app, ui, r, &heard, app.np_tab == NpTab::Lyrics && !no_lyrics);
+    let is_fullscreen = app.fullscreen || ui.input(|i| i.viewport().fullscreen.unwrap_or(false));
+    let header_top = area.top() + if is_fullscreen { 16.0 } else { 11.0 };
+    let header = Rect::from_min_size(pos2(area.left() + 20.0, header_top), vec2(area.width() - 40.0, 42.0));
+
+    // Fullscreen auto-hide after 5.0s of mouse inactivity: top pills, bottom-right pill, and controls disappear together
+    let controls_rect: Rect = ui.ctx().data(|d| d.get_temp(egui::Id::unique("np-controls-rect"))).unwrap_or(Rect::NOTHING);
+    let tl_rect: Rect = ui.ctx().data(|d| d.get_temp(egui::Id::unique("np-top-left-rect"))).unwrap_or(Rect::NOTHING);
+    let tr_rect: Rect = ui.ctx().data(|d| d.get_temp(egui::Id::unique("np-top-right-rect"))).unwrap_or(Rect::NOTHING);
+    let br_rect: Rect = ui.ctx().data(|d| d.get_temp(egui::Id::unique("np-bottom-right-rect"))).unwrap_or(Rect::NOTHING);
+    let controls_hovered = ui.rect_contains_pointer(controls_rect)
+        || ui.rect_contains_pointer(tl_rect)
+        || ui.rect_contains_pointer(tr_rect)
+        || ui.rect_contains_pointer(br_rect);
+    let busy = app.seek_drag.is_some() || egui::Popup::is_any_open(ui.ctx());
+    let idle = now - app.mouse_last_moved >= 5.0;
+    let narrow_panel = narrow && (app.np_tab == NpTab::UpNext || (app.np_tab == NpTab::Lyrics && !no_lyrics));
+    let auto_hide = is_fullscreen || narrow_panel;
+    let active = !auto_hide || !idle || busy || controls_hovered;
+    let controls_alpha = if auto_hide {
+        if active && !busy && !controls_hovered && !idle {
+            let remaining = (5.0 - (now - app.mouse_last_moved)).max(0.05);
+            ui.ctx().request_repaint_after(std::time::Duration::from_secs_f64(remaining));
         }
-    });
-    if close {
-        app.np_open = false;
-        if app.fullscreen {
-            app.set_fullscreen(ui.ctx(), false);
-        }
+        theme::anim_bool(ui.ctx(), "np-controls-visible", active, 0.25)
+    } else {
+        1.0
+    };
+    if controls_alpha > 0.0 && controls_alpha < 1.0 {
+        super::animate(ui.ctx());
     }
 
-    let content = Rect::from_min_max(pos2(area.left(), header.bottom() + 12.0), area.max);
     // The side panel (lyrics / up next) slides in and out when its chip is toggled.
-    // A song without lyrics shows just the artwork, with no transition.
     let last_id = egui::Id::unique("np-last-panel");
     let panel_tab = if app.np_tab == NpTab::Art {
-        ui.ctx().data(|d| d.get_temp(last_id)).unwrap_or(NpTab::Lyrics)
+        ui.ctx().data(|d| d.get_temp(last_id)).unwrap_or(if no_lyrics { NpTab::UpNext } else { NpTab::Lyrics })
     } else {
         ui.ctx().data_mut(|d| d.insert_temp(last_id, app.np_tab));
         app.np_tab
     };
+    let fullbleed_lyrics_view = !no_lyrics && cs.layout == Layout::LyricsOnly && look.background.mode == crate::preset::BgMode::CoverFullbleed;
+    let split_queue = !narrow && !fullbleed_lyrics_view && (app.np_tab == NpTab::UpNext || panel_tab == NpTab::UpNext);
+    let beside = !narrow && cs.layout == Layout::LyricsOnly && !split_queue && look.background.mode == crate::preset::BgMode::CoverFullbleed;
+    let cover_hidden = (narrow || (cs.layout == Layout::LyricsOnly && !split_queue)) && !beside && app.np_tab != NpTab::Art && !no_lyrics;
+
+    let mut close = false;
+
+    let content = Rect::from_min_max(pos2(area.left() + 32.0, header.bottom() + 12.0), pos2(area.right() - 32.0, area.bottom() - 24.0));
     // Linear 0..1 over the transition; each part eases its own slice of it.
     let shown = ui.ctx().animate_bool_with_time(egui::Id::unique("np-panel"), app.np_tab != NpTab::Art, 0.6 * theme::SPEED);
     if shown > 0.0 && shown < 1.0 {
@@ -176,56 +163,75 @@ fn body(app: &mut App, ui: &mut Ui, now: f64) {
     };
     // The cover gliding between its two places (wide layouts): a gentle S-curve.
     let glide = p * p * (3.0 - 2.0 * p);
-    let lyrics_only = narrow || cs.layout == Layout::LyricsOnly;
+    let lyrics_only = narrow || (cs.layout == Layout::LyricsOnly && !split_queue);
     // reCover: the backdrop cover sits on the left, so the lyrics take the right side.
-    let beside_cover = !narrow && cs.layout == Layout::LyricsOnly && look.background.mode == crate::preset::BgMode::CoverFullbleed;
+    let beside_cover = !narrow && cs.layout == Layout::LyricsOnly && !split_queue && look.background.mode == crate::preset::BgMode::CoverFullbleed;
     let centered = lyrics_only && !beside_cover;
     // Artwork alone: centered.
     let col_art = Rect::from_center_size(content.center(), vec2(content.width().min(content.height() * 0.9), content.height()));
     let slide = 72.0;
-    let right = if lyrics_only {
+    let right = if split_queue {
+        // When showing queue: keep album artwork and controllers at the exact same size,
+        // sliding smoothly to the left, and give the queue manager a compact, elegant width on the right.
+        let side = art_side(cs, col_art);
+        let max_queue_w = (content.width() - side - 48.0).max(280.0);
+        let queue_w = ((content.width() * 0.36).clamp(320.0, 460.0)).min(max_queue_w);
+        let right_rect = Rect::from_min_size(
+            pos2(content.right() - queue_w, content.top()),
+            vec2(queue_w, content.height()),
+        );
+        let avail_left = (right_rect.left() - 28.0 - content.left()).max(side);
+        let left_center_x = content.left() + avail_left / 2.0;
+        let slide_dist = (content.center().x - left_center_x).max(0.0);
+        let col = col_art.translate(vec2(-slide_dist * glide, 0.0));
+        let px = (art_side(cs, col_art) * ppp) as u32;
+        cover_column(app, ui, col, &track, no_lyrics, now, px, controls_alpha);
+        right_rect
+    } else if lyrics_only {
         // No cover column next to the panel: the artwork fades in from the left as the panel leaves.
         let px = (art_side(cs, col_art) * ppp) as u32;
         if art_vis > 0.001 {
             let mut cui = ui.new_child(egui::UiBuilder::new().max_rect(content));
             cui.multiply_opacity(art_vis);
-            cover_column(app, &mut cui, col_art.translate(vec2(-slide * (1.0 - art_vis), 0.0)), &track, no_lyrics, now, px);
+            cover_column(app, &mut cui, col_art.translate(vec2(-slide * (1.0 - art_vis), 0.0)), &track, no_lyrics, now, px, controls_alpha);
         } else {
             // Hidden behind the lyrics: have it loaded for when they're turned off.
             widgets::preload_cover(ui.ctx(), &track.thumbs, px);
         }
         if beside_cover && art_vis < 0.999 {
-            // The song on a frosted card over the cover, centred under it. While it plays
-            // the card is just the title and artist, and it opens to the seek line and the
-            // transport under the pointer.
+            // The sharp cover itself, filling the window's height from its top left and
+            // melting into the blurred backdrop before the lyrics (reCover, and the app's
+            // own look).
+            let side = area.height();
+            let art = Rect::from_min_size(area.left_top(), Vec2::splat(side));
+            let lyrics_left = content.left() + content.width() * 0.46;
+            let fade_to = lyrics_left.min(art.right());
+            let fade_from = (fade_to - art.left()).max(0.0) / side * 0.72;
+            let tint = Color32::from_gray((look.background.np_dim.clamp(0.0, 1.0) * 255.0) as u8);
+            let mut cui = ui.new_child(egui::UiBuilder::new().max_rect(art));
+            cui.multiply_opacity(1.0 - art_vis);
+            widgets::paint_cover_fade(&cui, egui::Id::unique("np-art-fade"), art, &track.thumbs, (side * ppp) as u32, fade_from, tint);
+            // A soft shade under the sleeve, so the song's white text stays legible on
+            // any cover: dark at the bottom left, gone toward the top and the lyrics.
+            let scrim = Rect::from_min_max(pos2(art.left(), area.bottom() - 280.0), pos2((lyrics_left + 24.0).min(art.right()), area.bottom()));
+            let mut shade = egui::Mesh::default();
+            let white = egui::epaint::WHITE_UV;
+            shade.vertices.push(egui::epaint::Vertex { pos: scrim.left_bottom(), uv: white, color: Color32::from_black_alpha(130) });
+            shade.vertices.push(egui::epaint::Vertex { pos: scrim.right_bottom(), uv: white, color: Color32::TRANSPARENT });
+            shade.vertices.push(egui::epaint::Vertex { pos: scrim.left_top(), uv: white, color: Color32::TRANSPARENT });
+            shade.vertices.push(egui::epaint::Vertex { pos: scrim.right_top(), uv: white, color: Color32::TRANSPARENT });
+            shade.indices.extend_from_slice(&[0, 1, 2, 2, 1, 3]);
+            cui.painter().add(egui::Shape::mesh(shade));
+
+            // Minimal controls floating directly over the background without any glass card
             let w = (content.width() * 0.38).clamp(300.0, 440.0);
             let cw = w + 40.0;
-            // The cover is a square of the window's height from its left edge; `area` is
-            // the window less the overlay's 32 × 20 margins.
-            let cover_mid = area.left() - 32.0 + (area.height() + 40.0) / 2.0;
-            let lyrics_left = content.left() + content.width() * 0.46;
-            let left = (cover_mid - cw / 2.0).min(lyrics_left - 12.0 - cw).max(content.left() + 8.0);
-            let ctx = ui.ctx().clone();
-            let card_id = egui::Id::unique("np-card");
-            let was: Rect = ctx.data(|d| d.get_temp(card_id)).unwrap_or(Rect::NOTHING);
-            let over = ui.rect_contains_pointer(was);
-            // A seek being dragged or the ⋯ menu keeps it as it is.
-            let busy = app.seek_drag.is_some() || egui::Popup::is_any_open(&ctx);
-            let open = theme::anim_bool(&ctx, "np-card-open", over || busy || !(app.playing() || app.buffering), 0.25);
-            if open > 0.0 && open < 1.0 {
-                super::animate(&ctx);
-            }
-            let h = 70.0 + 126.0 * open;
+            let left = (content.left() + 8.0).min(lyrics_left - 12.0 - cw).max(content.left());
+            let h = 196.0;
             let card = Rect::from_min_size(pos2(left, content.bottom() - h), vec2(cw, h));
-            ctx.data_mut(|d| d.insert_temp(card_id, card));
             let mut cui = ui.new_child(egui::UiBuilder::new().max_rect(card));
-            // Folded, the controls are past its bottom edge: neither drawn nor clickable.
-            cui.set_clip_rect(card.intersect(ui.clip_rect()));
             cui.multiply_opacity(1.0 - art_vis);
-            cui.painter().rect_filled(card, 18.0, theme::shade(0.42));
-            cui.painter().rect_filled(card, 18.0, theme::glass(0.07));
-            cui.painter().rect_stroke(card, 18.0, egui::Stroke::new(1.0, theme::glass(0.12)), egui::StrokeKind::Inside);
-            sleeve(app, &mut cui, card.left() + 20.0, w, card.top() + 16.0, &track, no_lyrics, now, open);
+            sleeve(app, &mut cui, card.left() + 20.0, w, card.top() + 16.0, &track, no_lyrics, now, controls_alpha, false);
         }
         if beside_cover { Rect::from_min_max(pos2(content.left() + content.width() * 0.46, content.top()), content.max) } else { content }
     } else {
@@ -240,7 +246,7 @@ fn body(app: &mut App, ui: &mut Ui, now: f64) {
         let col = Rect::from_min_max(col_art.min.lerp(col_panel.min, glide), col_art.max.lerp(col_panel.max, glide));
         // One image size for the whole glide, the bigger of its two ends.
         let px = (art_side(cs, col_art).max(art_side(cs, col_panel)) * ppp) as u32;
-        cover_column(app, ui, col, &track, no_lyrics, now, px);
+        cover_column(app, ui, col, &track, no_lyrics, now, px, controls_alpha);
         if cs.side == Side::Right {
             Rect::from_min_max(content.min, pos2(col_panel.left() - 28.0, content.bottom()))
         } else {
@@ -277,6 +283,211 @@ fn body(app: &mut App, ui: &mut Ui, now: f64) {
             }
         }
     }
+
+    // Narrow / iPad-style panel mode: overlay player controls at the bottom over lyrics/queue
+    // only while the pointer is active (fades out after inactivity).
+    if narrow && !beside_cover && panel_vis > 0.001 && controls_alpha > 0.001 {
+        let overlay_alpha = panel_vis * controls_alpha;
+        let bg_light = app.bg_is_light();
+        let scrim_top = (area.bottom() - 280.0).max(area.top());
+        let scrim = Rect::from_min_max(pos2(area.left(), scrim_top), area.max);
+        let mut shade = egui::Mesh::default();
+        let white = egui::epaint::WHITE_UV;
+        let bot_col = if bg_light {
+            let bg = app.page_color(ui.ctx());
+            Color32::from_rgba_unmultiplied(bg.r(), bg.g(), bg.b(), (215.0 * overlay_alpha) as u8)
+        } else {
+            Color32::from_black_alpha((175.0 * overlay_alpha) as u8)
+        };
+        shade.vertices.push(egui::epaint::Vertex { pos: scrim.left_bottom(), uv: white, color: bot_col });
+        shade.vertices.push(egui::epaint::Vertex { pos: scrim.right_bottom(), uv: white, color: bot_col });
+        shade.vertices.push(egui::epaint::Vertex { pos: scrim.left_top(), uv: white, color: Color32::TRANSPARENT });
+        shade.vertices.push(egui::epaint::Vertex { pos: scrim.right_top(), uv: white, color: Color32::TRANSPARENT });
+        shade.indices.extend_from_slice(&[0, 1, 2, 2, 1, 3]);
+        ui.painter().add(egui::Shape::mesh(shade));
+
+        let ov_w = (content.width() - 16.0).clamp(240.0, 400.0);
+        let ov_x = (area.center().x - ov_w * 0.5).max(area.left() + 20.0);
+        let clears_br = ov_x + ov_w <= area.right() - 108.0;
+        let ov_y = if clears_br { area.bottom() - 190.0 } else { area.bottom() - 220.0 };
+        let card = Rect::from_min_size(pos2(ov_x - 12.0, ov_y - 12.0), vec2(ov_w + 24.0, 196.0));
+        let mut ov_ui = ui.new_child(egui::UiBuilder::new().id_salt("np-narrow-overlay").max_rect(card));
+        sleeve(app, &mut ov_ui, ov_x, ov_w, ov_y, &track, no_lyrics, now, overlay_alpha, true);
+    }
+
+    // ------------------------------------------------------------------ Apple Music Floating Corner Pills
+    if controls_alpha > 0.001 {
+        let mut cui = ui.new_child(egui::UiBuilder::new().max_rect(area));
+        cui.multiply_opacity(controls_alpha);
+        let ui = &mut cui;
+        let interactive = controls_alpha > 0.05;
+        let bg_light = app.bg_is_light();
+        let accent = app.accent_color();
+        let fg_base = if bg_light { Color32::from_rgb(0x18, 0x14, 0x1c) } else { Color32::WHITE };
+
+        // 1. Top-left pill beside macOS traffic lights: [ Close (X) | Fullscreen ]
+        let tl_x = area.left() + if is_fullscreen || cfg!(windows) { 20.0 } else { 86.0 };
+        let tl_w = if cfg!(windows) { 32.0 } else { 68.0 };
+        let tl_rect = Rect::from_min_size(pos2(tl_x, header_top), vec2(tl_w, 30.0));
+        ui.ctx().data_mut(|d| d.insert_temp(egui::Id::unique("np-top-left-rect"), tl_rect));
+        paint_np_capsule(ui, tl_rect);
+
+        let close_rect = if cfg!(windows) {
+            tl_rect
+        } else {
+            Rect::from_min_max(tl_rect.min, pos2(tl_rect.min.x + 34.0, tl_rect.max.y))
+        };
+        let close_sense = if interactive { Sense::click() } else { Sense::hover() };
+        let close_resp = named(ui.interact(close_rect, ui.scope_id().with("np-close"), close_sense), &t!("minimise_now_playing"))
+            .on_hover_text(&t!("minimise_now_playing"));
+        let close_resp = if interactive { close_resp.on_hover_cursor(egui::CursorIcon::PointingHand) } else { close_resp };
+        if close_resp.hovered() && interactive {
+            let cr = if cfg!(windows) {
+                egui::CornerRadius::same(15)
+            } else {
+                egui::CornerRadius { nw: 15, ne: 0, sw: 15, se: 0 }
+            };
+            ui.painter().rect_filled(close_rect, cr, theme::glass(0.12));
+        }
+        icon_at(ui, close_rect.center(), icon::X, 14.5, theme::with_alpha(fg_base, if close_resp.hovered() { 1.0 } else { 0.88 }));
+        if interactive && close_resp.clicked() {
+            close = true;
+        }
+
+        if !cfg!(windows) {
+            let fs_rect = Rect::from_min_max(pos2(tl_rect.min.x + 34.0, tl_rect.min.y), tl_rect.max);
+            let fs_label = if is_fullscreen { t!("exit_full_screen") } else { t!("full_screen") };
+            let fs_sense = if interactive { Sense::click() } else { Sense::hover() };
+            let fs_resp = named(ui.interact(fs_rect, ui.scope_id().with("np-fs"), fs_sense), &fs_label).on_hover_text(&fs_label);
+            let fs_resp = if interactive { fs_resp.on_hover_cursor(egui::CursorIcon::PointingHand) } else { fs_resp };
+            if fs_resp.hovered() && interactive {
+                ui.painter().rect_filled(fs_rect, egui::CornerRadius { nw: 0, ne: 15, sw: 0, se: 15 }, theme::glass(0.12));
+            }
+            let fs_col = if is_fullscreen { accent } else { theme::with_alpha(fg_base, if fs_resp.hovered() { 1.0 } else { 0.88 }) };
+            icon_at(ui, fs_rect.center(), icon::MAXIMIZE_2, 14.0, fs_col);
+            if interactive && fs_resp.clicked() {
+                app.set_fullscreen(ui.ctx(), !is_fullscreen);
+            }
+        }
+
+        // 2. Top-right Sound Level / Volume pill: [ ───●  🔊 ]
+        let r_gap = super::titlebar::right_gap(ui.ctx(), header, 0.0);
+        let tr_right = area.right() - 20.0 - r_gap;
+        let tr_rect = Rect::from_min_size(pos2(tr_right - 144.0, header_top), vec2(144.0, 30.0));
+        ui.ctx().data_mut(|d| d.insert_temp(egui::Id::unique("np-top-right-rect"), tr_rect));
+        paint_np_capsule(ui, tr_rect);
+
+        let slider_rect = Rect::from_min_max(pos2(tr_rect.left() + 14.0, tr_rect.top()), pos2(tr_rect.right() - 34.0, tr_rect.bottom()));
+        let vol = app.audio.volume();
+        let vsense = if interactive { Sense::click_and_drag() } else { Sense::hover() };
+        let vresp = named(ui.interact(slider_rect, ui.scope_id().with("np-vol-slider"), vsense), "Volume");
+        let vresp = if interactive { vresp.on_hover_cursor(egui::CursorIcon::PointingHand) } else { vresp };
+        vresp.widget_info(|| egui::WidgetInfo::slider(interactive, vol as f64, "Volume"));
+        let vh = theme::anim_bool(ui.ctx(), ui.scope_id().with("np-vol-h"), interactive && (vresp.hovered() || vresp.dragged()), 0.15);
+        let track_r = Rect::from_center_size(slider_rect.center(), vec2(slider_rect.width(), 4.0));
+        ui.painter().rect_filled(track_r, 2.0, theme::glass(0.22));
+        let fill_r = Rect::from_min_size(track_r.min, vec2(track_r.width() * vol, 4.0));
+        ui.painter().rect_filled(fill_r, 2.0, fg_base);
+        ui.painter().circle_filled(pos2(fill_r.right(), track_r.center().y), 5.0 + 1.5 * vh, fg_base);
+        if interactive
+            && let Some(p) = vresp.interact_pointer_pos()
+            && (vresp.dragged() || vresp.clicked())
+        {
+            app.audio.set_volume(((p.x - track_r.left()) / track_r.width()).clamp(0.0, 1.0));
+        }
+
+        let icon_rect = Rect::from_min_max(pos2(tr_rect.right() - 32.0, tr_rect.top()), pos2(tr_rect.right() - 4.0, tr_rect.bottom()));
+        let vol_btn = named(ui.interact(icon_rect, ui.scope_id().with("np-vol-mute"), if interactive { Sense::click() } else { Sense::hover() }), "Volume");
+        let vol_btn = if interactive { vol_btn.on_hover_cursor(egui::CursorIcon::PointingHand) } else { vol_btn };
+        let step = super::glyphs::volume_step(vol);
+        super::glyphs::draw(ui, icon_rect.center(), 15.0, super::glyphs::VOLUME[step], theme::with_alpha(fg_base, if vol_btn.hovered() { 1.0 } else { 0.88 }));
+        if interactive && vol_btn.clicked() {
+            let stash = super::shell::unmute_id();
+            if vol > 0.0 {
+                ui.data_mut(|d| d.insert_temp(stash, vol));
+                app.audio.set_volume(0.0);
+            } else {
+                app.audio.set_volume(ui.data(|d| d.get_temp::<f32>(stash)).unwrap_or(0.6));
+            }
+        }
+        if interactive && ui.rect_contains_pointer(tr_rect) {
+            let scroll = ui.input(|i| i.smooth_scroll_delta.y);
+            if scroll != 0.0 {
+                app.audio.set_volume((vol + scroll / 600.0).clamp(0.0, 1.0));
+            }
+        }
+
+        if cover_hidden {
+            let opt_r = Rect::from_center_size(pos2(tr_rect.left() - 24.0, tr_rect.center().y), Vec2::splat(30.0));
+            if interactive {
+                options_menu(app, ui, opt_r, &heard, app.np_tab == NpTab::Lyrics && !no_lyrics, None);
+            }
+        }
+
+        // 3. Bottom-right segmented capsule: [ Lyrics | Queue ]
+        let br_rect = Rect::from_min_size(pos2(area.right() - 24.0 - 72.0, area.bottom() - 18.0 - 32.0), vec2(72.0, 32.0));
+        ui.ctx().data_mut(|d| d.insert_temp(egui::Id::unique("np-bottom-right-rect"), br_rect));
+        paint_np_capsule(ui, br_rect);
+
+        let lyr_rect = Rect::from_min_max(br_rect.min, pos2(br_rect.center().x, br_rect.max.y));
+        let q_rect = Rect::from_min_max(pos2(br_rect.center().x, br_rect.min.y), br_rect.max);
+
+        let lyr_active = app.np_tab == NpTab::Lyrics && !no_lyrics;
+        let q_active = app.np_tab == NpTab::UpNext;
+        let inv_fg = if bg_light { Color32::WHITE } else { Color32::from_rgb(0x18, 0x14, 0x1c) };
+
+        let lyr_sense = if interactive && !no_lyrics { Sense::click() } else { Sense::hover() };
+        let lyr_resp = named(ui.interact(lyr_rect, ui.scope_id().with("np-br-lyrics"), lyr_sense), &t!("lyrics"))
+            .on_hover_text(&t!("lyrics"));
+        let lyr_resp = if interactive && !no_lyrics { lyr_resp.on_hover_cursor(egui::CursorIcon::PointingHand) } else { lyr_resp };
+        if lyr_active {
+            ui.painter().circle_filled(lyr_rect.center(), 12.5, fg_base);
+        } else if lyr_resp.hovered() && interactive && !no_lyrics {
+            ui.painter().circle_filled(lyr_rect.center(), 12.5, theme::glass(0.14));
+        }
+        let lyr_col = if no_lyrics {
+            theme::with_alpha(fg_base, 0.35)
+        } else if lyr_active {
+            inv_fg
+        } else {
+            theme::with_alpha(fg_base, if lyr_resp.hovered() { 1.0 } else { 0.85 })
+        };
+        super::glyphs::draw(ui, lyr_rect.center(), 15.0, super::glyphs::LYRICS, lyr_col);
+        if interactive && !no_lyrics && lyr_resp.clicked() {
+            app.np_tab = if lyr_active { NpTab::Art } else { NpTab::Lyrics };
+        }
+
+        let q_sense = if interactive { Sense::click() } else { Sense::hover() };
+        let q_resp = named(ui.interact(q_rect, ui.scope_id().with("np-br-queue"), q_sense), &t!("view_queue"))
+            .on_hover_text(&t!("view_queue"));
+        let q_resp = if interactive { q_resp.on_hover_cursor(egui::CursorIcon::PointingHand) } else { q_resp };
+        if q_active {
+            ui.painter().circle_filled(q_rect.center(), 12.5, fg_base);
+        } else if q_resp.hovered() && interactive {
+            ui.painter().circle_filled(q_rect.center(), 12.5, theme::glass(0.14));
+        }
+        let q_col = if q_active { inv_fg } else { theme::with_alpha(fg_base, if q_resp.hovered() { 1.0 } else { 0.85 }) };
+        super::glyphs::draw(ui, q_rect.center(), 15.0, super::glyphs::QUEUE, q_col);
+        if interactive && q_resp.clicked() {
+            app.np_tab = if q_active {
+                let prev = ui.ctx().data(|d| d.get_temp(egui::Id::unique("np-last-tab-prior"))).unwrap_or(if no_lyrics { NpTab::Art } else { NpTab::Lyrics });
+                if prev == NpTab::UpNext {
+                    if no_lyrics { NpTab::Art } else { NpTab::Lyrics }
+                } else {
+                    prev
+                }
+            } else {
+                ui.ctx().data_mut(|d| d.insert_temp(egui::Id::unique("np-last-tab-prior"), app.np_tab));
+                NpTab::UpNext
+            };
+        }
+    }
+    if close {
+        app.np_open = false;
+        if app.fullscreen || ui.input(|i| i.viewport().fullscreen.unwrap_or(false)) {
+            app.set_fullscreen(ui.ctx(), false);
+        }
+    }
 }
 
 /// Size of the artwork laid out in `col`: what is left once the sleeve's information,
@@ -289,12 +500,13 @@ fn art_side(cs: &crate::preset::CoverStyle, col: Rect) -> f32 {
 /// transport — the order the reference keeps them in. `px`: the size to fetch the image
 /// at (fixed while the column glides).
 #[allow(clippy::too_many_arguments)]
-fn cover_column(app: &mut App, ui: &mut Ui, col: Rect, track: &crate::model::Track, no_lyrics: bool, now: f64, px: u32) {
+fn cover_column(app: &mut App, ui: &mut Ui, col: Rect, track: &crate::model::Track, no_lyrics: bool, now: f64, px: u32, controls_alpha: f32) {
     use crate::preset::Shape;
     let look = app.look();
     let cs = &look.cover;
     let side = art_side(cs, col);
     let art = Rect::from_center_size(pos2(col.center().x, col.top() + side / 2.0 + (col.height() - side - 190.0).max(0.0) * 0.42), Vec2::splat(side));
+    ui.ctx().data_mut(|d| d.insert_temp(egui::Id::unique("np-art-rect"), art));
     let round = cs.shape != Shape::Rounded;
     let radius = if round { side / 2.0 } else { cs.radius.clamp(0.0, side / 2.0) };
     let cr = egui::CornerRadius::same(radius.min(255.0) as u8);
@@ -303,7 +515,15 @@ fn cover_column(app: &mut App, ui: &mut Ui, col: Rect, track: &crate::model::Tra
         ui.painter().add(s.as_shape(art, cr));
     }
     if cs.shadow > 0.0 {
-        widgets::soft_shadow(ui, art, radius.min(255.0), 60.0, cs.shadow.min(1.0));
+        let shadow_val = cs.shadow.max(0.4);
+        let bg_light = app.bg_is_light();
+        let (blur, alpha) = if bg_light {
+            (28.0, (shadow_val * 0.35).clamp(0.08, 0.22))
+        } else {
+            (48.0, (shadow_val * 0.75).clamp(0.30, 0.60))
+        };
+        widgets::soft_shadow(ui, art, radius.min(255.0), blur, alpha);
+        widgets::soft_shadow(ui, art, radius.min(255.0), blur * 0.45, alpha * 0.75);
     }
     let tint = Color32::from_gray((cs.brightness.clamp(0.1, 1.0) * 255.0) as u8);
     if round {
@@ -336,36 +556,88 @@ fn cover_column(app: &mut App, ui: &mut Ui, col: Rect, track: &crate::model::Tra
             ui.painter().rect_filled(art, cr, theme::shade(1.0 - cs.brightness));
         }
     }
-    sleeve(app, ui, art.left(), side, art.bottom() + 22.0, track, no_lyrics, now, 1.0);
+    sleeve(app, ui, art.left(), side, art.bottom() + 22.0, track, no_lyrics, now, controls_alpha, false);
 }
 
 /// The sleeve's information under the art (title, artists, star, ⋯), the seek line
 /// with its times and quality mark, then the transport, in a column `w` wide from `x0`,
 /// starting at `info_y`. About 175 points tall. Shared by the cover column and the
-/// card over a full-bleed cover. `controls`: the opacity of everything but the title
-/// and artist lines, which is all the card shows while folded.
+/// card over a full-bleed cover. `controls`: fullscreen opacity multiplier.
 #[allow(clippy::too_many_arguments)]
-fn sleeve(app: &mut App, ui: &mut Ui, x0: f32, w: f32, info_y: f32, track: &crate::model::Track, no_lyrics: bool, now: f64, controls: f32) {
+fn sleeve(app: &mut App, ui: &mut Ui, x0: f32, w: f32, info_y: f32, track: &crate::model::Track, no_lyrics: bool, now: f64, controls: f32, force_expand: bool) {
     let hold = app.mix_hold().map(|h| (h.total, h.mix, app.mix_hold_pos(h)));
     let heard = if hold.is_some() { track.clone() } else { app.playing_track().cloned().unwrap_or_else(|| track.clone()) };
-    // The star and the ⋯ menu share the information line's right end.
+
+    // Record the controls bounding box for inactivity hover detection
+    let controls_rect = Rect::from_min_size(pos2(x0, info_y), vec2(w, 196.0));
+    ui.ctx().data_mut(|d| d.insert_temp(egui::Id::unique("np-controls-rect"), controls_rect));
+
+    // In the song-only player with no lyrics (when not auto-hiding), controls are kept permanently visible and interactive.
+    let no_lyrics_view = !force_expand && (no_lyrics || app.np_tab != NpTab::Lyrics);
+    let playing = app.playing() || app.buffering;
+    let hovered = ui.rect_contains_pointer(controls_rect.expand(16.0));
+    let busy = app.seek_drag.is_some() || egui::Popup::is_any_open(ui.ctx());
+    let expanded = no_lyrics_view || !playing || hovered || busy || ((app.fullscreen || force_expand) && controls > 0.01);
+    let expand_alpha = if no_lyrics_view || force_expand {
+        1.0
+    } else {
+        theme::anim_bool(ui.ctx(), "np-sleeve-expand", expanded, 0.25)
+    };
+    if expand_alpha > 0.0 && expand_alpha < 1.0 {
+        super::animate(ui.ctx());
+    }
+
+    let effective_alpha = if no_lyrics_view { 1.0 } else { expand_alpha * controls };
+    if effective_alpha <= 0.001 {
+        return;
+    }
+    let mut cui = ui.new_child(egui::UiBuilder::new().id_salt("np-controls").max_rect(ui.max_rect()));
+    cui.multiply_opacity(effective_alpha);
+    let ui = &mut cui;
+    let interactive = if no_lyrics_view { true } else { effective_alpha > 0.2 };
+
+    let bg_light = app.bg_is_light();
+
     let text_w = w - 76.0;
-    text_at(ui, pos2(x0, info_y), &track.title, theme::semibold(17.0), Color32::WHITE, text_w);
-    // Each artist opens their own page (features included); the album follows the
-    // artist behind an em dash, as the reference writes the line.
     let mut line = track.artist_line();
     if let Some(album) = &track.album
         && !album.name.is_empty()
     {
         line = format!("{line} — {}", album.name);
     }
+
+    let title_color = if bg_light {
+        Color32::BLACK
+    } else {
+        Color32::WHITE
+    };
+    let artist_color = if bg_light {
+        Color32::from_black_alpha(225)
+    } else {
+        Color32::from_white_alpha(225)
+    };
+
+    let text_shadow_color = if bg_light {
+        Color32::from_black_alpha(25)
+    } else {
+        Color32::from_black_alpha(135)
+    };
+
+    let title_font = theme::semibold(17.0);
+    let gt_shadow = widgets::galley(ui, &track.title, title_font.clone(), text_shadow_color, text_w);
+    ui.painter().galley(pos2(x0, info_y + 1.2), gt_shadow, text_shadow_color);
+    text_at(ui, pos2(x0, info_y), &track.title, title_font, title_color, text_w);
+
     let line_w = text_w;
-    let line_rect = widgets::linked_text(ui, pos2(x0, info_y + 21.0), &line, &track.artists, theme::regular(15.0), theme::text_dim(), line_w, &mut app.actions);
+    let line_font = theme::regular(15.0);
+    let gl_shadow = widgets::galley(ui, &line, line_font.clone(), text_shadow_color, line_w);
+    ui.painter().galley(pos2(x0, info_y + 22.2), gl_shadow, text_shadow_color);
+    let line_rect = widgets::linked_text(ui, pos2(x0, info_y + 21.0), &line, &track.artists, line_font, artist_color, line_w, &mut app.actions);
     // The album after the em dash opens its page too, underlined like the artists.
     if let Some(album) = track.album.as_ref().filter(|a| !a.name.is_empty())
         && let Some(id) = album.id.clone()
     {
-        let g = widgets::galley(ui, &line, theme::regular(15.0), theme::text_dim(), line_w);
+        let g = widgets::galley(ui, &line, theme::regular(15.0), artist_color, line_w);
         if let Some(at) = g.job.text.rfind(album.name.as_str()) {
             let c0 = g.job.text[..at].chars().count();
             let c1 = c0 + album.name.chars().count();
@@ -373,49 +645,50 @@ fn sleeve(app: &mut App, ui: &mut Ui, x0: f32, w: f32, info_y: f32, track: &crat
             let a1 = g.pos_from_cursor(egui::text::CCursor::new(c1)).min.x;
             if a1 - a0 >= 2.0 {
                 let r = Rect::from_min_max(pos2(line_rect.left() + a0, line_rect.top()), pos2(line_rect.left() + a1, line_rect.bottom()));
-                let resp = ui.interact(r, ui.scope_id().with(("album-link", &album.name)), Sense::click());
-                let resp = named(resp, &album.name).on_hover_cursor(egui::CursorIcon::PointingHand);
+                let resp = ui.interact(r, ui.scope_id().with(("album-link", &album.name)), if interactive { Sense::click() } else { Sense::hover() });
+                let resp = named(resp, &album.name);
+                let resp = if interactive { resp.on_hover_cursor(egui::CursorIcon::PointingHand) } else { resp };
                 if resp.hovered() {
-                    let hover_color = if theme::light() { Color32::BLACK } else { Color32::WHITE };
+                    let hover_color = if bg_light { Color32::BLACK } else { Color32::WHITE };
                     let hg = widgets::galley(ui, &album.name, theme::regular(15.0), hover_color, line_w);
                     ui.painter().galley(r.min, hg, hover_color);
                 }
-                if resp.clicked() {
+                if interactive && resp.clicked() {
                     app.actions.push(Action::Open(super::Target::Album(id)));
                 }
             }
         }
     }
-    // From here down it's the controls, which fade with the card's fold.
-    let ui = &mut ui.new_child(egui::UiBuilder::new().id_salt("np-controls").max_rect(ui.max_rect()));
-    ui.multiply_opacity(controls);
     // The star: a 30 px disc that washes under the pointer and fills in the accent
     // once liked. The ⋯ menu sits at the line's end, as on music.youtube.com.
     let liked = app.liked.contains(&heard.id);
     let star = Rect::from_center_size(pos2((x0 + w) - 55.0, info_y + 14.0), Vec2::splat(30.0));
-    let sr = ui.interact(star, ui.scope_id().with(("np-like", &heard.id)), Sense::click());
-    let sr = named(sr, if liked { "Remove from favourites" } else { "Add to favourites" }).on_hover_cursor(egui::CursorIcon::PointingHand);
-    let sh = theme::anim_bool(ui.ctx(), sr.id.with("h"), sr.hovered(), 0.1);
+    let sr = ui.interact(star, ui.scope_id().with(("np-like", &heard.id)), if interactive { Sense::click() } else { Sense::hover() });
+    let like_label = if liked { t!("remove_from_favourites") } else { t!("add_to_favourites") };
+    let sr = named(sr, &like_label);
+    let sr = if interactive { sr.on_hover_cursor(egui::CursorIcon::PointingHand) } else { sr };
+    let sh = theme::anim_bool(ui.ctx(), sr.id.with("h"), interactive && sr.hovered(), 0.1);
     let pop = theme::anim_bool(ui.ctx(), ("liked", &heard.id), liked, 0.3);
-    // The same translucent disc as the ⋯ beside it, a little brighter once liked.
-    let disc = (0.09 + 0.07 * sh + 0.05 * pop).min(0.30);
-    if disc > 0.0 {
-        ui.painter().circle_filled(star.center(), 15.0, theme::glass(disc));
-    }
-    let dim = 0.85 + 0.15 * sh;
-    let tint = theme::lerp_color(theme::with_alpha(Color32::WHITE, dim), app.accent_color(), pop);
+    let base_star = if bg_light { Color32::BLACK } else { Color32::WHITE };
+    let dim = 0.92 + 0.08 * sh;
+    let tint = theme::lerp_color(theme::with_alpha(base_star, dim), app.accent_color(), pop);
     // It swells a quarter on the way, as the mini player's does.
     let size = 19.0 * (1.0 + 0.25 * (pop * std::f32::consts::PI).sin());
+    if !bg_light {
+        super::glyphs::draw(ui, star.center() + vec2(0.0, 1.2), size, super::glyphs::STAR, Color32::from_black_alpha(90));
+    }
     super::glyphs::draw(ui, star.center(), size, super::glyphs::STAR, tint);
     if pop > 0.0 {
         super::glyphs::draw(ui, star.center(), size, super::glyphs::STAR_FILLED, theme::with_alpha(app.accent_color(), pop));
     }
-    if sr.clicked() {
+    if interactive && sr.clicked() {
         app.actions.push(Action::Like(heard.clone(), !liked));
     }
     // The song's options, beside the star.
     let options = Rect::from_center_size(pos2((x0 + w) - 15.0, info_y + 14.0), Vec2::splat(34.0));
-    options_menu(app, ui, options, &heard, app.np_tab == NpTab::Lyrics && !no_lyrics);
+    if interactive {
+        options_menu(app, ui, options, &heard, app.np_tab == NpTab::Lyrics && !no_lyrics, None);
+    }
 
     // Seek: a 4 px line that grows under the pointer, its times below.
     let status = app.audio.status.clone();
@@ -446,13 +719,14 @@ fn sleeve(app: &mut App, ui: &mut Ui, x0: f32, w: f32, info_y: f32, track: &crat
     let hit = Rect::from_min_size(pos2(x0, info_y + 55.0), vec2(w, 16.0));
     // Held for the handoff's first half: its last stretch is where the pointer is,
     // and seeking the queue's song from here would cut the mix.
-    let sresp = ui.interact(hit, ui.scope_id().with("np-seek"), if held { Sense::hover() } else { Sense::click_and_drag() });
-    let sresp = if total > 0.0 && !held { sresp.on_hover_cursor(egui::CursorIcon::PointingHand) } else { sresp };
-    sresp.widget_info(|| egui::WidgetInfo::slider(total > 0.0 && !held, pos as f64, "Seek"));
-    let focus = theme::anim_bool(ui.ctx(), "np-seek-h", total > 0.0 && !held && (sresp.hovered() || sresp.dragged()), 0.18);
+    let sresp = ui.interact(hit, ui.scope_id().with("np-seek"), if held || !interactive { Sense::hover() } else { Sense::click_and_drag() });
+    let sresp = if total > 0.0 && !held && interactive { sresp.on_hover_cursor(egui::CursorIcon::PointingHand) } else { sresp };
+    sresp.widget_info(|| egui::WidgetInfo::slider(total > 0.0 && !held && interactive, pos as f64, "Seek"));
+    let focus = theme::anim_bool(ui.ctx(), "np-seek-h", total > 0.0 && !held && interactive && (sresp.hovered() || sresp.dragged()), 0.18);
     let thick = 4.0 + 4.0 * focus;
     let bar = Rect::from_min_max(pos2(x0, hit.center().y - thick / 2.0), pos2(x0 + w, hit.center().y + thick / 2.0));
-    ui.painter().rect_filled(bar, thick / 2.0, Color32::from_white_alpha(38));
+    let seek_bg = if bg_light { Color32::from_black_alpha(45) } else { Color32::from_white_alpha(50) };
+    ui.painter().rect_filled(bar, thick / 2.0, seek_bg);
     // Automix: the handoff window tints to the song's colour with its start ticked, so
     // the blend has a place it visibly begins at.
     if mix > 0.5 {
@@ -464,15 +738,28 @@ fn sleeve(app: &mut App, ui: &mut Ui, x0: f32, w: f32, info_y: f32, track: &crat
     }
     let frac = if total > 0.0 { (pos / total).clamp(0.0, 1.0) } else { 0.0 };
     if frac > 0.0 {
-        let fill = theme::lerp_color(Color32::from_white_alpha(163), Color32::from_white_alpha(240), focus);
+        let fill = if bg_light {
+            theme::lerp_color(Color32::from_black_alpha(230), Color32::BLACK, focus)
+        } else {
+            theme::lerp_color(Color32::from_white_alpha(235), Color32::WHITE, focus)
+        };
         ui.painter().rect_filled(Rect::from_min_size(bar.min, vec2(bar.width() * frac, thick)), thick / 2.0, fill);
     }
     let at = |p: egui::Pos2| (((p.x - x0) / w.max(1.0)).clamp(0.0, 1.0) * total).max(0.0);
-    let tc = theme::with_alpha(Color32::WHITE, 0.62);
-    let g = widgets::galley(ui, &super::fmt_time(pos as u32), theme::semibold(11.0), tc, 80.0);
+    let tc = if bg_light { Color32::from_black_alpha(225) } else { Color32::from_white_alpha(225) };
+    let tc_shadow = if bg_light { Color32::from_black_alpha(20) } else { Color32::from_black_alpha(110) };
+    let time_font = theme::semibold(11.0);
+    let pos_str = super::fmt_time(pos as u32);
+    let g_pos_s = widgets::galley(ui, &pos_str, time_font.clone(), tc_shadow, 80.0);
+    ui.painter().galley(pos2(x0, hit.bottom() + 3.0), g_pos_s, tc_shadow);
+    let g = widgets::galley(ui, &pos_str, time_font.clone(), tc, 80.0);
     ui.painter().galley(pos2(x0, hit.bottom() + 2.0), g, tc);
+
     let left = super::fmt_time((total - pos).max(0.0) as u32);
-    let g = widgets::galley(ui, &format!("-{left}"), theme::semibold(11.0), tc, 80.0);
+    let left_str = format!("-{left}");
+    let g_left_s = widgets::galley(ui, &left_str, time_font.clone(), tc_shadow, 80.0);
+    ui.painter().galley(pos2(x0 + w - g_left_s.size().x, hit.bottom() + 3.0), g_left_s, tc_shadow);
+    let g = widgets::galley(ui, &left_str, time_font, tc, 80.0);
     ui.painter().galley(pos2(x0 + w - g.size().x, hit.bottom() + 2.0), g, tc);
     // The quality mark sits between the two times, as the reference draws it.
     let badge_w = audio_badge_width(ui, app, false);
@@ -486,7 +773,7 @@ fn sleeve(app: &mut App, ui: &mut Ui, x0: f32, w: f32, info_y: f32, track: &crat
         let g = widgets::galley(ui, "Mixing", theme::semibold(10.5), accent, 80.0);
         ui.painter().galley(pos2(x0 + (w - g.size().x) / 2.0, hit.bottom() + 3.0), g, accent);
     }
-    if total > 0.0
+    if total > 0.0 && interactive
         && let Some(p) = sresp.interact_pointer_pos()
     {
         if sresp.dragged() {
@@ -513,10 +800,14 @@ fn sleeve(app: &mut App, ui: &mut Ui, x0: f32, w: f32, info_y: f32, track: &crat
     }
     // The marks are primary white, an off shuffle or repeat tertiary; a pressed button
     // shrinks to 90%, as the reference's does.
-    let ink = |h: f32, base: f32, on: f32| theme::with_alpha(theme::lerp_color(theme::with_alpha(Color32::WHITE, base), Color32::WHITE, h), on);
+    let ink = |h: f32, base: f32, on: f32| {
+        let col = if bg_light { Color32::BLACK } else { Color32::WHITE };
+        theme::with_alpha(theme::lerp_color(theme::with_alpha(col, base), col, h), on)
+    };
     let enabled = app.current().is_some();
     let dim = if enabled { 1.0 } else { 0.4 };
     let btn = |ui: &mut Ui, i: usize, key: &str, name: &str, live: bool| -> (egui::Response, f32, f32) {
+        let live = live && interactive;
         let r = Rect::from_center_size(pos2(xs[i], ty), Vec2::splat(sizes[i]));
         let resp = ui.interact(r, ui.scope_id().with(("np-t", key)), if live { Sense::click() } else { Sense::hover() });
         let resp = named(resp, name);
@@ -524,21 +815,29 @@ fn sleeve(app: &mut App, ui: &mut Ui, x0: f32, w: f32, info_y: f32, track: &crat
         let h = theme::anim_bool(ui.ctx(), resp.id.with("h"), live && resp.hovered(), 0.1);
         let p = theme::anim_bool(ui.ctx(), resp.id.with("p"), live && resp.is_pointer_button_down_on(), 0.1);
         if h > 0.0 {
-            ui.painter().circle_filled(pos2(xs[i], ty), sizes[i] / 2.0 * (1.0 - 0.1 * p), Color32::from_white_alpha((0.1 * h * 255.0) as u8));
+            let halo = if bg_light { Color32::from_black_alpha((0.1 * h * 255.0) as u8) } else { Color32::from_white_alpha((0.1 * h * 255.0) as u8) };
+            ui.painter().circle_filled(pos2(xs[i], ty), sizes[i] / 2.0 * (1.0 - 0.1 * p), halo);
         }
         (resp, h, p)
     };
-    let (r, h, p) = btn(ui, 0, "shuffle", "Shuffle up next", true);
-    super::glyphs::draw(ui, r.rect.center(), icons[0] * (1.0 - 0.1 * p), super::glyphs::SHUFFLE, ink(h, 0.55, 1.0));
-    if r.clicked() {
+    let draw_np_glyph = |ui: &mut Ui, center: egui::Pos2, size: f32, glyph: &'static [u8], tint: Color32| {
+        if !bg_light {
+            super::glyphs::draw(ui, center + vec2(0.0, 1.2), size, glyph, Color32::from_black_alpha(85));
+        }
+        super::glyphs::draw(ui, center, size, glyph, tint);
+    };
+    let (r, h, p) = btn(ui, 0, "shuffle", &t!("shuffle_up_next"), true);
+    draw_np_glyph(ui, r.rect.center(), icons[0] * (1.0 - 0.1 * p), super::glyphs::SHUFFLE, ink(h, 0.90, 1.0));
+    if interactive && r.clicked() {
         app.shuffle_upcoming();
     }
-    let (r, h, p) = btn(ui, 1, "prev", "Previous", enabled);
-    super::glyphs::draw(ui, r.rect.center(), icons[1] * (1.0 - 0.1 * p), super::glyphs::PREVIOUS, ink(h, 1.0, dim));
-    if r.clicked() && enabled {
+    let (r, h, p) = btn(ui, 1, "prev", &t!("previous"), enabled);
+    draw_np_glyph(ui, r.rect.center(), icons[1] * (1.0 - 0.1 * p), super::glyphs::PREVIOUS, ink(h, 1.0, dim));
+    if interactive && r.clicked() && enabled {
         app.prev();
     }
-    let (r, h, p) = btn(ui, 2, "play", if app.playing() || app.buffering { "Pause" } else { "Play" }, enabled);
+    let play_label = if app.playing() || app.buffering { t!("pause") } else { t!("play") };
+    let (r, h, p) = btn(ui, 2, "play", &play_label, enabled);
     let c = r.rect.center();
     let size = icons[2] * (1.0 - 0.1 * p);
     let mark = ink(h, 1.0, dim);
@@ -552,18 +851,18 @@ fn sleeve(app: &mut App, ui: &mut Ui, x0: f32, w: f32, info_y: f32, track: &crat
         // The two marks cross-fade: the reference keeps its pause up through a buffer,
         // and a hard cut between them flickers.
         if morph < 1.0 {
-            super::glyphs::draw(ui, c, size, super::glyphs::PLAY, theme::with_alpha(mark, 1.0 - morph));
+            draw_np_glyph(ui, c, size, super::glyphs::PLAY, theme::with_alpha(mark, 1.0 - morph));
         }
         if morph > 0.0 {
-            super::glyphs::draw(ui, c, size, super::glyphs::PAUSE, theme::with_alpha(mark, morph));
+            draw_np_glyph(ui, c, size, super::glyphs::PAUSE, theme::with_alpha(mark, morph));
         }
     }
-    if r.clicked() && enabled {
+    if interactive && r.clicked() && enabled {
         app.toggle();
     }
-    let (r, h, p) = btn(ui, 3, "next", "Next", enabled);
-    super::glyphs::draw(ui, r.rect.center(), icons[3] * (1.0 - 0.1 * p), super::glyphs::NEXT, ink(h, 1.0, dim));
-    if r.clicked() && enabled {
+    let (r, h, p) = btn(ui, 3, "next", &t!("next"), enabled);
+    draw_np_glyph(ui, r.rect.center(), icons[3] * (1.0 - 0.1 * p), super::glyphs::NEXT, ink(h, 1.0, dim));
+    if interactive && r.clicked() && enabled {
         app.next();
     }
     let (glyph, on) = match app.queue.repeat {
@@ -571,9 +870,9 @@ fn sleeve(app: &mut App, ui: &mut Ui, x0: f32, w: f32, info_y: f32, track: &crat
         Repeat::All => (super::glyphs::REPEAT, true),
         Repeat::One => (super::glyphs::REPEAT_ONE, true),
     };
-    let (r, h, p) = btn(ui, 4, "repeat", "Repeat", true);
-    super::glyphs::draw(ui, r.rect.center(), icons[4] * (1.0 - 0.1 * p), glyph, if on { app.accent_color() } else { ink(h, 0.55, 1.0) });
-    if r.clicked() {
+    let (r, h, p) = btn(ui, 4, "repeat", &t!("repeat"), true);
+    draw_np_glyph(ui, r.rect.center(), icons[4] * (1.0 - 0.1 * p), glyph, if on { app.accent_color() } else { ink(h, 0.90, 1.0) });
+    if interactive && r.clicked() {
         app.queue.repeat = match app.queue.repeat {
             Repeat::Off => Repeat::All,
             Repeat::All => Repeat::One,
@@ -586,8 +885,9 @@ fn sleeve(app: &mut App, ui: &mut Ui, x0: f32, w: f32, info_y: f32, track: &crat
         let since = ui.ctx().memory_mut(|m| *m.data.get_temp_mut_or_insert_with(egui::Id::unique(("no-lyrics", &track.id)), || now));
         let a = (1.0 - ((now - since - 3.0) / 1.0) as f32).clamp(0.0, 1.0);
         if a > 0.0 {
-            let c = theme::with_alpha(theme::text_dim(), a * 0.8);
-            text_at(ui, pos2(x0, ty + 40.0), "No lyrics for this song", theme::regular(14.0), c, w);
+            let base = if bg_light { Color32::BLACK } else { Color32::WHITE };
+            let c = theme::with_alpha(base, a * 0.90);
+            text_at(ui, pos2(x0, ty + 40.0), &t!("no_lyrics_for_this_song"), theme::regular(14.0), c, w);
             // Frames only for the fade-out.
             let wait = (since + 3.0 - now).max(0.0);
             ui.ctx().request_repaint_after(std::time::Duration::from_secs_f64(if wait > 0.0 { wait } else { 0.033 }));
@@ -604,7 +904,7 @@ pub(super) fn lyrics_drawer(app: &mut App, ui: &mut Ui, now: f64) {
     if app.current().is_none() {
         ui.add_space(rect.height() * 0.4);
         ui.vertical_centered(|ui| {
-            ui.label(egui::RichText::new("Play a song to see its lyrics").font(theme::semibold(16.0)).color(theme::text_dim()));
+            ui.label(egui::RichText::new(t!("play_song_to_see_lyrics")).font(theme::semibold(16.0)).color(theme::text_dim()));
         });
         return;
     }
@@ -615,7 +915,7 @@ pub(super) fn lyrics_drawer(app: &mut App, ui: &mut Ui, now: f64) {
 }
 
 /// A song whose lyrics nobody asked for (restored, or picked up from another device)
-/// or whose answer never came: ask once after a few seconds, then stop spinning.
+/// or whose answer never came: ask immediately, then stop spinning after timeout.
 /// False when there are lyrics for the song to draw.
 fn lyrics_wait(app: &mut App, ui: &mut Ui, rect: Rect, now: f64) -> bool {
     let Some(shown) = app.shown().cloned() else { return false };
@@ -624,8 +924,8 @@ fn lyrics_wait(app: &mut App, ui: &mut Ui, rect: Rect, now: f64) -> bool {
     }
     let key = egui::Id::unique("lyrics-drawer-wait");
     let (since, mut asked) = ui.ctx().data(|d| d.get_temp::<(String, f64, bool)>(key)).filter(|(id, ..)| *id == shown.id).map_or((now, false), |(_, t, a)| (t, a));
-    if !asked && now - since > 3.0 {
-        app.backend.request(crate::backend::Req::Lyrics(shown.clone()));
+    if !asked {
+        app.backend.request(crate::backend::Req::Lyrics(Box::new(shown.clone())));
         asked = true;
     }
     ui.ctx().data_mut(|d| d.insert_temp(key, (shown.id.clone(), since, asked)));
@@ -633,25 +933,38 @@ fn lyrics_wait(app: &mut App, ui: &mut Ui, rect: Rect, now: f64) -> bool {
     ui.vertical_centered(|ui| {
         if now - since < 20.0 {
             ui.spinner();
-            ui.label(egui::RichText::new("Loading lyrics…").color(theme::text_dim()));
-            ui.ctx().request_repaint_after(std::time::Duration::from_millis(500));
+            ui.ctx().request_repaint_after(std::time::Duration::from_millis(100));
         } else {
-            ui.label(egui::RichText::new("No lyrics yet").font(theme::semibold(16.0)).color(theme::text_dim()));
+            ui.label(egui::RichText::new(t!("no_lyrics_yet")).font(theme::semibold(16.0)).color(theme::text_dim()));
         }
     });
     true
 }
 
 fn lyrics_panel(app: &mut App, ui: &mut Ui, rect: Rect, now: f64, centered: bool) {
-    // Lent out for the frame rather than cloned (the drawing needs `app` mutably).
-    let Some((id, set)) = app.lyrics.take() else {
+    let Some(shown) = app.shown().cloned() else { return };
+    if !app.lyrics.as_ref().is_some_and(|(id, _)| *id == shown.id) {
+        let key = egui::Id::unique("lyrics-panel-wait");
+        let (since, mut asked) = ui.ctx().data(|d| d.get_temp::<(String, f64, bool)>(key)).filter(|(id, ..)| *id == shown.id).map_or((now, false), |(_, t, a)| (t, a));
+        if !asked {
+            app.backend.request(crate::backend::Req::Lyrics(Box::new(shown.clone())));
+            asked = true;
+        }
+        ui.ctx().data_mut(|d| d.insert_temp(key, (shown.id.clone(), since, asked)));
         ui.add_space(rect.height() * 0.35);
         ui.vertical_centered(|ui| {
-            ui.spinner();
-            ui.label(egui::RichText::new("Loading lyrics…").color(theme::text_dim()));
+            if now - since < 20.0 {
+                ui.spinner();
+                ui.ctx().request_repaint_after(std::time::Duration::from_millis(100));
+            } else {
+                ui.label(egui::RichText::new(t!("no_lyrics_yet")).font(theme::semibold(16.0)).color(theme::text_dim()));
+            }
         });
         return;
-    };
+    }
+
+    // Lent out for the frame rather than cloned (the drawing needs `app` mutably).
+    let Some((id, set)) = app.lyrics.take() else { return };
     if let Some(lyrics) = app.lyric_prefs.choose(&id, &set).and_then(|p| set.get(p)) {
         let panel = Rect::from_min_max(rect.min, pos2(rect.right(), rect.bottom() - 4.0));
         if lyrics.sync == Sync::None {
@@ -662,7 +975,7 @@ fn lyrics_panel(app: &mut App, ui: &mut Ui, rect: Rect, now: f64, centered: bool
     } else {
         ui.add_space(rect.height() * 0.4);
         ui.vertical_centered(|ui| {
-            ui.label(egui::RichText::new("No lyrics found for this song").font(theme::semibold(20.0)).color(theme::text_dim()));
+            ui.label(egui::RichText::new(t!("no_lyrics_found")).font(theme::semibold(20.0)).color(theme::text_dim()));
         });
     }
     app.lyrics = Some((id, set));
@@ -754,36 +1067,52 @@ fn synced(app: &mut App, ui: &mut Ui, rect: Rect, id: &str, lyrics: &Lyrics, now
     if out.animating {
         super::animate(ui.ctx());
     }
-    // The extension's `.autoscroll-resume-button` (YouTube Music's rem is 10 px): a frosted
-    // pill under the top edge in the lyrics font at 600, 1.75rem; padding .5rem 1rem;
-    // white 5% fill, 1px white 10% border, radius 1rem, over a 5px backdrop blur (which
-    // reads as about twice those on screen). It slides down from -3em to 2em as it fades
-    // in, and its text glows on hover.
-    let shown = theme::anim_bool(ui.ctx(), "lyr-resume", out.user_scrolling, 0.2);
+    if out.user_scrolling {
+        ui.ctx().request_repaint_after(std::time::Duration::from_millis(150));
+    }
+    // Sleek, minimal floating capsule to resume autoscroll when reader scrolled away.
+    // If not clicked, autoscroll automatically resumes in 5s.
+    let shown = theme::anim_bool(ui.ctx(), "lyr-resume", out.user_scrolling, 0.22);
     if shown > 0.0 {
-        let font = theme::lyric_font(&style.font, crate::preset::Weight::Semibold, 17.5);
-        let resume_color = if bg_light { Color32::from_rgb(0x18, 0x14, 0x1c) } else { theme::text() };
-        let g = widgets::galley(ui, "Resume Autoscroll", font, resume_color, rect.width() - 40.0);
-        let size = g.size() + vec2(20.0, 10.0) + Vec2::splat(2.0);
-        let em = 17.5;
-        let y = rect.top() + 8.0 + egui::lerp(-3.0 * em..=0.5 * em, theme::ease_out(shown));
+        let font = theme::semibold(12.0);
+        let resume_label = t!("resume_autoscroll");
+        let text_color = if bg_light { Color32::from_rgb(0x18, 0x14, 0x1c) } else { Color32::from_white_alpha(225) };
+        let g = widgets::galley(ui, &resume_label, font, text_color, rect.width() - 40.0);
+        let h = 26.0;
+        let w = g.size().x + 24.0;
+        let size = vec2(w, h);
+        let y = rect.top() + 10.0 + egui::lerp(-28.0..=0.0, theme::ease_out(shown));
         let r = Rect::from_min_size(pos2(rect.center().x - size.x / 2.0, y), size);
         let resp = ui.interact(r, ui.scope_id().with("lyr-resume-btn"), if out.user_scrolling { Sense::click() } else { Sense::hover() });
-        let resp = named(resp, "Resume Autoscroll").on_hover_cursor(egui::CursorIcon::PointingHand);
-        let hover = theme::anim_bool(ui.ctx(), "lyr-resume-h", resp.hovered() && out.user_scrolling, 0.25);
+        let resp = named(resp, &resume_label).on_hover_cursor(egui::CursorIcon::PointingHand);
+        let hover = theme::anim_bool(ui.ctx(), "lyr-resume-h", resp.hovered() && out.user_scrolling, 0.2);
         let p = ui.painter().with_clip_rect(rect.expand2(vec2(0.0, 4.0)));
-        p.rect_filled(r, 10.0, theme::glass(0.10 * shown));
-        p.rect_stroke(r, 10.0, egui::Stroke::new(1.0, theme::glass(0.2 * shown)), egui::StrokeKind::Inside);
+        let radius = h / 2.0;
+
+        // Soft drop shadow
+        let shadow_alpha = (40.0 * shown) as u8;
+        p.rect_filled(r.translate(vec2(0.0, 1.5)), radius, Color32::from_black_alpha(shadow_alpha));
+
+        // Frosted capsule fill matching app UI theme
+        let (fill, stroke_color, fg) = if bg_light {
+            let bg_alpha = (235.0 * shown) as u8;
+            let fill = theme::lerp_color(Color32::from_white_alpha(bg_alpha), Color32::WHITE, hover);
+            let stroke = Color32::from_black_alpha(((25.0 + 20.0 * hover) * shown) as u8);
+            (fill, stroke, Color32::from_rgb(0x18, 0x14, 0x1c))
+        } else {
+            let base_fill = theme::glass((0.14 + 0.08 * hover) * shown);
+            let stroke = theme::glass((0.16 + 0.12 * hover) * shown);
+            let fg = theme::lerp_color(Color32::from_white_alpha((220.0 * shown) as u8), Color32::WHITE, hover);
+            (base_fill, stroke, fg)
+        };
+
+        p.rect_filled(r, radius, fill);
+        p.rect_stroke(r, radius, egui::Stroke::new(1.0, stroke_color), egui::StrokeKind::Inside);
+
         let at = r.center() - g.size() / 2.0;
-        if hover > 0.0
-            && let Some((tex, glow_rect, uv)) = app.lyric_view.text_glow(ui.ctx(), g.clone(), at, 15.0)
-        {
-            // `text-shadow: 0 0 1.5rem var(--blyrics-glow-color)`: a real blur of the letters.
-            let glow = crate::preset::paint(&style.glow_color, accent);
-            p.image(tex, glow_rect, uv, theme::with_alpha(glow, hover * shown));
-        }
-        p.galley_with_override_text_color(at, g, theme::with_alpha(resume_color, shown));
-        if shown < 1.0 {
+        p.galley_with_override_text_color(at, g, fg);
+
+        if shown < 1.0 || (hover > 0.0 && hover < 1.0) {
             super::animate(ui.ctx());
         }
         if resp.clicked() {
@@ -795,10 +1124,10 @@ fn synced(app: &mut App, ui: &mut Ui, rect: Rect, id: &str, lyrics: &Lyrics, now
 fn plain_lyrics(app: &mut App, ui: &mut Ui, rect: Rect, lyrics: &Lyrics) {
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect));
     let bg_light = app.bg_is_light();
-    let default_text = if bg_light { Color32::from_rgb(0x18, 0x14, 0x1c) } else { theme::text() };
-    let faint_text = if bg_light { Color32::from_black_alpha(140) } else { theme::text_faint() };
+    let default_text = if bg_light { Color32::BLACK } else { Color32::WHITE };
+    let faint_text = if bg_light { Color32::from_black_alpha(210) } else { Color32::from_white_alpha(210) };
     egui::ScrollArea::vertical().id_salt("plain-lyrics").auto_shrink(false).show(&mut child, |ui| {
-        ui.label(egui::RichText::new("These lyrics aren't synced").font(theme::regular(13.0)).color(faint_text));
+        ui.label(egui::RichText::new(t!("lyrics_not_synced")).font(theme::regular(13.0)).color(faint_text));
         ui.add_space(14.0);
         let style = &app.look().lyrics;
         let size = (32.0 * style.size.clamp(0.6, 1.6)).min(rect.width() / 12.5).max(18.0);
@@ -842,19 +1171,38 @@ fn sync_label(k: SyncKind) -> &'static str {
 
 /// The ⋯ menu: the song's actions, and with lyrics showing, the source picker,
 /// translation and romanization toggles, and this song's timing offset above them.
-fn options_menu(app: &mut App, ui: &mut Ui, rect: Rect, track: &crate::model::Track, lyrics: bool) {
+pub(crate) fn options_menu(
+    app: &mut App,
+    ui: &mut Ui,
+    rect: Rect,
+    track: &crate::model::Track,
+    lyrics: bool,
+    tint: Option<&dyn Fn(f32) -> Color32>,
+) {
     let resp = ui.interact(rect, ui.scope_id().with("np-options"), Sense::click());
-    let resp = named(resp, "Options").on_hover_cursor(egui::CursorIcon::PointingHand);
+    let resp = named(resp, &t!("options")).on_hover_cursor(egui::CursorIcon::PointingHand);
     let open = egui::Popup::is_id_open(ui.ctx(), egui::Popup::default_response_id(&resp));
     let h = theme::anim_bool(ui.ctx(), resp.id.with("h"), resp.hovered() || open, 0.12);
-    ui.painter().circle_filled(rect.center(), 17.0, theme::glass(0.09 + 0.07 * h));
-    for dx in [-6.0, 0.0, 6.0] {
-        ui.painter().circle_filled(rect.center() + vec2(dx, 0.0), 1.9, theme::with_alpha(Color32::WHITE, 0.75 + 0.25 * h));
+
+    let dot_col = if let Some(tint_fn) = tint {
+        tint_fn(h)
+    } else {
+        let bg_light = app.bg_is_light();
+        let base = if bg_light { Color32::BLACK } else { Color32::WHITE };
+        theme::with_alpha(base, 0.90 + 0.10 * h)
+    };
+    if !app.bg_is_light() {
+        for dx in [-5.0, 0.0, 5.0] {
+            ui.painter().circle_filled(rect.center() + vec2(dx, 1.2), 1.8, Color32::from_black_alpha(85));
+        }
+    }
+    for dx in [-5.0, 0.0, 5.0] {
+        ui.painter().circle_filled(rect.center() + vec2(dx, 0.0), 1.8, dot_col);
     }
     egui::Popup::menu(&resp).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui| {
-        ui.set_width(270.0);
+        ui.set_width(240.0);
         ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
-        ui.add_space(4.0);
+        ui.add_space(2.0);
         // Lyrics first: the source, translation and timing are what the menu is for
         // while the lyrics are up.
         let liked = app.liked.contains(&track.id);
@@ -862,7 +1210,7 @@ fn options_menu(app: &mut App, ui: &mut Ui, rect: Rect, track: &crate::model::Tr
             lyric_options(app, ui);
             menu_divider(ui);
         }
-        widgets::song_actions(ui, track, liked, None, &mut app.actions);
+        widgets::song_actions(ui, track, liked, None, None, &mut app.actions);
         menu_divider(ui);
         if widgets::menu_action(ui, Some(icon::LIST_PLUS), "Play next") {
             app.actions.push(Action::PlayNext(track.clone()));
@@ -873,9 +1221,6 @@ fn options_menu(app: &mut App, ui: &mut Ui, rect: Rect, track: &crate::model::Tr
         let queue = app.np_tab == NpTab::UpNext;
         if widgets::menu_action(ui, Some(icon::LIST_MUSIC), if queue { "View lyrics" } else { "View queue" }) {
             app.np_tab = if queue { NpTab::Lyrics } else { NpTab::UpNext };
-        }
-        if widgets::menu_action(ui, Some(icon::RADIO), "Start radio") {
-            app.actions.push(Action::Radio(track.clone()));
         }
         menu_divider(ui);
         sleep_options(app, ui);
@@ -911,12 +1256,12 @@ fn lyric_options(app: &mut App, ui: &mut Ui) {
     menu_divider(ui);
     let tip = format!("Translation · {}", lang_name(&app.lyric_prefs.target));
     switch_row(ui, &tip, &mut app.show_trans);
-    switch_row(ui, "Romanization", &mut app.show_roman);
+    switch_row(ui, &t!("romanization"), &mut app.show_roman);
     // This song's timing for the shown source: ‹ +0.0s ›
     let off = app.lyric_prefs.song_offset(&id, shown);
-    let (row, _) = ui.allocate_exact_size(vec2(ui.available_width(), 40.0), Sense::hover());
-    ui.painter().text(pos2(row.left() + 12.0, row.center().y), egui::Align2::LEFT_CENTER, "Timing", theme::regular(14.0), theme::text());
-    let mut sub = ui.new_child(egui::UiBuilder::new().max_rect(row.shrink2(vec2(8.0, 0.0))).layout(egui::Layout::right_to_left(egui::Align::Center)));
+    let (row, _) = ui.allocate_exact_size(vec2(ui.available_width(), 24.0), Sense::hover());
+    ui.painter().text(pos2(row.left() + 10.0, row.center().y), egui::Align2::LEFT_CENTER, t!("timing"), theme::regular(13.0), theme::text());
+    let mut sub = ui.new_child(egui::UiBuilder::new().max_rect(row.shrink2(vec2(6.0, 0.0))).layout(egui::Layout::right_to_left(egui::Align::Center)));
     sub.spacing_mut().item_spacing.x = 2.0;
     if mini_icon(&mut sub, icon::CHEVRON_RIGHT, "Lyrics later (+0.1 s)", true).clicked() {
         app.lyric_prefs.set_song_offset(&id, shown, off + 0.1);
@@ -942,17 +1287,25 @@ fn sleep_options(app: &mut App, ui: &mut Ui) {
     let now = std::time::Instant::now();
     let open_id = egui::Id::unique("np-sleep-open");
     let mut open = ui.data(|d| d.get_temp::<bool>(open_id).unwrap_or(false));
-    let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 34.0), Sense::click());
-    let resp = named(resp, "Sleep timer").on_hover_cursor(egui::CursorIcon::PointingHand);
-    if resp.hovered() {
-        ui.painter().rect_filled(rect, 7.0, theme::glass(0.12));
+    let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 22.0), Sense::click());
+    let resp = named(resp, &t!("sleep_timer")).on_hover_cursor(egui::CursorIcon::PointingHand);
+    let over = resp.hovered();
+    if over {
+        let accent = ui.ctx().data(|d| d.get_temp::<Color32>(egui::Id::unique("accent"))).unwrap_or(theme::RED);
+        ui.painter().rect_filled(rect, 4.0, accent);
     }
-    let color = if resp.hovered() { theme::text() } else { theme::text_dim() };
-    widgets::icon_at(ui, pos2(rect.right() - 19.0, rect.center().y), if open { icon::CHEVRON_UP } else { icon::CHEVRON_DOWN }, 16.0, color);
-    ui.painter().text(pos2(rect.left() + 12.0, rect.center().y), egui::Align2::LEFT_CENTER, "Sleep timer", theme::regular(14.0), theme::text());
+    let color = if over {
+        Color32::WHITE
+    } else if theme::light() {
+        Color32::from_rgb(32, 32, 32)
+    } else {
+        Color32::from_rgb(235, 235, 235)
+    };
+    widgets::icon_at(ui, pos2(rect.right() - 15.0, rect.center().y), if open { icon::CHEVRON_UP } else { icon::CHEVRON_DOWN }, 14.0, if over { Color32::WHITE } else { theme::text_dim() });
+    ui.painter().text(pos2(rect.left() + 10.0, rect.center().y), egui::Align2::LEFT_CENTER, t!("sleep_timer"), theme::regular(13.0), color);
     let on = app.sleep.active();
-    let value = if on { theme::text() } else { theme::text_faint() };
-    ui.painter().text(pos2(rect.right() - 36.0, rect.center().y), egui::Align2::RIGHT_CENTER, app.sleep.label(now), theme::semibold(12.5), value);
+    let value = if over { Color32::WHITE } else if on { theme::text() } else { theme::text_faint() };
+    ui.painter().text(pos2(rect.right() - 32.0, rect.center().y), egui::Align2::RIGHT_CENTER, app.sleep.label(now), theme::semibold(12.0), value);
     if matches!(app.sleep, Sleep::At(_)) {
         // The time left counts down while the menu is up.
         ui.ctx().request_repaint_after(std::time::Duration::from_millis(250));
@@ -970,17 +1323,17 @@ fn sleep_options(app: &mut App, ui: &mut Ui) {
             pick = Some(Sleep::after(m, now));
         }
     }
-    if sleep_row(ui, "End of this song", app.sleep == Sleep::EndOfSong) {
+    if sleep_row(ui, &t!("end_of_this_song"), app.sleep == Sleep::EndOfSong) {
         pick = Some(Sleep::EndOfSong);
     }
-    if on && sleep_row(ui, "Turn off timer", false) {
+    if on && sleep_row(ui, &t!("turn_off_timer"), false) {
         pick = Some(Sleep::Off);
     }
     if let Some(s) = pick {
         app.sleep = s;
         ui.data_mut(|d| d.insert_temp(open_id, false));
         app.toast(match s {
-            Sleep::Off => "Sleep timer off".to_owned(),
+            Sleep::Off => t!("sleep_timer_off").to_string(),
             Sleep::At(_) => format!("Pausing in {}", s.label(now)),
             Sleep::EndOfSong => "Pausing at the end of this song".to_owned(),
         });
@@ -989,14 +1342,23 @@ fn sleep_options(app: &mut App, ui: &mut Ui) {
 
 /// One of the sleep timer's choices, indented under its row; picking it closes the menu.
 fn sleep_row(ui: &mut Ui, label: &str, current: bool) -> bool {
-    let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 30.0), Sense::click());
+    let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 21.0), Sense::click());
     let resp = named(resp, label).on_hover_cursor(egui::CursorIcon::PointingHand);
-    if resp.hovered() {
-        ui.painter().rect_filled(rect, 7.0, theme::glass(0.12));
+    let over = resp.hovered();
+    if over {
+        let accent = ui.ctx().data(|d| d.get_temp::<Color32>(egui::Id::unique("accent"))).unwrap_or(theme::RED);
+        ui.painter().rect_filled(rect, 4.0, accent);
     }
-    ui.painter().text(pos2(rect.left() + 24.0, rect.center().y), egui::Align2::LEFT_CENTER, label, theme::regular(13.5), theme::text_dim());
+    let color = if over {
+        Color32::WHITE
+    } else if theme::light() {
+        Color32::from_rgb(32, 32, 32)
+    } else {
+        Color32::from_rgb(235, 235, 235)
+    };
+    ui.painter().text(pos2(rect.left() + 20.0, rect.center().y), egui::Align2::LEFT_CENTER, label, theme::regular(13.0), color);
     if current {
-        widgets::icon_at(ui, pos2(rect.right() - 19.0, rect.center().y), icon::CHECK, 15.0, theme::text());
+        widgets::icon_at(ui, pos2(rect.right() - 15.0, rect.center().y), icon::CHECK, 13.0, color);
     }
     if resp.clicked() {
         ui.close();
@@ -1005,15 +1367,12 @@ fn sleep_row(ui: &mut Ui, label: &str, current: bool) -> bool {
 }
 
 fn menu_caption(ui: &mut Ui, text: &str) {
-    let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 26.0), Sense::hover());
-    ui.painter().text(pos2(r.left() + 12.0, r.center().y + 2.0), egui::Align2::LEFT_CENTER, text, theme::semibold(11.0), theme::text_faint());
+    let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 20.0), Sense::hover());
+    ui.painter().text(pos2(r.left() + 10.0, r.center().y), egui::Align2::LEFT_CENTER, text, theme::semibold(10.5), theme::text_faint());
 }
 
 fn menu_divider(ui: &mut Ui) {
-    ui.add_space(5.0);
-    let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 1.0), Sense::hover());
-    ui.painter().rect_filled(r.shrink2(vec2(8.0, 0.0)), 0.0, theme::glass(0.08));
-    ui.add_space(5.0);
+    widgets::menu_separator(ui);
 }
 
 // ------------------------------------------------------------------ audio quality
@@ -1031,42 +1390,7 @@ fn has_quality_glyph(info: &crate::hires::Info) -> bool {
     info.atmos || info.lossless()
 }
 
-/// Apple's own marks, from its "Symbols used in Music" page.
-fn quality_icon(atmos: bool) -> &'static [u8] {
-    if atmos {
-        include_bytes!("../../assets/quality/atmos.png")
-    } else {
-        include_bytes!("../../assets/quality/lossless.png")
-    }
-}
-
-fn quality_icon_aspect(atmos: bool) -> f32 {
-    if atmos { 78.0 / 60.0 } else { 86.0 / 60.0 }
-}
-
-/// The icon as white pixels with its own alpha, so it takes the badge's tint.
-fn quality_icon_texture(ui: &Ui, atmos: bool) -> egui::TextureHandle {
-    let ctx = ui.ctx();
-    let id = egui::Id::unique(("quality-icon", atmos));
-    if let Some(tex) = ctx.data(|d| d.get_temp::<egui::TextureHandle>(id)) {
-        return tex;
-    }
-    let rgba = image::load_from_memory(quality_icon(atmos)).expect("quality icon").to_rgba8();
-    let mut img = egui::ColorImage::from_rgba_unmultiplied([rgba.width() as usize, rgba.height() as usize], rgba.as_raw());
-    for p in &mut img.pixels {
-        *p = Color32::from_white_alpha(p.a());
-    }
-    let tex = ctx.load_texture(if atmos { "apple-atmos" } else { "apple-lossless" }, img, egui::TextureOptions::LINEAR);
-    ctx.data_mut(|d| d.insert_temp(id, tex.clone()));
-    tex
-}
-
-fn paint_quality_icon(ui: &Ui, center: egui::Pos2, height: f32, atmos: bool, tint: Color32) {
-    let w = height * quality_icon_aspect(atmos);
-    let rect = Rect::from_center_size(center, vec2(w, height));
-    let uv = Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
-    ui.painter().image(quality_icon_texture(ui, atmos).id(), rect, uv, tint);
-}
+use crate::ui::widgets::{paint_quality_icon, quality_icon_aspect};
 
 /// How wide the quality mark is, so a line can leave room for it.
 pub(super) fn audio_badge_width(ui: &Ui, app: &App, small: bool) -> f32 {
@@ -1097,7 +1421,8 @@ pub(super) fn audio_badge(app: &App, ui: &mut Ui, at: egui::Pos2, small: bool) -
         let accent = app.accent_color();
         (theme::lerp_color(accent, Color32::WHITE, 0.10 + 0.30 * hover), theme::with_alpha(accent, 0.85 + 0.15 * hover))
     } else {
-        (theme::with_alpha(theme::text_dim(), 0.85 + 0.15 * hover), theme::text_dim())
+        let base = if app.bg_is_light() { Color32::BLACK } else { Color32::WHITE };
+        (theme::with_alpha(base, 0.88 + 0.12 * hover), theme::with_alpha(base, 0.88))
     };
     let mut x = at.x;
     if glyph {
@@ -1213,40 +1538,56 @@ fn size_text(bytes: u64) -> String {
 
 /// A lyrics source: its sync type's dot, name and sync type, with a check on the one shown.
 fn source_row(ui: &mut Ui, name: &str, sync: SyncKind, current: bool) -> bool {
-    let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 44.0), Sense::click());
+    let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 26.0), Sense::click());
     let resp = named(resp, &format!("Lyrics source {name}")).on_hover_cursor(egui::CursorIcon::PointingHand);
-    let h = theme::anim_bool(ui.ctx(), resp.id.with("h"), resp.hovered(), 0.12);
-    if h > 0.0 || current {
-        ui.painter().rect_filled(rect, 8.0, theme::glass(0.05 * current as u8 as f32 + 0.08 * h));
+    let over = resp.hovered();
+    if over {
+        let accent = ui.ctx().data(|d| d.get_temp::<Color32>(egui::Id::unique("accent"))).unwrap_or(theme::RED);
+        ui.painter().rect_filled(rect, 4.0, accent);
     }
-    ui.painter().circle_filled(pos2(rect.left() + 19.0, rect.center().y), 3.5, sync_color(sync));
-    let x = rect.left() + 40.0;
-    text_at(ui, pos2(x, rect.top() + 6.0), name, theme::semibold(13.5), theme::text(), rect.right() - x - 34.0);
-    text_at(ui, pos2(x, rect.top() + 24.0), sync_label(sync), theme::regular(12.0), theme::text_dim(), rect.right() - x - 34.0);
+    let fg = if over {
+        Color32::WHITE
+    } else if theme::light() {
+        Color32::from_rgb(32, 32, 32)
+    } else {
+        Color32::from_rgb(235, 235, 235)
+    };
+    ui.painter().circle_filled(pos2(rect.left() + 14.0, rect.center().y), 3.0, if over { Color32::WHITE } else { sync_color(sync) });
+    let x = rect.left() + 26.0;
+    text_at(ui, pos2(x, rect.center().y - 8.5), name, theme::semibold(13.0), fg, rect.right() - x - 70.0);
+    let sub_fg = if over { Color32::from_white_alpha(200) } else { theme::text_dim() };
+    text_at(ui, pos2(rect.right() - 65.0, rect.center().y - 8.0), sync_label(sync), theme::regular(11.0), sub_fg, 40.0);
     if current {
-        widgets::icon_at(ui, pos2(rect.right() - 18.0, rect.center().y), icon::CHECK, 16.0, theme::text());
+        widgets::icon_at(ui, pos2(rect.right() - 15.0, rect.center().y), icon::CHECK, 13.0, fg);
     }
     resp.clicked()
 }
 
 /// A label with an on/off switch; the whole row toggles.
 fn switch_row(ui: &mut Ui, label: &str, on: &mut bool) {
-    let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 40.0), Sense::click());
+    let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 24.0), Sense::click());
     let resp = named(resp, label).on_hover_cursor(egui::CursorIcon::PointingHand);
     if resp.clicked() {
         *on = !*on;
     }
+    let accent = ui.ctx().data(|d| d.get_temp::<Color32>(egui::Id::unique("accent"))).unwrap_or(theme::RED);
     let h = theme::anim_bool(ui.ctx(), resp.id.with("h"), resp.hovered(), 0.12);
     if h > 0.0 {
-        ui.painter().rect_filled(rect, 8.0, theme::glass(0.08 * h));
+        ui.painter().rect_filled(rect, 4.0, accent);
     }
-    ui.painter().text(pos2(rect.left() + 12.0, rect.center().y), egui::Align2::LEFT_CENTER, label, theme::regular(14.0), theme::text());
+    let fg = if resp.hovered() {
+        Color32::WHITE
+    } else if theme::light() {
+        Color32::from_rgb(32, 32, 32)
+    } else {
+        Color32::from_rgb(235, 235, 235)
+    };
+    ui.painter().text(pos2(rect.left() + 10.0, rect.center().y), egui::Align2::LEFT_CENTER, label, theme::regular(13.0), fg);
     let t = theme::anim_bool(ui.ctx(), resp.id.with("t"), *on, 0.16);
-    let track = Rect::from_center_size(pos2(rect.right() - 30.0, rect.center().y), vec2(36.0, 20.0));
-    let accent = ui.ctx().data(|d| d.get_temp::<Color32>(egui::Id::unique("accent"))).unwrap_or(theme::RED);
-    ui.painter().rect_filled(track, 10.0, theme::lerp_color(theme::glass(0.16 + 0.06 * h), accent, t));
-    let knob = pos2(egui::lerp(track.left() + 10.0..=track.right() - 10.0, t), track.center().y);
-    ui.painter().circle_filled(knob, 8.0, Color32::WHITE);
+    let track = Rect::from_center_size(pos2(rect.right() - 24.0, rect.center().y), vec2(30.0, 16.0));
+    ui.painter().rect_filled(track, 8.0, theme::lerp_color(theme::glass(0.16 + 0.06 * h), accent, t));
+    let knob = pos2(egui::lerp(track.left() + 8.0..=track.right() - 8.0, t), track.center().y);
+    ui.painter().circle_filled(knob, 6.5, Color32::WHITE);
 }
 
 /// A small icon button (24 × 24).

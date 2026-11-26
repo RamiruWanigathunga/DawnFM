@@ -3,7 +3,7 @@
 use std::time::Duration;
 
 use crate::backend::Req;
-use crate::model::{Target, Track};
+use crate::model::{Card, Target, Track};
 
 use super::lists::LIKED_MUSIC;
 use super::queue::QueueFill;
@@ -58,10 +58,6 @@ impl App {
             Action::Open(Target::Song(t)) | Action::Radio(t) => {
                 self.queue_source = None;
                 self.play_list(vec![t.clone()], 0);
-                if !self.radio_pending {
-                    self.radio_pending = true;
-                    self.backend.request(Req::Radio { song_of: self.song_of(&t), seed: t.id });
-                }
             }
             Action::Open(Target::Album(id)) => self.go(Page::Album(id)),
             Action::Open(Target::Playlist(id)) => self.go(Page::Playlist(id)),
@@ -89,6 +85,9 @@ impl App {
                 self.play_current();
             }
             Action::QueueRemove(i) => self.queue.remove(i),
+            Action::QueueMove(from, to) => {
+                self.queue.move_track(from, to);
+            }
             Action::ViewQueue => {
                 if self.np_open {
                     self.np_tab = NpTab::UpNext;
@@ -142,7 +141,7 @@ impl App {
                 self.toast(format!("Downloading \u{201c}{}\u{201d}", track.title));
                 // The song version playing for a music video: that video plays the file too.
                 let for_video = if self.playing_as().is_some_and(|s| s.id == track.id) { self.current_id().map(str::to_owned) } else { None };
-                self.backend.request(Req::Download { track, for_video });
+                self.backend.request(Req::Download { track: Box::new(track), for_video });
             }
             Action::AddToPlaylist(tracks) => {
                 if self.logged_in { self.dialog = Some(Dialog::PickPlaylist(tracks)); }
@@ -189,15 +188,55 @@ impl App {
                 }
             }
             Action::SaveCollection(id, save) => {
-                if self.logged_in { self.backend.request(Req::SaveCollection { id, save }); }
+                if self.logged_in {
+                    // Flip the library tick now: the save's round trip, and the library
+                    // refresh after it, are far too slow to leave the button stuck.
+                    let card = self.lists.get(&id).map(|o| {
+                        let c = &o.c;
+                        Card {
+                            title: c.title.clone(),
+                            subtitle: c.byline(),
+                            thumbs: c.thumbs.clone(),
+                            target: if c.is_album { Target::Album(id.clone()) } else { Target::Playlist(id.clone()) },
+                            round: false,
+                            links: c.artists.clone(),
+                        }
+                    });
+                    if let Some(card) = card {
+                        self.set_saved(&card, save);
+                        self.optimistic_save = Some((card, save));
+                    }
+                    self.backend.request(Req::SaveCollection { id, save });
+                }
                 else { self.toast("Sign in to save to library"); }
+            }
+            // The account's YouTube subscription to the artist, flipped at once (the
+            // round trip is slow) and put back if YouTube Music refuses it.
+            Action::SetSubscribed(subscribe) => {
+                if !self.logged_in {
+                    self.toast("Sign in to subscribe");
+                } else if let Some(sub) = self.artist.as_mut().and_then(|a| a.following.as_mut()) {
+                    self.optimistic_sub = Some((sub.channel.clone(), sub.subscribed));
+                    sub.subscribed = subscribe;
+                    for (cached, _) in self.artists_cache.values_mut() {
+                        if let Some(s) = cached.following.as_mut().filter(|s| s.channel == sub.channel) {
+                            s.subscribed = subscribe;
+                        }
+                    }
+                    let req = Req::SetSubscribed {
+                        channel: sub.channel.clone(),
+                        subscribe,
+                        params: sub.params.clone(),
+                    };
+                    self.backend.request(req);
+                }
             }
             Action::HomeChip(params) => {
                 self.home_loading = true;
                 if let Some(h) = &mut self.home {
                     h.shelves.clear();
                     for c in &mut h.chips {
-                        c.selected = false;
+                        c.selected = c.params == params && params.is_some();
                     }
                 }
                 self.backend.request(Req::Home(params));
@@ -305,29 +344,29 @@ impl App {
             self.np_open = true;
             self.np_tab = NpTab::UpNext;
         }
-        if full && self.np_open {
-            self.set_fullscreen(ctx, !self.fullscreen);
+        let is_fullscreen = self.fullscreen || ctx.input(|i| i.viewport().fullscreen.unwrap_or(false));
+        let fs_toggled = ctx.data_mut(|d| d.remove_temp::<bool>(egui::Id::unique("fullscreen-toggled"))).unwrap_or(false);
+        if (full && self.np_open) || fs_toggled {
+            self.set_fullscreen(ctx, !is_fullscreen);
         }
+        let in_search = self.search_focused || !self.search_text.is_empty() || self.search_drop.is_some();
         if esc {
-            if self.fullscreen {
+            if in_search {
+                self.search_focused = false;
+                self.search_text.clear();
+                self.search_drop = None;
+                self.suggestions = Default::default();
+                self.suggest_sel = None;
+            } else if is_fullscreen {
                 self.set_fullscreen(ctx, false);
+                ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(false));
             } else {
                 self.np_open = false;
             }
         }
         if close_w {
-            #[cfg(target_os = "macos")]
-            {
-                ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
-                self.window_hidden = true;
-            }
-            #[cfg(not(target_os = "macos"))]
-            {
-                if self.close_to_tray {
-                    ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
-                    self.window_hidden = true;
-                }
-            }
+            ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+            self.window_hidden = true;
         }
     if vol_up || vol_down {
             let v = (self.audio.volume() + if vol_up { 0.05 } else { -0.05 }).clamp(0.0, 1.0);
@@ -366,9 +405,16 @@ impl App {
 
     pub(super) fn set_fullscreen(&mut self, ctx: &egui::Context, on: bool) {
         self.fullscreen = on;
+        super::titlebar::set_fullscreen(ctx, on);
+        if !on && self.mouse_hidden {
+            self.mouse_hidden = false;
+            ctx.send_viewport_cmd(egui::ViewportCommand::CursorVisible(true));
+        }
         // Windows: in one step, without winit's unthemed-frame flash.
         if !crate::fullscreen::set(on) {
             ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(on));
+        } else if !on {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(false));
         }
         ctx.request_repaint();
     }

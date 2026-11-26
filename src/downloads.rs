@@ -79,11 +79,24 @@ pub fn pick_folder(ctx: &egui::Context) {
 pub fn open_folder() {
     let dir = folder();
     let _ = std::fs::create_dir_all(&dir);
+    #[cfg(windows)]
+    let _ = std::process::Command::new("explorer").arg(dir).spawn();
+    #[cfg(target_os = "macos")]
+    let _ = std::process::Command::new("open").arg(dir).spawn();
+    #[cfg(not(any(windows, target_os = "macos")))]
     let _ = std::process::Command::new("open").arg(dir).spawn();
 }
 
-/// Reveal the song's file in Finder.
+/// Reveal the song's file in Explorer / Finder.
 pub fn show_file(path: &Path) {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        let _ = std::process::Command::new("explorer").raw_arg(format!("/select,\"{}\"", path.display())).spawn();
+    }
+    #[cfg(target_os = "macos")]
+    let _ = std::process::Command::new("open").arg("-R").arg(path).spawn();
+    #[cfg(not(any(windows, target_os = "macos")))]
     let _ = std::process::Command::new("open").arg("-R").arg(path).spawn();
 }
 

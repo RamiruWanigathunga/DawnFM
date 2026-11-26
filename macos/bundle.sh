@@ -86,5 +86,6 @@ fi
 # Before signing: the signature seals everything in Resources.
 [ "$kind" = portable ] && cp "$here/portable.txt" "$app/Contents/Resources/portable.txt"
 
-codesign --force --sign - "$app"
+codesign --force --deep --sign - "$app"
+xattr -cr "$app" 2>/dev/null || true
 echo "Made $app"

@@ -16,18 +16,26 @@ mod lists;
 mod lyric_prefs;
 mod mini;
 mod notes;
-mod nowplaying;
-mod pages;
+pub mod nowplaying;
+pub mod pages;
 mod playback;
-mod queue;
+pub mod queue;
 mod responses;
 mod scroll;
 mod shell;
 mod sleep;
 mod titlebar;
-pub use titlebar::custom as custom_titlebar;
+pub use titlebar::{custom as custom_titlebar, set_hwnd as set_titlebar_hwnd};
 mod transfer;
-mod widgets;
+pub mod widgets;
+
+pub use pages::{
+    artist, circle_action, collection, collection_genre, filter_collection_tracks,
+    hero_height, metadata_badge, paint_ambient_glow, paint_hero_gradient_dissolve,
+    peach_circle, peach_pill, play_pill, CircleGlyph,
+};
+pub use queue::{Queue, Repeat};
+pub use widgets::{paint_quality_icon, track_bpm_key, track_row, RowOpts};
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
@@ -46,10 +54,8 @@ use crate::model::{Card, Chip, Shelf, Target, Track};
 use crate::shader::Background;
 use crate::theme;
 use lists::{LIKED_MUSIC, Lists};
-use queue::Queue;
 use dev::{dev_pace, dev_screenshot, dev_var};
 use dialogs::text_field;
-pub use queue::Repeat;
 
 /// Animated sleeves are off until the decoder is fixed: the surfacing call sites stay
 /// in place, so turning this back on is all it takes to try again.
@@ -77,6 +83,7 @@ pub enum LibTab {
     Playlists,
     Songs,
     Albums,
+    Artists,
     History,
 }
 
@@ -100,6 +107,7 @@ pub enum Action {
     Go(Page),
     QueueJump(usize),
     QueueRemove(usize),
+    QueueMove(usize, usize),
     /// Open up next (the player's) or the queue drawer (the bar's).
     ViewQueue,
     Seek(f32),
@@ -118,6 +126,8 @@ pub enum Action {
     Collaborate,
     DeletePlaylist,
     SaveCollection(String, bool),
+    /// Subscribe to (or unsubscribe from) the artist page's channel.
+    SetSubscribed(bool),
     HomeChip(Option<String>),
     OpenNowPlaying(bool),
     /// Into the mini player (true) or back to the full window.
@@ -259,9 +269,23 @@ impl Drop for MotionView {
     }
 }
 
+/// Horizontal trackpad points that make a swipe a page turn.
+const SWIPE_POINTS: f32 = 120.0;
+
+/// A two-finger swipe on the trackpad, on its way to turning the page.
+#[derive(Default)]
+struct SwipeNav {
+    /// Horizontal points so far (positive = content moved right).
+    dx: f32,
+    /// When the last scroll event arrived, so a swipe can be told from a new one.
+    at: f64,
+    /// Already went back/forward: the rest of the gesture (and its momentum) is ignored.
+    fired: bool,
+}
+
 pub struct App {
-    backend: Backend,
-    audio: AudioHandle,
+    pub backend: Backend,
+    pub audio: AudioHandle,
     ch: Channels,
     media: Option<Media>,
     discord: Option<crate::discord::Discord>,
@@ -295,6 +319,13 @@ pub struct App {
     back: Vec<Page>,
     forward: Vec<Page>,
     page_changed: f64,
+    /// A fresh launch starts each page at the top, not where the last run left it.
+    scroll_top: bool,
+    /// Incremented on each page visit so scroll offset resets to the top instead of persisting.
+    page_visit: u64,
+    /// The trackpad swipe in progress: horizontal points so far, when it last moved,
+    /// and whether it has already turned the page.
+    swipe: SwipeNav,
     loading: bool,
     /// The current page's request failed with nothing cached: show a retry, not a skeleton.
     load_failed: bool,
@@ -328,10 +359,20 @@ pub struct App {
     /// refreshes it quietly), and their loads under way.
     lists: Lists,
     artist: Option<ArtistPage>,
+    /// Recent artist pages kept in memory, so returning to an artist displays immediately.
+    artists_cache: HashMap<String, (ArtistPage, std::time::Instant)>,
     library: Option<Library>,
+    /// A save/remove shown in the library before YouTube Music confirms it: the card and
+    /// which way it went, so a failure can put the library back.
+    optimistic_save: Option<(Card, bool)>,
+    /// A subscription shown flipped on the artist page before YouTube confirms it: the
+    /// channel and the state it had, so a failure can put it back.
+    optimistic_sub: Option<(String, bool)>,
     /// When the library was last requested; the sidebar spinner gives up after a while.
     library_requested: std::time::Instant,
     history: Option<Vec<Track>>,
+    /// The artists the account follows (Library › Artists).
+    library_artists: Option<Vec<crate::model::Card>>,
     liked: HashSet<String>,
     /// Songs whose unlike is queued and hasn't gone through yet.
     unliking: HashMap<String, Track>,
@@ -347,7 +388,7 @@ pub struct App {
     sidebar_cache: Option<Vec<Card>>,
 
     // playback
-    queue: Queue,
+    pub queue: Queue,
     generation: u64,
     buffering: bool,
     /// Unplayable songs skipped in a row; a run of them stops playback instead of
@@ -387,6 +428,18 @@ pub struct App {
     apple_motion: std::collections::HashMap<String, MotionView>,
     /// Apple lookups already in flight.
     apple_waiting: std::collections::HashSet<String>,
+    /// Artwork dominant colors cached by key (e.g. "album:{id}", "artist:{id}").
+    pub art_colors: std::collections::HashMap<String, egui::Color32>,
+    /// Artwork vivid accent colors cached by key.
+    pub art_accents: std::collections::HashMap<String, egui::Color32>,
+    /// Pre-blurred 64x64 RGBA album/artist artwork bytes cached by key.
+    pub art_blurs: std::collections::HashMap<String, Vec<u8>>,
+    /// Uploaded blurred artwork textures for album ambient backdrops.
+    art_blur_tex: std::collections::HashMap<String, egui::TextureHandle>,
+    /// Timestamp when each artwork key finished loading (for smooth fade-in).
+    art_loaded_at: std::collections::HashMap<String, f64>,
+    /// Artwork color requests currently in flight.
+    art_waiting: std::collections::HashSet<String>,
     /// Settings › Artist pages: the listener's own signature service, or empty.
     signature_api: String,
     /// Signatures already uploaded, by name key (`artist_signature::key`).
@@ -418,7 +471,6 @@ pub struct App {
     chrome_applied: Option<String>,
     /// Light or dark pages (the ytm-rs theme's; see `light_pages`).
     appearance: theme::Appearance,
-    anim_bg: bool,
     reactive_bg: bool,
     /// Skip the parts of music videos SponsorBlock marks as not music.
     sponsorblock: bool,
@@ -460,12 +512,12 @@ pub struct App {
     scroll_panes: Vec<egui::Rect>,
 
     // now playing
-    np_open: bool,
-    np_tab: NpTab,
+    pub np_open: bool,
+    pub np_tab: NpTab,
     queue_open: bool,
     /// The lyrics panel at the right of the pages (the player bar's lyrics button).
     lyrics_drawer: bool,
-    fullscreen: bool,
+    pub fullscreen: bool,
     /// The mini player: the window shrunk to a strip.
     mini: mini::Mini,
     /// Every source's lyrics for the current song (by video ID).
@@ -518,21 +570,18 @@ pub struct App {
     media_cover: Arc<std::sync::Mutex<Option<(String, String)>>>,
 
     // window
-    /// Clicking × hides the window to the tray instead of quitting.
-    close_to_tray: bool,
     /// Settings › Window: a notification when a new song starts while the window isn't focused.
     pub(super) notify_songs: bool,
     /// The last song `sync_notify` saw start, so each one is announced once.
     notified: Option<String>,
     /// Settings › Window: draw with wgpu (Vulkan) from the next start (renderer.rs).
     pub(super) wgpu_renderer: bool,
-    /// The app icon (`appicon::ALL` id) shown on the window and in the tray.
-    /// The tray icon, while the window is hidden.
-    tray: Option<crate::tray::Tray>,
-    /// Closing for real (Quit from the tray, restart to update): don't hide.
+    /// The app icon (`appicon::ALL` id) shown on the window.
+    /// Closing for real (Quit from the menu, restart to update): don't hide.
     exiting: bool,
-    /// Minimized, or hidden in the tray: the window's geometry isn't worth saving.
+    /// Minimized, or hidden: the window's geometry isn't worth saving.
     window_hidden: bool,
+    was_covered: bool,
     /// eframe's saved window geometry ("window") from the last time it was visible.
     good_window: Option<String>,
     /// The sidebar playlists' order (by id), and the ones hidden from it.
@@ -540,7 +589,7 @@ pub struct App {
     hidden_playlists: HashSet<String>,
     /// The collection page whose inline search is open, and what's typed in it.
     coll_search: Option<(String, String)>,
-    actions: Vec<Action>,
+    pub actions: Vec<Action>,
     dialog: Option<Dialog>,
     share_pending: Option<String>,
     smoke: Option<String>,
@@ -569,6 +618,19 @@ pub(super) struct MixFrom {
 }
 
 impl App {
+    /// Creates a headless dummy App instance for integration testing without audio or network dependencies.
+    pub fn mock_headless() -> Self {
+        let (_tx, resp_rx) = crossbeam_channel::unbounded();
+        let (_atx, audio_rx) = crossbeam_channel::unbounded();
+        let (_mtx, media_rx) = crossbeam_channel::unbounded();
+        let (btx, _brx) = crossbeam_channel::unbounded();
+        let tmp = std::env::temp_dir().join(format!("dawnfm_mock_{}", std::process::id()));
+        let audio = AudioHandle::dummy();
+        let backend = Backend::new(tmp, btx, audio.clone(), Arc::new(|| {})).expect("backend mock");
+        let ch = Channels { resp_rx, audio_rx, media_rx };
+        Self::new(backend, audio, ch, None, None, None)
+    }
+
     pub fn new(
         backend: Backend,
         audio: AudioHandle,
@@ -633,6 +695,9 @@ impl App {
             back: Vec::new(),
             forward: Vec::new(),
             page_changed: 0.0,
+            scroll_top: true,
+            page_visit: 0,
+            swipe: SwipeNav::default(),
             loading: false,
             load_failed: false,
             search_text: String::new(),
@@ -652,9 +717,13 @@ impl App {
             search: None,
             lists: Lists::default(),
             artist: None,
+            artists_cache: HashMap::new(),
             library: None,
+            optimistic_save: None,
+            optimistic_sub: None,
             library_requested: std::time::Instant::now(),
             history: None,
+            library_artists: None,
             liked: HashSet::new(),
             unliking: HashMap::new(),
             selection: Selection::default(),
@@ -681,13 +750,12 @@ impl App {
             output_device: get("output_device").filter(|d| !d.is_empty()).map(|id| (id, get("output_device_name").unwrap_or_default())),
             output_devices: Vec::new(),
             updater: None,
-            close_to_tray: get("close_to_tray").is_some_and(|v| v == "1"),
             notify_songs: get("notify_songs").is_some_and(|v| v == "1"),
             notified: None,
             wgpu_renderer,
-            tray: None,
             exiting: false,
             window_hidden: false,
+            was_covered: false,
             good_window: get("window"),
             playlist_order: get("playlist_order").map(|v| v.lines().filter(|l| !l.is_empty()).map(str::to_owned).collect()).unwrap_or_default(),
             hidden_playlists: get("hidden_playlists").map(|v| v.lines().filter(|l| !l.is_empty()).map(str::to_owned).collect()).unwrap_or_default(),
@@ -722,6 +790,12 @@ impl App {
             apple_missed: Default::default(),
             apple_motion: Default::default(),
             apple_waiting: Default::default(),
+            art_colors: Default::default(),
+            art_accents: Default::default(),
+            art_blurs: Default::default(),
+            art_blur_tex: Default::default(),
+            art_loaded_at: Default::default(),
+            art_waiting: Default::default(),
             signature_api: get("signature_api").unwrap_or_default(),
             signature_tex: Default::default(),
             signature_images: Default::default(),
@@ -740,7 +814,6 @@ impl App {
             chrome_applied: None,
             // Dev hook: YTM_APPEARANCE=light|dark|system tries a mode without saving it.
             appearance: theme::Appearance::from_key(&dev_var("YTM_APPEARANCE").map(str::to_owned).or_else(|| get("appearance")).unwrap_or_default()),
-            anim_bg: get("anim_bg").is_none_or(|v| v == "1"),
             reactive_bg: get("reactive_bg").is_none_or(|v| v == "1"),
             sponsorblock: get("sponsorblock").is_some_and(|v| v == "1"),
             crossfade: get("crossfade").is_some_and(|v| v == "1"),
@@ -816,6 +889,7 @@ impl App {
             Ok("library") => app.go(Page::Library(LibTab::Playlists)),
             Ok("liked") => app.go(Page::Library(LibTab::Songs)),
             Ok("history") => app.go(Page::Library(LibTab::History)),
+            Ok("artists") => app.go(Page::Library(LibTab::Artists)),
             Ok("settings") => app.go(Page::Settings),
             Ok("transfer") => app.go(Page::Transfer),
             Ok("jam") => app.go(Page::Jam),
@@ -863,8 +937,13 @@ impl App {
             return;
         }
         self.np_open = false;
+        self.search_text.clear();
+        self.search_drop = None;
+        self.search_synced.clear();
         if page == self.page {
-            // Clicking the page you're on refreshes it.
+            // Clicking the page you're on refreshes it and resets scroll to the top.
+            self.page_visit = self.page_visit.wrapping_add(1);
+            self.scroll_top = true;
             self.refresh();
             return;
         }
@@ -913,6 +992,63 @@ impl App {
         }
     }
 
+    /// Two-finger trackpad swipes walk the page history the way Safari's do: fingers to
+    /// the left go back, to the right forward. The page changes at once (no slide); an
+    /// arrow shows at the side while the swipe is going on.
+    fn swipe_nav(&mut self, ctx: &egui::Context, now: f64) {
+        // Read after the pages are drawn: a horizontal shelf takes its swipe's delta out
+        // of this, so only swipes that no shelf wanted turn the page.
+        let dx = ctx.input(|i| if i.modifiers.any() { 0.0 } else { i.smooth_scroll_delta.x });
+        if dx.abs() > 0.01 {
+            // A pause ends the last gesture, so the next swipe counts from zero.
+            if now - self.swipe.at > 0.35 {
+                self.swipe.dx = 0.0;
+                self.swipe.fired = false;
+            }
+            self.swipe.at = now;
+            self.swipe.dx += dx;
+            if !self.swipe.fired && self.swipe.dx.abs() >= SWIPE_POINTS {
+                self.swipe.fired = true;
+                // The content moves left (negative) for back, right for forward.
+                if self.swipe.dx < 0.0 {
+                    self.nav_back();
+                } else {
+                    self.nav_forward();
+                }
+                // The new page draws on the next frame, at once.
+                ctx.request_repaint();
+            }
+        } else if now - self.swipe.at > 0.35 {
+            self.swipe.dx = 0.0;
+            self.swipe.fired = false;
+        }
+    }
+
+    /// The hint that a swipe is about to turn the page: a dim arrow at the side it goes to.
+    fn paint_swipe_arrow(&self, ctx: &egui::Context, now: f64) {
+        let going = self.swipe.dx.abs();
+        if self.swipe.fired || going < 6.0 || now - self.swipe.at > 0.35 {
+            return;
+        }
+        let screen = ctx.content_rect();
+        let back = self.swipe.dx < 0.0;
+        let p = (going / SWIPE_POINTS).clamp(0.0, 1.0);
+        let a = 0.3 + 0.6 * p;
+        let center = egui::pos2(
+            if back { screen.left() + 30.0 } else { screen.right() - 30.0 },
+            screen.top() + 92.0,
+        );
+        let paint = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::unique("swipe-arrow")));
+        paint.circle_filled(center, 17.0, Color32::from_black_alpha((0.30 * a * 255.0) as u8));
+        paint.circle_stroke(center, 17.0, egui::Stroke::new(1.0, Color32::from_white_alpha((0.22 * a * 255.0) as u8)));
+        let color = Color32::from_white_alpha((0.9 * a * 255.0) as u8);
+        let d = if back { -4.0 } else { 4.0 };
+        let stroke = egui::Stroke::new(2.0, color);
+        paint.line_segment([center + egui::vec2(d, -6.0), center + egui::vec2(-d, 0.0)], stroke);
+        paint.line_segment([center + egui::vec2(-d, 0.0), center + egui::vec2(d, 6.0)], stroke);
+        ctx.request_repaint();
+    }
+
     /// Reload the current page's data in place: no page transition, the page stays as
     /// it is until the new data arrives.
     fn refresh(&mut self) {
@@ -925,6 +1061,8 @@ impl App {
     /// each visit (things change outside the app: likes, other devices, new releases),
     /// showing the cached copy meanwhile.
     fn page_loaded(&mut self) {
+        self.page_visit = self.page_visit.wrapping_add(1);
+        self.scroll_top = true;
         self.page_changed = -1.0; // stamped with the frame time on the next pass
         // The search box holds the query of the search page you're on, and is empty elsewhere.
         self.search_synced = match &self.page {
@@ -950,11 +1088,56 @@ impl App {
             // The empty search is the page's landing state: nothing to ask for.
             Page::Search(q) if !q.trim().is_empty() && self.search.as_ref().is_none_or(|s| &s.query != q) => Some(Req::Search(q.clone())),
             Page::Album(id) | Page::Playlist(id) => {
-                self.visit_list(id, matches!(self.page, Page::Album(_)));
+                let is_album = matches!(self.page, Page::Album(_));
+                if is_album {
+                    let thumbs = self.opened(id).map(|o| o.c.thumbs.clone());
+                    if let Some(thumbs) = thumbs {
+                        self.request_album_art(id, &thumbs);
+                    }
+                }
+                self.visit_list(id, is_album);
                 None
             }
-            Page::Artist(id) => Some(Req::Artist(id.clone())),
+            Page::Artist(id) => {
+                let cached_artist = self.artists_cache.get(id).and_then(|(cached, at)| {
+                    if at.elapsed() < std::time::Duration::from_secs(10 * 60) {
+                        Some(cached.clone())
+                    } else {
+                        None
+                    }
+                });
+                if let Some(cached) = cached_artist {
+                    let thumbs = if !cached.banner.is_empty() {
+                        cached.banner.clone()
+                    } else if !cached.photo.is_empty() {
+                        cached.photo.clone()
+                    } else {
+                        cached.albums.first().map(|c| c.thumbs.clone()).unwrap_or_default()
+                    };
+                    self.artist = Some(cached);
+                    if !thumbs.is_empty() {
+                        self.request_artist_art(id, &thumbs);
+                    }
+                }
+                Some(Req::Artist(id.clone()))
+            }
             Page::Library(LibTab::History) if self.logged_in => Some(Req::History),
+            Page::Library(LibTab::Artists) if self.logged_in => {
+                // The "From your history" rows need History too.
+                if self.history.is_none() {
+                    self.backend.request(Req::History);
+                } else if let Some(h) = &self.history {
+                    for a in pages::played_artists(h).into_iter().take(pages::HISTORY_ARTISTS_LIMIT) {
+                        if let Some(id) = a.id {
+                            if !self.artist_photos.contains_key(&id) {
+                                self.artist_photos.insert(id.clone(), Vec::new());
+                                self.backend.request(Req::ArtistPhoto(id));
+                            }
+                        }
+                    }
+                }
+                Some(Req::Artists)
+            }
             Page::Library(LibTab::Songs) => {
                 if self.logged_in {
                     self.visit_list(LIKED_MUSIC, false);
@@ -971,6 +1154,7 @@ impl App {
             Page::Album(id) | Page::Playlist(id) => self.opened(id).is_some(),
             Page::Artist(id) => self.artist.as_ref().is_some_and(|a| &a.id == id),
             Page::Library(LibTab::History) => self.history.is_some(),
+            Page::Library(LibTab::Artists) => self.library_artists.is_some(),
             Page::Library(LibTab::Songs) => self.opened(LIKED_MUSIC).is_some(),
             Page::Library(_) => self.library.is_some(),
             _ => false,
@@ -1095,7 +1279,349 @@ impl App {
         self.dominant
     }
 
+    pub(super) fn request_album_art(&mut self, id: &str, thumbs: &[crate::model::Thumb]) {
+        let key = format!("album:{id}");
+        if self.art_colors.contains_key(&key) || self.art_waiting.contains(&key) {
+            return;
+        }
+        if let Some(t) = crate::model::pick_thumb(thumbs, 544).or_else(|| thumbs.first()) {
+            self.art_waiting.insert(key.clone());
+            self.backend.request(crate::backend::Req::Art { key, url: t.url.clone() });
+        }
+    }
+
+    pub(super) fn request_artist_art(&mut self, id: &str, thumbs: &[crate::model::Thumb]) {
+        let key = format!("artist:{id}");
+        if self.art_colors.contains_key(&key) || self.art_waiting.contains(&key) {
+            return;
+        }
+        if let Some(t) = thumbs.iter().max_by_key(|t| t.width).or_else(|| thumbs.first()) {
+            self.art_waiting.insert(key.clone());
+            self.backend.request(crate::backend::Req::Art { key, url: t.url.clone() });
+        }
+    }
+
+    pub(super) fn home_art_source(&self) -> Option<(String, String)> {
+        let h = self.home.as_ref()?;
+        for s in &h.shelves {
+            let thumbs = match &s.kind {
+                crate::model::ShelfKind::Cards(cards) => {
+                    cards.iter().find_map(|c| (!c.thumbs.is_empty()).then_some(c.thumbs.as_slice()))
+                }
+                crate::model::ShelfKind::Songs { tracks, .. } => {
+                    tracks.iter().find_map(|t| (!t.thumbs.is_empty()).then_some(t.thumbs.as_slice()))
+                }
+            };
+            if let Some(thumbs) = thumbs
+                && let Some(t) = crate::model::pick_thumb(thumbs, 544).or_else(|| thumbs.first())
+            {
+                return Some((format!("home:{}", t.url), t.url.clone()));
+            }
+        }
+        None
+    }
+
+    pub(super) fn request_home_art(&mut self) {
+        if let Some((key, url)) = self.home_art_source() {
+            if !self.art_colors.contains_key(&key) && !self.art_waiting.contains(&key) {
+                self.art_waiting.insert(key.clone());
+                self.backend.request(crate::backend::Req::Art { key, url });
+            }
+        }
+    }
+}
+
+fn rgb_to_hsv(r: f32, g: f32, b: f32) -> (f32, f32, f32) {
+    let max = r.max(g).max(b);
+    let min = r.min(g).min(b);
+    let delta = max - min;
+    let v = max;
+    let s = if max > 0.0 { delta / max } else { 0.0 };
+    if delta <= 0.0001 {
+        return (0.0, 0.0, v);
+    }
+    let h = if (max - r).abs() < 0.0001 {
+        let mut seg = (g - b) / delta;
+        if seg < 0.0 {
+            seg += 6.0;
+        }
+        seg / 6.0
+    } else if (max - g).abs() < 0.0001 {
+        ((b - r) / delta + 2.0) / 6.0
+    } else {
+        ((r - g) / delta + 4.0) / 6.0
+    };
+    (h, s, v)
+}
+
+fn hsv_to_rgb(h: f32, s: f32, v: f32) -> (f32, f32, f32) {
+    if s <= 0.0 {
+        return (v, v, v);
+    }
+    let h_deg = (h.fract() * 6.0).rem_euclid(6.0);
+    let i = h_deg.floor() as i32;
+    let f = h_deg - i as f32;
+    let p = v * (1.0 - s);
+    let q = v * (1.0 - s * f);
+    let t = v * (1.0 - s * (1.0 - f));
+    match i {
+        0 => (v, t, p),
+        1 => (q, v, p),
+        2 => (p, v, t),
+        3 => (p, q, v),
+        4 => (t, p, v),
+        _ => (v, p, q),
+    }
+}
+
+impl App {
+
+    /// Target page background color:
+    /// In dark mode, starts from #111111 base and adds a clean, non-muddy chromatic tint.
+    /// In light mode, starts from the #f6f4f8 base and adds a subtle, fresh pastel ambient wash.
+    pub fn page_target_color(&self) -> Color32 {
+        let is_light = theme::light();
+        let base_default = if is_light { theme::bg() } else { Color32::from_rgb(0x11, 0x11, 0x11) };
+        if self.look().id != crate::preset::DEFAULT_ID {
+            return if is_light { theme::bg() } else { self.look().solid() };
+        }
+
+        // Only tint background for Artist and Album pages matching that page's artwork
+        let page_dom = match &self.page {
+            Page::Album(id) => self.art_colors.get(&format!("album:{id}")).copied(),
+            Page::Artist(id) => self.art_colors.get(&format!("artist:{id}")).copied(),
+            _ => None,
+        };
+
+        let Some(dom) = page_dom else {
+            return base_default;
+        };
+
+        let (r, g, b) = (dom.r() as f32 / 255.0, dom.g() as f32 / 255.0, dom.b() as f32 / 255.0);
+        let (h, s, v) = rgb_to_hsv(r, g, b);
+        let h_deg = h * 360.0;
+
+        // Perceptual grayscale cutoff: covers perceived as B&W / neutral gray stay obsidian dark.
+        if s < 0.17 || v < 0.08 {
+            return base_default;
+        }
+
+        if is_light {
+            // Fresh, clean pastel ambient wash on light mode background
+            let light_s = (0.06 + 0.06 * s).clamp(0.06, 0.12);
+            let light_v = (0.98 - 0.02 * s).clamp(0.95, 0.99);
+            let (pr, pg, pb) = hsv_to_rgb(h_deg / 360.0, light_s, light_v);
+            let (br, bg, bb) = (246.0 / 255.0, 244.0 / 255.0, 248.0 / 255.0);
+            let lr = ((br * 0.45 + pr * 0.55) * 255.0).round().clamp(220.0, 255.0) as u8;
+            let lg = ((bg * 0.45 + pg * 0.55) * 255.0).round().clamp(220.0, 255.0) as u8;
+            let lb = ((bb * 0.45 + pb * 0.55) * 255.0).round().clamp(220.0, 255.0) as u8;
+            Color32::from_rgb(lr, lg, lb)
+        } else {
+            // Rich, authentic dark tint preserving true artwork hue without distorting blues or snapping to green.
+            let dark_s = (0.38 + 0.44 * s).clamp(0.38, 0.80);
+            let dark_v = (0.19 + 0.08 * s).clamp(0.19, 0.27);
+            let (dr, dg, db) = hsv_to_rgb(h_deg / 360.0, dark_s, dark_v);
+            Color32::from_rgb(
+                (dr * 255.0).round() as u8,
+                (dg * 255.0).round() as u8,
+                (db * 255.0).round() as u8,
+            )
+        }
+    }
+
+    pub(super) fn blurred_art_tex(&mut self, ctx: &egui::Context, key: &str) -> Option<egui::TextureHandle> {
+        if let Some(tex) = self.art_blur_tex.get(key) {
+            return Some(tex.clone());
+        }
+        let rgba = self.art_blurs.get(key)?;
+        if rgba.len() != (crate::art::SIZE * crate::art::SIZE * 4) as usize {
+            return None;
+        }
+        let img = egui::ColorImage::from_rgba_unmultiplied([crate::art::SIZE as usize, crate::art::SIZE as usize], rgba);
+        let tex = ctx.load_texture(format!("album-blur:{key}"), img, egui::TextureOptions::LINEAR);
+        self.art_blur_tex.insert(key.to_owned(), tex.clone());
+        Some(tex)
+    }
+
+    /// Paint the window-wide backdrop with warm blurred artwork and alive ambient glow.
+    fn paint_page_backdrop(&mut self, ctx: &egui::Context, painter: &egui::Painter, area: egui::Rect, now: f64) {
+        let base = self.page_color(ctx);
+        painter.rect_filled(area, 0.0, base);
+
+        let is_home = matches!(self.page, Page::Home);
+        let home_vis = theme::anim_bool(ctx, "page-backdrop-home", is_home, 0.70);
+
+        let key = match &self.page {
+            Page::Album(id) => format!("album:{id}"),
+            Page::Artist(id) => format!("artist:{id}"),
+            Page::Home => {
+                self.request_home_art();
+                if let Some((k, _)) = self.home_art_source() {
+                    if self.art_blurs.contains_key(&k) {
+                        k
+                    } else if let Some(pk) = self.art_key.clone().filter(|k| self.art_blurs.contains_key(k)) {
+                        pk
+                    } else {
+                        k
+                    }
+                } else if let Some(pk) = self.art_key.clone() {
+                    pk
+                } else {
+                    return;
+                }
+            }
+            _ => return,
+        };
+        let Some(&dom) = self.art_colors.get(&key) else {
+            return;
+        };
+        let (_, s, v) = rgb_to_hsv(dom.r() as f32 / 255.0, dom.g() as f32 / 255.0, dom.b() as f32 / 255.0);
+        if !is_home && (s < 0.17 || v < 0.08) {
+            return;
+        }
+
+        let blur_tex = self.blurred_art_tex(ctx, &key);
+
+        let loaded_t = self.art_loaded_at.get(&key).copied().unwrap_or(now);
+        let load_fade = theme::ease_out(((now - loaded_t) / 0.65).clamp(0.0, 1.0) as f32);
+        let fade = load_fade * if is_home { theme::ease_out(home_vis) } else { 1.0 };
+        if fade > 0.0 && fade < 1.0 {
+            ctx.request_repaint_after(Duration::from_millis(16));
+        }
+
+        let light = theme::light();
+        let p = painter.with_clip_rect(area);
+
+        if let Some(tex) = blur_tex {
+            let t = if self.playing() { (now * 0.28) as f32 } else { 0.0 };
+            let dx = t.sin() * 0.045;
+            let dy = (t * 0.73).cos() * 0.045;
+            let u0 = (0.08 + dx).clamp(0.02, 0.20);
+            let u1 = (0.92 + dx).clamp(0.80, 0.98);
+            let v0 = (0.08 + dy).clamp(0.02, 0.20);
+            let v1 = (0.92 + dy).clamp(0.80, 0.98);
+
+            let glow_h = (area.height() * 0.85).clamp(480.0, 760.0).min(area.height());
+            let wash_rect = egui::Rect::from_min_max(area.min, egui::pos2(area.right(), area.top() + glow_h));
+
+            let ys = [0.0f32, 0.18, 0.38, 0.60, 0.82, 1.0];
+            let alphas = match (is_home, light) {
+                (true, true) => [0.30f32, 0.22, 0.13, 0.06, 0.02, 0.0],
+                (true, false) => [0.56f32, 0.44, 0.25, 0.11, 0.03, 0.0],
+                (false, true) => [0.20f32, 0.15, 0.08, 0.03, 0.01, 0.0],
+                (false, false) => [0.52f32, 0.42, 0.22, 0.08, 0.02, 0.0],
+            };
+            let xs = [0.0f32, 0.45, 1.0];
+            let x_boost = [1.06f32, 1.02, 0.88];
+
+            let mut mesh = egui::Mesh::with_texture(tex.id());
+            for (&ty, &base_a) in ys.iter().zip(alphas.iter()) {
+                let y = wash_rect.top() + ty * wash_rect.height();
+                let v = v0 + ty * (v1 - v0);
+                for (&tx, &xb) in xs.iter().zip(x_boost.iter()) {
+                    let x = wash_rect.left() + tx * wash_rect.width();
+                    let u = u0 + tx * (u1 - u0);
+                    let a = (base_a * fade * xb).clamp(0.0, 1.0);
+                    // Subtle warm tint on dark backgrounds so colors feel alive rather than cold.
+                    let (wr, wg, wb) = if light { (1.0, 1.0, 1.0) } else { (1.0, 0.96, 0.91) };
+                    let col = Color32::from_rgba_premultiplied(
+                        (255.0 * a * wr).min(255.0) as u8,
+                        (255.0 * a * wg).min(255.0) as u8,
+                        (255.0 * a * wb).min(255.0) as u8,
+                        (255.0 * a).min(255.0) as u8,
+                    );
+                    mesh.vertices.push(egui::epaint::Vertex {
+                        pos: egui::pos2(x, y),
+                        uv: egui::pos2(u, v),
+                        color: col,
+                    });
+                }
+            }
+            let cols = xs.len() as u32;
+            for r in 0..(ys.len() as u32 - 1) {
+                for c in 0..(cols - 1) {
+                    let i0 = r * cols + c;
+                    let i1 = i0 + 1;
+                    let i2 = i0 + cols;
+                    let i3 = i2 + 1;
+                    mesh.add_triangle(i0, i1, i2);
+                    mesh.add_triangle(i1, i3, i2);
+                }
+            }
+            p.add(egui::Shape::mesh(mesh));
+        }
+
+        // Warm backlit ambient halo behind the artwork, softly touching the sidebar too.
+        if let Some(&acc) = self.art_accents.get(&key) {
+            let breath = if self.playing() { 1.0 + 0.06 * (now as f32 * 0.8).sin() } else { 1.0 };
+            let warm_acc = theme::lerp_color(acc, Color32::from_rgb(255, 224, 196), 0.16);
+            let center = egui::pos2(area.left() + shell::SIDEBAR_W + 190.0, area.top() + 190.0);
+            let rad_x = (area.width() * 0.46).clamp(320.0, 540.0);
+            let rad_y = 310.0;
+            let mut halo = egui::Mesh::default();
+            let halo_alpha = (if light { 0.08 } else { 0.17 }) * fade * breath;
+            halo.colored_vertex(center, theme::with_alpha(warm_acc, halo_alpha));
+            const SEGS: usize = 24;
+            for i in 0..=SEGS {
+                let ang = (i as f32 / SEGS as f32) * std::f32::consts::TAU;
+                halo.colored_vertex(
+                    center + egui::vec2(ang.cos() * rad_x, ang.sin() * rad_y),
+                    Color32::TRANSPARENT,
+                );
+                if i > 0 {
+                    halo.add_triangle(0, i as u32, i as u32 + 1);
+                }
+            }
+            p.add(egui::Shape::mesh(halo));
+        }
+    }
+
+    /// The page background color animated smoothly across transitions.
+    pub fn page_color(&self, ctx: &egui::Context) -> Color32 {
+        if self.look().id != crate::preset::DEFAULT_ID {
+            return self.page_target_color();
+        }
+        let target = self.page_target_color();
+        let ch = |i: usize, val: u8| theme::anim(ctx, ("page-ambient-ch", i), f32::from(val), 0.8).round() as u8;
+        Color32::from_rgb(ch(0, target.r()), ch(1, target.g()), ch(2, target.b()))
+    }
+
+    /// Sidebar background fill: translucent frosted wash harmonizing with the active page
+    /// backdrop so blurred album/artist colors flow softly through the sidebar in both
+    /// light and dark modes (matching Apple Music).
+    pub fn sidebar_fill(&self, ctx: &egui::Context, alpha: f32) -> Color32 {
+        let p_col = self.page_color(ctx);
+        if theme::light() {
+            let tinted = theme::lerp_color(p_col, Color32::WHITE, 0.25);
+            if alpha >= 1.0 {
+                tinted
+            } else {
+                theme::with_alpha(tinted, (alpha + 0.15).clamp(0.35, 0.65))
+            }
+        } else {
+            let tinted = theme::lerp_color(p_col, Color32::from_rgb(0x1a, 0x1e, 0x24), 0.22);
+            if alpha >= 1.0 {
+                tinted
+            } else {
+                theme::with_alpha(tinted, (alpha + 0.12).clamp(0.32, 0.60))
+            }
+        }
+    }
+
+    /// Background fill for the side lyrics panel and queue drawer, matching the ambient
+    /// page tint with a subtle glassy lift.
+    pub fn lyrics_panel_fill(&self, ctx: &egui::Context) -> Color32 {
+        if theme::light() {
+            theme::with_alpha(theme::lerp_color(self.page_color(ctx), Color32::WHITE, 0.12), 0.42)
+        } else {
+            theme::with_alpha(theme::lerp_color(self.page_color(ctx), Color32::WHITE, 0.035), 0.72)
+        }
+    }
+
     pub fn bg_is_light(&self) -> bool {
+        if !theme::light() {
+            return false;
+        }
         let d = self.dominant;
         (0.299 * d.r() as f32 + 0.587 * d.g() as f32 + 0.114 * d.b() as f32) / 255.0 > 0.52
     }
@@ -1119,10 +1645,15 @@ impl App {
         }
     }
 
-    /// Height of the bottom player area: the capsule's 56 points plus the margin it
-    /// floats on.
+    /// Height of the bottom player area: the compact capsule's 44 points plus its floating margin.
     fn bar_height(&self) -> f32 {
-        if shell::docked(self) { shell::DOCKED_H } else { 96.0 }
+        if self.page == Page::Settings {
+            0.0
+        } else if shell::docked(self) {
+            shell::DOCKED_H
+        } else {
+            68.0
+        }
     }
 
     fn toast(&mut self, msg: impl Into<String>) {
@@ -1141,7 +1672,7 @@ impl eframe::App for App {
         self.lyric_view.release_hidden(ctx.cumulative_pass_nr());
         let now = ctx.input(|i| i.time);
 
-        // Mouse visibility in full-screen player (album lyrics): hides after 5 seconds of inactivity.
+        // Mouse visibility in full-screen player: hides after 3.5 seconds of inactivity.
         let pos = ctx.input(|i| i.pointer.latest_pos());
         let mouse_moved = ctx.input(|i| {
             i.pointer.any_pressed() || i.pointer.any_down() || !i.events.is_empty()
@@ -1156,8 +1687,8 @@ impl eframe::App for App {
             }
         }
 
-        let in_fullscreen_lyrics = self.fullscreen && self.np_open && (self.np_tab == NpTab::Lyrics || self.np_tab == NpTab::Art);
-        if in_fullscreen_lyrics {
+        let in_fullscreen_np = (self.fullscreen || ctx.input(|i| i.viewport().fullscreen.unwrap_or(false))) && self.np_open;
+        if in_fullscreen_np {
             if now - self.mouse_last_moved >= 5.0 {
                 if !self.mouse_hidden {
                     self.mouse_hidden = true;
@@ -1166,7 +1697,7 @@ impl eframe::App for App {
                 ctx.set_cursor_icon(egui::CursorIcon::None);
             } else {
                 let remaining = 5.0 - (now - self.mouse_last_moved);
-                ctx.request_repaint_after(std::time::Duration::from_secs_f64(remaining.max(0.1)));
+                ctx.request_repaint_after(std::time::Duration::from_secs_f64(remaining.max(0.05)));
             }
         } else if self.mouse_hidden {
             self.mouse_hidden = false;
@@ -1232,7 +1763,7 @@ impl eframe::App for App {
         }
         self.mini.tick(ctx, now);
         self.tray_window(ctx);
-        self.window_hidden = self.tray.is_some() || ctx.input(|i| i.viewport().minimized == Some(true) || i.viewport().visible() == Some(false));
+        self.window_hidden = ctx.input(|i| i.viewport().minimized == Some(true) || i.viewport().visible() == Some(false));
         self.sync_discord();
         self.sync_lastfm();
         self.sync_dock(ctx);
@@ -1261,7 +1792,14 @@ impl eframe::App for App {
         // smooth). Each egui frame re-lays-out the UI, so frame rate is the main CPU cost.
         let playing = self.playing();
         let (covered, focused) = ctx.input(|i| (i.viewport().occluded == Some(true), i.viewport().focused != Some(false)));
-        if self.window_hidden || covered {
+        let is_covered = self.window_hidden || covered;
+        if is_covered && !self.was_covered {
+            self.was_covered = true;
+            crate::sync::trim_memory();
+        } else if !is_covered && self.was_covered {
+            self.was_covered = false;
+        }
+        if is_covered {
             // In the tray, minimized or covered: nothing to draw, only the player
             // bookkeeping. Track changes and media keys wake the loop themselves.
             if playing || self.buffering {
@@ -1276,7 +1814,7 @@ impl eframe::App for App {
             // The playing row's bars need a steady, full rate to read as smooth; 30 fps
             // behind other windows.
             ctx.request_repaint_after(Duration::from_millis(if focused { 16 } else { 33 }));
-        } else if playing && self.anim_bg && shell::pages_bg_moves(self.look()) {
+        } else if playing && (shell::pages_bg_moves(self.look()) || (self.look().id == crate::preset::DEFAULT_ID && matches!(self.page, Page::Album(_) | Page::Artist(_)))) {
             ctx.request_repaint_after(Duration::from_millis(66));
         } else if playing || self.buffering {
             ctx.request_repaint_after(Duration::from_millis(250));
@@ -1287,17 +1825,21 @@ impl eframe::App for App {
         let ctx = ui.ctx().clone();
         self.shortcuts(&ctx);
         let now = ctx.input(|i| i.time);
-        let screen = ctx.content_rect();
+        let screen = if ctx.viewport_rect().is_positive() { ctx.viewport_rect() } else { ctx.content_rect() };
 
         self.sync_look();
         let look = self.look();
         // Now playing is dark; once it's most of the way up, so is the player bar under it.
         let np = theme::anim_bool(&ctx, "np-open", self.np_open && self.current().is_some(), 0.42);
-        let light = self.light_pages(&ctx) && np < 0.5 && !self.fullscreen;
+        let is_fs = self.fullscreen || ctx.input(|i| i.viewport().fullscreen.unwrap_or(false));
+        let np_fullscreen = is_fs && self.np_open;
+        let light = self.light_pages(&ctx) && !np_fullscreen;
         theme::set_mode(&ctx, light);
         if self.chrome_applied.as_deref() != Some(look.id.as_str()) {
             if self.chrome_applied.is_none() {
-                ctx.add_texture_loader(Arc::new(crate::images::Textures::default()));
+                let textures = Arc::new(crate::images::Textures::default());
+                crate::images::register_textures(textures.clone());
+                ctx.add_texture_loader(textures);
             }
             theme::apply_chrome(&ctx, look);
             self.chrome_applied = Some(look.id.clone());
@@ -1307,9 +1849,9 @@ impl eframe::App for App {
         let app_style = &look.app;
         // Once now playing has slid all the way up it hides everything but the player
         // bar, so the pages and the full-screen background under it aren't drawn.
-        let covered = !self.fullscreen && np >= 1.0;
+        let covered = !np_fullscreen && np >= 1.0;
         let bar_strip = egui::Rect::from_min_max(egui::pos2(screen.left(), screen.bottom() - self.bar_height()), screen.max);
-        titlebar::set_fullscreen(&ctx, self.fullscreen);
+        titlebar::set_fullscreen(&ctx, is_fs);
         // The mini player, or nothing but the background while the window changes size.
         let layout = self.mini.layout(&ctx);
         // Drawn again below, in the full layout.
@@ -1334,10 +1876,10 @@ impl eframe::App for App {
             }
             return;
         }
-        shell::background(self, ui, screen, now, covered.then_some(bar_strip));
+        shell::background(self, ui, screen, now, (covered || np_fullscreen).then_some(bar_strip));
         // Set again by the sidebar's search box when it's drawn this frame.
         self.search_rect = None;
-        if !self.fullscreen && !covered {
+        if !is_fs && !covered {
             // The top of the window, down to the search box's row: what's on it comes after.
             titlebar::drag_area(ui, egui::Rect::from_min_size(screen.min, egui::vec2(screen.width(), titlebar::HEIGHT)), "main");
             // And the sidebar under it, down the window: its empty parts move the window
@@ -1346,26 +1888,24 @@ impl eframe::App for App {
             let side = egui::Rect::from_min_max(egui::pos2(screen.left(), screen.top() + titlebar::HEIGHT), egui::pos2(screen.left() + side_w, screen.bottom()));
             titlebar::drag_strip(ui, side, "sidebar");
         }
-        if !self.fullscreen && covered {
-            // Now playing hides the pages: the player bar keeps its full-width place.
-            egui::Panel::bottom("player").resizable(false)
-                .exact_size(self.bar_height())
-                .frame(egui::Frame::new())
-                .show_separator_line(false)
-                .show(ui, |ui| shell::player_bar(self, ui, now, false));
-        }
-        if !self.fullscreen && !covered {
+        if !np_fullscreen && !covered {
+            // Paint the ambient tint and warm blurred artwork across the entire window
+            // before the sidebar so the frosted sidebar harmonizes with the backdrop.
+            if look.id == crate::preset::DEFAULT_ID {
+                self.paint_page_backdrop(&ctx, ui.painter(), screen, now);
+            }
             use crate::preset::SidebarStyle;
             let side_alpha = app_style.sidebar_alpha.clamp(0.0, 1.0);
             // The logo's row is 32 points tall.
             // The macOS window buttons sit over the sidebar's top-left: start below them.
             let side_margin = egui::Margin { left: 14, right: 14, top: titlebar::top_margin(16, 32.0).max(titlebar::MAC_BUTTONS_CLEAR), bottom: 16 };
+            let side_fill = self.sidebar_fill(&ctx, side_alpha);
             let side_frame = match app_style.sidebar {
-                SidebarStyle::Glass => egui::Frame::new().fill(theme::panel(side_alpha)).inner_margin(side_margin),
+                SidebarStyle::Glass => egui::Frame::new().fill(side_fill).inner_margin(side_margin),
                 SidebarStyle::Transparent => egui::Frame::new().inner_margin(side_margin),
-                SidebarStyle::Solid => egui::Frame::new().fill(look.solid()).inner_margin(side_margin),
+                SidebarStyle::Solid => egui::Frame::new().fill(side_fill).inner_margin(side_margin),
                 SidebarStyle::Floating => egui::Frame::new()
-                    .fill(theme::panel(side_alpha.max(0.3)))
+                    .fill(side_fill)
                     .stroke(egui::Stroke::new(1.0, theme::glass(0.08)))
                     .corner_radius(egui::CornerRadius::same(theme::panel_radius().max(12)))
                     .outer_margin(egui::Margin { left: 10, right: 4, top: 10, bottom: 10 })
@@ -1378,58 +1918,66 @@ impl eframe::App for App {
                 .frame(side_frame)
                 .show_separator_line(false)
                 .show(ui, |ui| shell::sidebar(self, ui));
+            ui.painter().vline(side.response.rect.right(), side.response.rect.y_range(), egui::Stroke::new(1.0, theme::glass(if light { 0.06 } else { 0.07 })));
             self.scroll_panes.push(side.response.rect);
             let section = ui.available_rect_before_wrap();
-            // The built-in look keeps its colour to the sidebar: the pages beside it are
-            // plain, the same flat light or dark as the player bar under them.
-            if look.id == crate::preset::DEFAULT_ID {
-                ui.painter().rect_filled(section, 0.0, if theme::light() { theme::bg() } else { look.solid() });
-            }
+            const DRAWER_W: f32 = 340.0;
             let q = theme::anim_bool(&ctx, "queue-drawer", self.queue_open && !self.np_open, 0.25);
             if q > 0.01 {
                 let r = egui::Panel::right("queue").resizable(false)
-                    .exact_size(340.0 * q)
-                    .frame(egui::Frame::new().fill(theme::panel(0.42)).inner_margin(egui::Margin::symmetric(14, 16)))
+                    .exact_size(DRAWER_W * q)
+                    .frame(egui::Frame::new().fill(self.lyrics_panel_fill(&ctx)).inner_margin(egui::Margin::symmetric(14, 16)))
                     .show_separator_line(false)
                     .show(ui, |ui| shell::queue_drawer(self, ui));
                 self.scroll_panes.push(r.response.rect);
             }
             // Lyrics beside the pages; Up next takes the place when it's open.
-            // It leaves the pages at least 480 points, and stays shut when that leaves it too narrow.
-            let lyrics_w = (ui.available_rect_before_wrap().width() - 480.0).min(380.0);
-            let l = theme::anim_bool(&ctx, "lyrics-drawer", self.lyrics_drawer && !self.queue_open && !self.np_open && lyrics_w >= 260.0, 0.25);
+            let l = theme::anim_bool(&ctx, "lyrics-drawer", self.lyrics_drawer && !self.queue_open && !self.np_open, 0.25);
             if l > 0.01 {
                 let r = egui::Panel::right("lyrics-drawer").resizable(false)
-                    .exact_size(lyrics_w.max(260.0) * l)
-                    .frame(egui::Frame::new().fill(theme::panel(0.5)).inner_margin(egui::Margin { left: 20, right: 16, top: 16, bottom: 16 }))
+                    .exact_size(DRAWER_W * l)
+                    .frame(egui::Frame::new().fill(self.lyrics_panel_fill(&ctx)).inner_margin(egui::Margin { left: 20, right: 16, top: 16, bottom: 16 }))
                     .show_separator_line(false)
                     .show(ui, |ui| nowplaying::lyrics_drawer(self, ui, now));
                 self.scroll_panes.push(r.response.rect);
             }
             let main_right = ui.available_rect_before_wrap().right();
+            let is_artist = matches!(self.page, Page::Artist(_));
+            let left_margin = if is_artist { 0 } else { 28 };
+            let top_margin = if is_artist { 0 } else { titlebar::top_margin(14, 42.0) };
             egui::CentralPanel::default()
                 // No right margin: the page's scroll bar sits at the very edge; the page
                 // keeps the same gap inside (see `pages::page`).
-                .frame(egui::Frame::new().inner_margin(egui::Margin { left: 28, right: 0, top: titlebar::top_margin(14, 42.0), bottom: 0 }))
+                .frame(egui::Frame::new().inner_margin(egui::Margin { left: left_margin, right: 0, top: top_margin, bottom: 0 }))
                 .show(ui, |ui| {
-                    ui.add_space(2.0);
+                    if !is_artist {
+                        ui.add_space(2.0);
+                    }
                     pages::page(self, ui, now);
                 });
             // The player: a frosted strip over the bottom of the main section, above the
             // pages, so their last rows fade under it instead of stopping at a seam.
-            let strip = egui::Rect::from_min_max(egui::pos2(section.left(), screen.bottom() - self.bar_height()), egui::pos2(main_right, screen.bottom()));
-            egui::Area::new(egui::Id::unique("player-bar"))
-                .fixed_pos(strip.min)
-                .order(egui::Order::Middle)
-                .show(&ctx, |ui| {
-                    ui.scope_builder(egui::UiBuilder::new().max_rect(strip).layout(egui::Layout::top_down(egui::Align::Min)), |ui| {
-                        shell::player_bar(self, ui, now, true);
+            if self.page != Page::Settings && np < 0.99 {
+                let bar_reveal = (1.0 - np).clamp(0.0, 1.0);
+                let y_offset = np * 70.0;
+                let strip = egui::Rect::from_min_max(
+                    egui::pos2(section.left(), screen.bottom() - self.bar_height() + y_offset),
+                    egui::pos2(main_right, screen.bottom() + y_offset),
+                );
+                egui::Area::new(egui::Id::unique("player-bar"))
+                    .fixed_pos(strip.min)
+                    .order(egui::Order::Middle)
+                    .show(&ctx, |ui| {
+                        ui.set_opacity(bar_reveal * bar_reveal);
+                        ui.scope_builder(egui::UiBuilder::new().max_rect(strip).layout(egui::Layout::top_down(egui::Align::Min)), |ui| {
+                            shell::player_bar(self, ui, now, true);
+                        });
                     });
-                });
+            }
         }
         if np > 0.001 {
             let pages = theme::set_mode(&ctx, false);
-            nowplaying::overlay(self, &ctx, now);
+            nowplaying::overlay(self, &ctx, now, screen);
             theme::set_mode(&ctx, pages);
         }
         self.draw_dialog(&ctx);
@@ -1451,6 +1999,13 @@ impl eframe::App for App {
         titlebar::resize_edges(&ctx);
         // Back from the mini player.
         self.mini.fade_in(&ctx, now, shell::base_color(self));
+
+        // The swipe hint sits above the pages, while the gesture is still going.
+        if layout == mini::Layout::Full && !self.np_open && self.dialog.is_none() {
+            // After the pages are drawn, so shelves have taken their own swipes first.
+            self.swipe_nav(&ctx, now);
+            self.paint_swipe_arrow(&ctx, now);
+        }
 
         if dev_var("YTM_THEME_TOUR").is_some() {
             self.theme_tour(&ctx, now);
@@ -1540,7 +2095,6 @@ impl eframe::App for App {
             storage.set_string("window", w.clone());
             self.good_window = Some(w);
         }
-        storage.set_string("close_to_tray", b(self.close_to_tray));
         storage.set_string("notify_songs", b(self.notify_songs));
         storage.set_string("lyrics_drawer", b(self.lyrics_drawer));
         // The sidebar's playlist order, completed with any playlist that appeared since
@@ -1571,7 +2125,6 @@ impl eframe::App for App {
         if dev_var("YTM_FONT").is_none() {
             storage.set_string("font", theme::font_choice());
         }
-        storage.set_string("anim_bg", b(self.anim_bg));
         storage.set_string("reactive_bg", b(self.reactive_bg));
         storage.set_string("signature_api", self.signature_api.clone());
         storage.set_string("hires_source", self.hires_sources.join("\n"));
@@ -1595,6 +2148,8 @@ impl eframe::App for App {
     }
 
     fn on_exit(&mut self, gl: Option<&eframe::glow::Context>) {
+        self.audio.send(crate::audio::AudioCmd::Stop);
+        crate::dock::stop_activity();
         if let (Some(bg), Some(gl)) = (&self.bg, gl) {
             bg.destroy(gl);
         }
@@ -1618,7 +2173,18 @@ const SESSION_KEY: &str = "session";
 fn relaunch() {
     let Ok(exe) = std::env::current_exe() else { return };
     log::info!("restarting");
-    let _ = std::process::Command::new(exe).spawn();
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        const DETACHED_PROCESS: u32 = 0x0000_0008;
+        let script = format!("ping -n 3 127.0.0.1 >NUL & start \"\" \"{}\"", exe.display());
+        let _ = std::process::Command::new("cmd").arg("/C").raw_arg(&script).creation_flags(CREATE_NO_WINDOW | DETACHED_PROCESS).spawn();
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = std::process::Command::new(exe).spawn();
+    }
 }
 
 /// What the sidebar and the account button show, kept for the next launch.

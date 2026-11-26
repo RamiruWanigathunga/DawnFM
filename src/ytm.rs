@@ -4,7 +4,7 @@
 
 use serde_json::{Value, json};
 
-use crate::backend::{ArtistPage, Collection};
+use crate::backend::{ArtistPage, ArtistSub, Collection};
 use crate::model::{Card, Chip, Link, Shelf, ShelfKind, Target, Thumb, Track};
 use crate::ytmapi::Api;
 
@@ -589,7 +589,9 @@ fn list_page(items: &[Value]) -> (Vec<Track>, Vec<Option<String>>, Option<String
 // ----------------------------------------------------------------------- artists
 
 pub async fn artist(api: &Api, id: &str) -> anyhow::Result<ArtistPage> {
-    let v = api.call("browse", json!({ "browseId": id }), false).await?;
+    // Signed in when there is an account: the header's Subscribe button says whether it
+    // already follows the artist, and an anonymous page always says it doesn't.
+    let v = api.call("browse", json!({ "browseId": id }), true).await?;
     parse_artist(&v, id).ok_or_else(|| anyhow::anyhow!("YouTube Music returned an empty artist page"))
 }
 
@@ -597,19 +599,25 @@ fn parse_artist(v: &Value, id: &str) -> Option<ArtistPage> {
     let h = ["musicImmersiveHeaderRenderer", "musicVisualHeaderRenderer"].iter().map(|k| &v["header"][*k]).find(|h| !h.is_null())?;
     let name = text(&h["title"])?;
     let sub = &h["subscriptionButton"]["subscribeButtonRenderer"];
-    let subscribers = text(&sub["subscriberCountText"]).or_else(|| text(&sub["shortSubscriberCountText"])).and_then(|t| count(&t));
+    let audience = text(&h["monthlyListenerCount"]);
+    let subscribers = text(&sub["longSubscriberCountText"]).or_else(|| text(&sub["subscriberCountText"])).or_else(|| text(&sub["shortSubscriberCountText"]));
+    let following = artist_sub(sub, id);
     let sections = arr(&v["contents"]["singleColumnBrowseResultsRenderer"]["tabs"][0]["tabRenderer"]["content"]["sectionListRenderer"]["contents"]);
     let me = Link { name: name.clone(), id: Some(id.to_owned()) };
     let mut page = ArtistPage {
         id: id.to_owned(),
         banner: thumbs(&h["thumbnail"]["musicThumbnailRenderer"]),
+        audience,
         subscribers,
+        views: None,
         description: text(&h["description"]),
         top: Vec::new(),
         top_playlist: None,
         albums: Vec::new(),
         playlists: Vec::new(),
         similar: Vec::new(),
+        photo: thumbs(&v["microformat"]["microformatDataRenderer"]),
+        following,
         name,
     };
     for s in sections {
@@ -620,8 +628,14 @@ fn parse_artist(v: &Value, id: &str) -> Option<ArtistPage> {
             page.top_playlist = ep["browseEndpoint"]["browseId"].as_str().map(|b| b.strip_prefix("VL").unwrap_or(b).to_owned());
             continue;
         }
-        if page.description.is_none() {
-            page.description = text(&s["musicDescriptionShelfRenderer"]["description"]);
+        let desc_shelf = &s["musicDescriptionShelfRenderer"];
+        if !desc_shelf.is_null() {
+            if page.description.is_none() {
+                page.description = text(&desc_shelf["description"]);
+            }
+            if page.views.is_none() {
+                page.views = text(&desc_shelf["subheader"]);
+            }
         }
         let carousel = &s["musicCarouselShelfRenderer"];
         let title = text(&carousel["header"]["musicCarouselShelfBasicHeaderRenderer"]["title"]).unwrap_or_default();
@@ -641,6 +655,22 @@ fn parse_artist(v: &Value, id: &str) -> Option<ArtistPage> {
         }
     }
     Some(page)
+}
+
+/// The artist header's subscription button: whether the account is subscribed, and what
+/// subscribing sends. `None` when the page has no button for them.
+fn artist_sub(sub: &Value, id: &str) -> Option<ArtistSub> {
+    if sub.is_null() {
+        return None;
+    }
+    let channel = sub["channelId"].as_str().unwrap_or(id).to_owned();
+    // The button YouTube's page shows says which way it would go; its endpoint carries
+    // the params Subscribe sends.
+    let params = arr(&sub["serviceEndpoints"]).iter().find_map(|e| {
+        let s = &e["subscribeEndpoint"];
+        (!s.is_null()).then(|| s["params"].as_str().map(str::to_owned)).flatten()
+    });
+    Some(ArtistSub { channel, subscribed: sub["subscribed"].as_bool().unwrap_or(false), params })
 }
 
 // ------------------------------------------------------------- radio and explore
@@ -839,6 +869,60 @@ pub async fn saved_playlists(api: &Api) -> anyhow::Result<Vec<Card>> {
 
 pub async fn saved_albums(api: &Api) -> anyhow::Result<Vec<Card>> {
     saved(api, "4qmFsgIoEhRGRW11c2ljX2xpa2VkX2FsYnVtcxoQZ2dNR0tnUUlBQkFCb0FZQg%3D%3D").await
+}
+
+/// The artists the account follows (Library › Artists).
+pub async fn library_artists(api: &Api) -> anyhow::Result<Vec<Card>> {
+    artist_list(api, "FEmusic_library_corpus_artists").await
+}
+
+/// A library page of followed artist channels, every page of it: each is a round card
+/// opening the artist's channel page.
+async fn artist_list(api: &Api, browse_id: &str) -> anyhow::Result<Vec<Card>> {
+    let v = api.call_signed_in("browse", json!({ "browseId": browse_id })).await?;
+    let mut cards = Vec::new();
+    let mut token = None;
+    for tab in arr(&v["contents"]["singleColumnBrowseResultsRenderer"]["tabs"]) {
+        for s in arr(&tab["tabRenderer"]["content"]["sectionListRenderer"]["contents"]) {
+            let items = arr(&s["musicShelfRenderer"]["contents"]);
+            cards.extend(channel_cards(items));
+            if token.is_none() {
+                token = item_token(items);
+            }
+        }
+    }
+    for _ in 0..100 {
+        let Some(t) = token.take() else { break };
+        // A later page failing keeps the pages already loaded.
+        let v = match api.call_signed_in("browse", json!({ "continuation": t })).await {
+            Ok(v) => v,
+            Err(e) => {
+                log::warn!("library channels: {e}");
+                break;
+            }
+        };
+        let items = arr(&v["continuationContents"]["musicShelfContinuation"]["contents"]);
+        if items.is_empty() {
+            break;
+        }
+        cards.extend(channel_cards(items));
+        token = item_token(items);
+    }
+    Ok(cards)
+}
+
+/// The channels of a library shelf as round cards: the name and the subscriber line.
+fn channel_cards(items: &[Value]) -> Vec<Card> {
+    items
+        .iter()
+        .filter_map(|i| {
+            let r = &i["musicResponsiveListItemRenderer"];
+            let title = text(&r["flexColumns"][0]["musicResponsiveListItemFlexColumnRenderer"]["text"])?;
+            let id = r["navigationEndpoint"]["browseEndpoint"]["browseId"].as_str()?.to_owned();
+            let subtitle = text(&r["flexColumns"][1]["musicResponsiveListItemFlexColumnRenderer"]["text"]).unwrap_or_default();
+            Some(Card { title, subtitle, thumbs: thumbs(&r["thumbnail"]["musicThumbnailRenderer"]), target: Target::Artist(id), round: true, links: Vec::new() })
+        })
+        .collect()
 }
 
 /// The signed-in account's name and photo, as its account menu shows them (for a brand
@@ -1094,6 +1178,19 @@ pub async fn delete_playlist(api: &Api, id: &str) -> anyhow::Result<()> {
 pub async fn save_collection(api: &Api, playlist_id: &str, save: bool) -> anyhow::Result<()> {
     let endpoint = if save { "like/like" } else { "like/removelike" };
     write(api, endpoint, json!({"target": {"playlistId": playlist_id}})).await?;
+    Ok(())
+}
+
+/// Subscribe to `channel` (or unsubscribe), the account's YouTube subscription: the one
+/// the YouTube Music app shows on the artist, so it stays in step with it. `params` is
+/// what the artist page's Subscribe button sends; Unsubscribe goes without it.
+pub async fn set_subscribed(api: &Api, channel: &str, subscribe: bool, params: Option<&str>) -> anyhow::Result<()> {
+    let endpoint = if subscribe { "subscription/subscribe" } else { "subscription/unsubscribe" };
+    let mut body = json!({"channelIds": [channel]});
+    if subscribe && let Some(p) = params {
+        body["params"] = json!(p);
+    }
+    write(api, endpoint, body).await?;
     Ok(())
 }
 
@@ -1364,7 +1461,15 @@ fn list_item(r: &Value) -> Option<Track> {
                 Some("MUSIC_PAGE_TYPE_ALBUM") => album = Some(Link { name: name.to_owned(), id: browse_id(run) }),
                 // Search rows put the length in the text ("Artist • Album • 3:22").
                 _ if duration.is_none() && looks_like_duration(name) => duration = parse_duration(name),
-                _ if name.ends_with(" plays") => plays = count(name),
+                _ if plays.is_none()
+                    && (name.ends_with(" plays")
+                        || name.ends_with(" play")
+                        || name.ends_with(" views")
+                        || name.ends_with(" view")
+                        || (c >= 2 && count(name).is_some() && !looks_like_duration(name))) =>
+                {
+                    plays = count(name);
+                }
                 _ => {}
             }
         }
@@ -1647,6 +1752,7 @@ mod tests {
         let t = list_item(&row(ALBUM_ROW)).unwrap();
         assert_eq!((t.title.as_str(), t.track_nr, t.duration), ("Alone Again", Some(1), Some(251)));
         assert!(t.artists.is_empty());
+        assert_eq!(t.plays, Some(54_000_000));
     }
 
     #[test]
@@ -2036,8 +2142,68 @@ mod tests {
     }
 
     #[test]
-    fn list_rows_say_whether_they_are_music_videos() {
-        let row = |kind: &str| list_item(&album_row("x", "Song", kind)["musicResponsiveListItemRenderer"]).unwrap().music_video;
+    fn artist_subscription_button_state_and_params() {
+        let sub = json!({
+            "channelId": "UCabc",
+            "subscribed": true,
+            "serviceEndpoints": [{"subscribeEndpoint": {"channelIds": ["UCabc"], "params": "EgIIGxgA"}}],
+        });
+        let s = artist_sub(&sub, "UCabc").unwrap();
+        assert!(s.subscribed);
+        assert_eq!(s.channel, "UCabc");
+        assert_eq!(s.params.as_deref(), Some("EgIIGxgA"));
+        // Pages without a subscribe button (some topic channels) get none.
+        assert!(artist_sub(&Value::Null, "UCabc").is_none());
+        // Unsubscribe's own endpoint carries no params; the button must still work.
+        let plain = json!({"channelId": "UCxyz", "subscribed": false});
+        assert_eq!(artist_sub(&plain, "UCxyz").unwrap().params, None);
+    }
+
+    #[test]
+    fn artist_header_shows_monthly_audience_and_subscriber_count() {
+        // Trimmed from an artist page's header (November 2026). The counts come as
+        // ready-written runs, and the subscriber line is `longSubscriberCountText`.
+        let v = json!({
+            "header": {"musicImmersiveHeaderRenderer": {
+                "title": {"runs": [{"text": "The Weeknd"}]},
+                "monthlyListenerCount": {"runs": [{"text": "240M monthly audience"}]},
+                "subscriptionButton": {"subscribeButtonRenderer": {
+                    "channelId": "UC0WP5P-ufpRfjbNrmOWwLBQ",
+                    "subscribed": true,
+                    "longSubscriberCountText": {"runs": [{"text": "40.3M subscribers"}]},
+                    "serviceEndpoints": [{"subscribeEndpoint": {"channelIds": ["UC0WP5P-ufpRfjbNrmOWwLBQ"], "params": "EgIIGxgA"}}],
+                }},
+            }},
+            "contents": {"singleColumnBrowseResultsRenderer": {"tabs": []}},
+        });
+        let p = parse_artist(&v, "UClYV6hHlupm_S_ObS1W-DYw").unwrap();
+        assert_eq!(p.audience.as_deref(), Some("240M monthly audience"));
+        assert_eq!(p.subscribers.as_deref(), Some("40.3M subscribers"));
+        let sub = p.following.unwrap();
+        assert_eq!(sub.channel, "UC0WP5P-ufpRfjbNrmOWwLBQ");
+        assert!(sub.subscribed);
+        // A page that writes only the short count still finds one.
+        let short = json!({"header": {"musicImmersiveHeaderRenderer": {
+            "title": {"runs": [{"text": "Small"}]},
+            "subscriptionButton": {"subscribeButtonRenderer": {"shortSubscriberCountText": {"runs": [{"text": "12K subscribers"}]}}},
+        }}});
+        assert_eq!(parse_artist(&short, "UCsmall").unwrap().subscribers.as_deref(), Some("12K subscribers"));
+    }
+
+    #[test]
+    fn artist_photo_comes_from_the_square_microformat_thumbnail() {
+        // microformatDataRenderer.thumbnail is {"thumbnails": …} itself, not wrapped in
+        // another "thumbnail" the way the header's musicThumbnailRenderer is.
+        let v = json!({"microformat": {"microformatDataRenderer": {"thumbnail": {"thumbnails": [
+            {"url": "https://x/y=w544-h544-p", "width": 544, "height": 544},
+        ]}}}});
+        let t = thumbs(&v["microformat"]["microformatDataRenderer"]);
+        assert_eq!(t.len(), 1);
+        assert_eq!((t[0].width, t[0].height), (544, 544));
+    }
+
+    #[test]
+    fn list_rows_say_whether_they_are_music_videos() {        let row = |kind: &str| list_item(&album_row("x", "Song", kind)["musicResponsiveListItemRenderer"]).unwrap().music_video;
         assert!(row("MUSIC_VIDEO_TYPE_OMV"));
         assert!(!row("MUSIC_VIDEO_TYPE_ATV"));
         // User uploads and covers have no song version to look for.

@@ -50,7 +50,7 @@ impl Default for Background {
     fn default() -> Self {
         Self {
             mode: BgMode::Kawarp,
-            solid: "#0c0a0e".into(),
+            solid: "#111111".into(),
             intensity: 1.0,
             saturation: 1.5,
             speed: 1.0,
@@ -172,15 +172,15 @@ impl Default for LyricStyle {
             font: "sfpro".into(),
             size: 1.42,
             line_gap: 0.6,
-            anchor: 0.43,
+            anchor: 0.28,
             fill: Fill::Sweep,
-            active_alpha: 0.3,
+            active_alpha: 0.55,
             inactive_alpha: 0.3,
             falloff: 0.01,
             min_alpha: 0.25,
-            past_alpha: Some(0.0),
+            past_alpha: Some(0.35),
             sung_color: "white".into(),
-            blur: 2.0,
+            blur: 0.8,
             blur_scope: BlurScope::Upcoming,
             glow: 0.0,
             glow_color: "white".into(),
@@ -241,8 +241,8 @@ impl Default for CoverStyle {
 #[derive(Clone, Copy, PartialEq, Default, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PlayerBar {
-    #[default]
     Docked,
+    #[default]
     Floating,
 }
 
@@ -256,7 +256,7 @@ pub struct Chrome {
 
 impl Default for Chrome {
     fn default() -> Self {
-        Self { glass: 1.0, radius: 18.0, player_bar: PlayerBar::Docked }
+        Self { glass: 1.0, radius: 18.0, player_bar: PlayerBar::Floating }
     }
 }
 
@@ -378,10 +378,10 @@ impl Preset {
             // lyrics on the right, the song and its controls on a card over it.
             // The cover shows close to its own brightness: the card and the fade carry
             // the text, so it needs only a light scrim.
-            background: Background { mode: BgMode::CoverFullbleed, solid: "#0b090b".into(), page_dim: 0.45, np_dim: 1.0, scrim: 0.1, ..Default::default() },
+            background: Background { mode: BgMode::CoverFullbleed, solid: "#111111".into(), page_dim: 0.45, np_dim: 1.0, scrim: 0.1, ..Default::default() },
             lyrics: LyricStyle { weight: Weight::Bold, size: 1.15, inactive_alpha: 0.3, ..Default::default() },
             cover: CoverStyle { layout: Layout::LyricsOnly, radius: 10.0, ..Default::default() },
-            chrome: Chrome { glass: 0.9, radius: 10.0, player_bar: PlayerBar::Docked },
+            chrome: Chrome { glass: 0.9, radius: 10.0, player_bar: PlayerBar::Floating },
             app: AppStyle {
                 page_bg: PageBg::Accent,
                 sidebar: SidebarStyle::Glass,
@@ -412,6 +412,9 @@ impl Preset {
 
     pub fn solid(&self) -> Color32 {
         let solid = if self.id == DEFAULT_ID { colour().solid } else { &self.background.solid };
+        if solid == "#0b090b" || solid == "#0c0a0e" || solid == "#1E1F20" || solid == "#111111" || solid == "#1E1F22" {
+            return crate::theme::bg();
+        }
         hex(solid).unwrap_or(crate::theme::bg())
     }
 }
@@ -427,15 +430,15 @@ pub struct Colour {
 
 /// The first is the default: the look as it was before there was a choice.
 pub const COLOURS: &[Colour] = &[
-    Colour { id: "red", name: "Red", accent: DEFAULT_ACCENT, solid: "#0b090b" },
-    Colour { id: "orange", name: "Orange", accent: "#ff7a2f", solid: "#0c0907" },
-    Colour { id: "amber", name: "Amber", accent: "#f2b33d", solid: "#0b0a06" },
-    Colour { id: "green", name: "Green", accent: "#34c77b", solid: "#070b09" },
-    Colour { id: "teal", name: "Teal", accent: "#2bbfc4", solid: "#060b0c" },
-    Colour { id: "blue", name: "Blue", accent: "#3d8bff", solid: "#07090d" },
-    Colour { id: "indigo", name: "Indigo", accent: "#7371ff", solid: "#08080e" },
-    Colour { id: "purple", name: "Purple", accent: "#a960f5", solid: "#0a080d" },
-    Colour { id: "pink", name: "Pink", accent: "#ff5c9d", solid: "#0c080a" },
+    Colour { id: "red", name: "Red", accent: DEFAULT_ACCENT, solid: "#111111" },
+    Colour { id: "orange", name: "Orange", accent: "#ff7a2f", solid: "#111111" },
+    Colour { id: "amber", name: "Amber", accent: "#f2b33d", solid: "#111111" },
+    Colour { id: "green", name: "Green", accent: "#34c77b", solid: "#111111" },
+    Colour { id: "teal", name: "Teal", accent: "#2bbfc4", solid: "#111111" },
+    Colour { id: "blue", name: "Blue", accent: "#3d8bff", solid: "#111111" },
+    Colour { id: "indigo", name: "Indigo", accent: "#7371ff", solid: "#111111" },
+    Colour { id: "purple", name: "Purple", accent: "#a960f5", solid: "#111111" },
+    Colour { id: "pink", name: "Pink", accent: "#ff5c9d", solid: "#111111" },
 ];
 
 static COLOUR: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);

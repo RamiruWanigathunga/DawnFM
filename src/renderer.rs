@@ -45,11 +45,19 @@ pub fn save(data_dir: &Path, r: Renderer) -> std::io::Result<()> {
 
 /// The API wgpu draws through here.
 pub fn api_name() -> &'static str {
-    "Metal"
+    if cfg!(target_os = "macos") {
+        "Metal"
+    } else {
+        "Vulkan"
+    }
 }
 
 pub fn backends() -> wgpu::Backends {
-    wgpu::Backends::METAL
+    if cfg!(target_os = "macos") {
+        wgpu::Backends::METAL
+    } else {
+        wgpu::Backends::VULKAN
+    }
 }
 
 /// eframe's wgpu settings: only [`backends`], so "Vulkan" never quietly means DX12 or GL.

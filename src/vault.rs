@@ -174,12 +174,32 @@ mod file {
     }
 }
 
+/// Secure credential storage in Windows Credential Manager on Windows,
+/// or user's private application data folder on non-Windows.
+#[cfg(windows)]
+mod backend {
+    use std::path::Path;
+
+    pub fn get(key: &str, _dir: &Path) -> anyhow::Result<Option<Vec<u8>>> {
+        super::store::get(key)
+    }
+
+    pub fn set(key: &str, _dir: &Path, secret: &[u8]) -> anyhow::Result<()> {
+        super::store::set(key, secret)
+    }
+
+    pub fn delete(key: &str, _dir: &Path) -> anyhow::Result<()> {
+        super::store::delete(key)
+    }
+}
+
 /// Secure file-based storage in the user's private application data folder.
 ///
 /// On macOS, ad-hoc signed apps accessing the login Keychain trigger modal OS
 /// password authorization popups for every chunk and every credential on every launch.
 /// Storing secrets in owner-only files (mode 0o600) prevents macOS password prompts
 /// while keeping secrets strictly private to the running user account.
+#[cfg(not(windows))]
 mod backend {
     use std::path::Path;
 
@@ -231,9 +251,14 @@ mod tests {
         if in_keyring {
             assert!(files.is_empty(), "keyring secret also left in a file");
         } else {
-            use std::os::unix::fs::PermissionsExt;
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                assert_eq!(files.len(), 1);
+                assert_eq!(files[0].metadata().unwrap().permissions().mode() & 0o777, 0o600);
+            }
+            #[cfg(not(unix))]
             assert_eq!(files.len(), 1);
-            assert_eq!(files[0].metadata().unwrap().permissions().mode() & 0o777, 0o600);
         }
         eprintln!("stored in {}", if in_keyring { "the credential store" } else { "a file" });
         super::delete("test", &dir);

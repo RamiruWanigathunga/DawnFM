@@ -19,6 +19,19 @@ use crate::model::{self, Card, Target, Thumb, Track, sized};
 use crate::stream::{self, Shared};
 use crate::{hires, innertube, jsc, webmusic, ytdlp, ytm, ytmapi};
 
+#[derive(Clone, Default, Debug)]
+pub struct PlayExtra {
+    pub song_of: Option<Track>,
+    pub song: Option<Track>,
+    pub track: Option<Track>,
+}
+
+#[derive(Clone, Default, Debug)]
+pub struct PrefetchExtra {
+    pub song_of: Option<Track>,
+    pub track: Option<Track>,
+}
+
 pub enum Req {
     /// Home feed, optionally filtered by a mood chip's params.
     Home(Option<String>),
@@ -40,6 +53,8 @@ pub enum Req {
     Playlist { id: String, load: u64, stream: bool },
     Library,
     History,
+    /// The artists the account follows.
+    Artists,
     /// The signed-in account's name and photo.
     Account,
     /// The channels the signed-in Google account can act as.
@@ -51,8 +66,8 @@ pub enum Req {
     ServerQueue,
     /// Save a song's audio to the downloads folder. `for_video`: the music video it's the
     /// song version of, which then plays it from the file (offline too).
-    Download { track: Track, for_video: Option<String> },
-    Lyrics(Track),
+    Download { track: Box<Track>, for_video: Option<String> },
+    Lyrics(Box<Track>),
     /// SponsorBlock's parts of a video to skip.
     Segments { video_id: String },
     /// Romanization and translation for the lyric lines of one source.
@@ -68,18 +83,14 @@ pub enum Req {
     ArtistSignature { key: String, endpoint: String, name: String },
     /// Radio seeded from a track (`seed`, its id); appended to the queue. `song_of`: the
     /// track, when it's a music video to play as its song: the song's radio is asked for.
-    Radio { seed: String, song_of: Option<Track> },
+    Radio { seed: String, song_of: Option<Box<Track>> },
     /// Fetch an album/playlist and play it from the start.
     PlayCollection { target: Target },
     /// `at`: start position (non-zero when resuming last session's song). `report`: tell
-    /// YouTube about the play (not when picking up a song already counted). `song_of`:
-    /// the track, when it's a music video to play as its song version if one is found.
-    /// `song`: the song version already playing for the music video `video_id` (picked up
-    /// mid-song): played without a lookup, and the video if it won't. `track`: the song as
-    /// the UI lists it, for a hi-res source's search.
-    Play { video_id: String, generation: u64, at: std::time::Duration, report: bool, song_of: Option<Track>, song: Option<Track>, track: Option<Track> },
+    /// YouTube about the play (not when picking up a song already counted).
+    Play { video_id: String, generation: u64, at: std::time::Duration, report: bool, extra: Box<PlayExtra> },
     /// Resolve and download a track ahead of time so skipping to it is instant.
-    Prefetch { video_id: String, song_of: Option<Track>, track: Option<Track> },
+    Prefetch { video_id: String, extra: Box<PrefetchExtra> },
     Like { video_id: String, like: bool },
     /// Several likes (or unlikes) one after another, for a selection.
     LikeMany { video_ids: Vec<String>, like: bool },
@@ -94,6 +105,9 @@ pub enum Req {
     Collaboration(String),
     SetCollaboration { info: ytm::Collaboration, change: ytm::CollabChange },
     SaveCollection { id: String, save: bool },
+    /// Subscribe to (or unsubscribe from) the artist's channel `channel`, the account's
+    /// YouTube subscription; `params` is the Subscribe button's.
+    SetSubscribed { channel: String, subscribe: bool, params: Option<String> },
     SetCookie(String),
     Logout,
 }
@@ -112,6 +126,7 @@ impl Req {
             Req::Playlist { .. } => "Loading playlist",
             Req::Library => "Loading library",
             Req::History => "Loading history",
+            Req::Artists => "Loading artists",
             Req::Account => "Account",
             Req::Channels => "Channels",
             Req::SwitchChannel { .. } => "Switching channel",
@@ -139,6 +154,7 @@ impl Req {
             Req::Collaboration(_) => "Loading collaboration",
             Req::SetCollaboration { .. } => "Collaboration",
             Req::SaveCollection { .. } => "Save to library",
+            Req::SetSubscribed { subscribe, .. } => if *subscribe { "Subscribe" } else { "Unsubscribe" },
             Req::SetCookie(_) => "Sign in",
             Req::Logout => "Sign out",
         }
@@ -210,11 +226,17 @@ impl Collection {
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct ArtistPage {
     pub id: String,
     pub name: String,
     pub banner: Vec<Thumb>,
-    pub subscribers: Option<u64>,
+    /// "1.84M monthly audience", as YouTube Music writes it.
+    pub audience: Option<String>,
+    /// "304K subscribers", as YouTube Music writes it.
+    pub subscribers: Option<String>,
+    /// Total artist channel views shown under the About section (e.g. "11,248,625,355 views").
+    pub views: Option<String>,
     pub description: Option<String>,
     pub top: Vec<Track>,
     /// "Top songs" playlist behind the shelf's Show all button.
@@ -222,6 +244,23 @@ pub struct ArtistPage {
     pub albums: Vec<Card>,
     pub playlists: Vec<Card>,
     pub similar: Vec<Card>,
+    /// The artist's square photo (the round avatar YouTube shows for them), for small
+    /// pictures; `banner` is the wide one and crops badly at that size.
+    pub photo: Vec<Thumb>,
+    /// The account's subscription to the artist; `None` when YouTube's page has no
+    /// subscribe button for them.
+    pub following: Option<ArtistSub>,
+}
+
+/// The account's YouTube subscription to an artist's channel: the same one the YouTube
+/// Music app and youtube.com share, so subscribing here shows up there.
+#[derive(Clone, Debug)]
+pub struct ArtistSub {
+    /// The channel to subscribe to (usually the artist page's own id).
+    pub channel: String,
+    pub subscribed: bool,
+    /// The `params` YouTube's Subscribe button sends; Unsubscribe goes without.
+    pub params: Option<String>,
 }
 
 pub struct Library {
@@ -256,6 +295,8 @@ pub enum Resp {
     ArtistPhoto { id: String, thumbs: Vec<Thumb> },
     Library(Library),
     History(Vec<Track>),
+    /// The artists the account follows.
+    Artists(Vec<Card>),
     Account { name: Option<String> },
     Channels(Channels),
     /// A `Req::SwitchChannel` is done (requests go as `epoch` now), or `error` says why it isn't.
@@ -284,6 +325,8 @@ pub enum Resp {
     LikedMany { video_ids: Vec<String>, failed: Vec<String>, like: bool },
     PlaylistCreated { id: String, songs: usize },
     PlaylistChanged { id: String, message: &'static str },
+    /// The account's subscription to the artist's channel `channel` is now `subscribed`.
+    Subscribed { channel: String, subscribed: bool },
     Collaboration(ytm::Collaboration),
     /// Playback for `generation` failed before reaching the audio engine.
     PlayError { generation: u64, msg: String },
@@ -309,6 +352,7 @@ impl Resp {
                 | Resp::Suggest { .. }
                 | Resp::Library(_)
                 | Resp::History(_)
+                | Resp::Artists(_)
                 | Resp::Account { .. }
                 | Resp::Channels(_)
                 | Resp::ServerQueue(_)
@@ -713,9 +757,16 @@ impl Backend {
                 Req::Playlist { id, load, stream: true } => self.stream_playlist(id, load, me).await?,
                 Req::Artist(id) => Resp::Artist(ytm::artist(api, &id).await?),
                 // The artist page's header picture, cropped square where it's drawn.
-                Req::ArtistPhoto(id) => Resp::ArtistPhoto { thumbs: ytm::artist(api, &id).await?.banner, id },
+                Req::ArtistPhoto(id) => {
+                    // The round avatar is the square photo, not the wide banner: a square
+                    // cut of that crops the face.
+                    let a = ytm::artist(api, &id).await?;
+                    let thumbs = if a.photo.is_empty() { a.banner } else { a.photo };
+                    Resp::ArtistPhoto { thumbs, id }
+                }
                 Req::Library => self.library().await?,
                 Req::History => Resp::History(ytm::history(api).await?),
+                Req::Artists => Resp::Artists(ytm::library_artists(api).await?),
                 Req::Account => {
                     let (name, _photo) = ytm::account(api).await?;
                     Resp::Account { name }
@@ -737,8 +788,8 @@ impl Backend {
                     None => return Ok(None),
                 },
                 Req::Lyrics(track) => {
-                    let video_id = track.id.clone();
-                    Resp::Lyrics { lyrics: self.lyrics_for(&track).await, video_id }
+                    self.handle_lyrics(&track).await;
+                    return Ok(None);
                 }
                 Req::Segments { video_id } => {
                     let segments = crate::sponsorblock::segments(&self.http(), &video_id).await?;
@@ -788,7 +839,7 @@ impl Backend {
                 Req::Radio { seed, song_of } => {
                     // A music video's radio is music videos; its song's is songs, as from the
                     // song itself. The lookup is shared with its play's (one per video).
-                    let song = self.song_version(&seed, song_of.as_ref(), PREFETCH_SONG_WAIT).await;
+                    let song = self.song_version(&seed, song_of.as_deref(), PREFETCH_SONG_WAIT).await;
                     let from = song.as_ref().map_or(&seed, |s| &s.id);
                     let mut tracks = ytm::radio(api, from, false, 50).await?;
                     // The radio starts with its seed, which is playing already.
@@ -808,11 +859,15 @@ impl Backend {
                     let path = self.download(&t, for_video).await?;
                     Resp::Downloaded { title: t.title, path }
                 }
-                Req::Play { video_id, generation, at, report, song_of, song, track } => match self.start_playback(&video_id, song_of.as_ref(), song, track.as_ref(), generation, at, report).await {
-                    Ok(()) => return Ok(None),
-                    Err(e) => Resp::PlayError { generation, msg: format!("{e:#}") },
-                },
-                Req::Prefetch { video_id, song_of, track } => {
+                Req::Play { video_id, generation, at, report, extra } => {
+                    let PlayExtra { song_of, song, track } = *extra;
+                    match self.start_playback(&video_id, song_of.as_ref(), song, track.as_ref(), generation, at, report).await {
+                        Ok(()) => return Ok(None),
+                        Err(e) => Resp::PlayError { generation, msg: format!("{e:#}") },
+                    }
+                }
+                Req::Prefetch { video_id, extra } => {
+                    let PrefetchExtra { song_of, track } = *extra;
                     self.prefetch(video_id, song_of, track).await?;
                     return Ok(None);
                 }
@@ -857,6 +912,10 @@ impl Backend {
                 Req::SaveCollection { id, save } => {
                     ytm::save_collection(api, &id, save).await?;
                     Resp::PlaylistChanged { id, message: if save { "Saved to library" } else { "Removed from library" } }
+                }
+                Req::SetSubscribed { channel, subscribe, params } => {
+                    ytm::set_subscribed(api, &channel, subscribe, params.as_deref()).await?;
+                    Resp::Subscribed { channel, subscribed: subscribe }
                 }
                 Req::SetCookie(input) => {
                     self.set_cookie(&input).await?;
@@ -961,43 +1020,88 @@ impl Backend {
         Ok(())
     }
 
-    async fn lyrics_for(&self, t: &Track) -> LyricsSet {
+    async fn handle_lyrics(&self, t: &Track) {
+        let video_id = t.id.clone();
+        if let Some(cached) = self.lyrics.get_recent(&video_id) {
+            let _ = self.tx.send(Resp::Lyrics { video_id, lyrics: cached });
+            self.wake();
+            return;
+        }
+
         let artist = t.artist_line();
+        let duration = match t.duration {
+            Some(d) => Some(d),
+            None => self.stream_duration(&t.id).await,
+        };
         let query = lyrics::Query {
             video_id: &t.id,
             song: &t.title,
             artist: &artist,
             album: t.album.as_ref().map(|a| a.name.as_str()),
-            duration: match t.duration {
-                Some(d) => Some(d),
-                None => self.stream_duration(&t.id).await,
-            },
+            duration,
         };
-        let mut set = self.lyrics.fetch(&query).await.unwrap_or_else(|e| {
-            log::warn!("lyrics failed: {e:#}");
-            LyricsSet::default()
-        });
-        // Dev hook: YTM_LYRICS_FAIL=<source key>[,<key>…] makes those sources come back empty.
-        if let Ok(fail) = std::env::var("YTM_LYRICS_FAIL") {
-            set.sources.retain(|l| !fail.split(',').any(|k| k.trim() == l.provider.key()));
+
+        // 1. Fetch fast sources (Unison + lrc.red) first in parallel (~200ms)
+        let fast_sources = self.lyrics.fetch_fast(&query).await;
+        let mut has_fast = false;
+        if !fast_sources.is_empty() {
+            let mut set = LyricsSet { sources: fast_sources };
+            set.sources.sort_by_key(|l| lyrics::Provider::ALL.iter().position(|p| *p == l.provider));
+            if let Ok(fail) = std::env::var("YTM_LYRICS_FAIL") {
+                set.sources.retain(|l| !fail.split(',').any(|k| k.trim() == l.provider.key()));
+            }
+            if !set.sources.is_empty() {
+                has_fast = true;
+                let _ = self.tx.send(Resp::Lyrics { video_id: video_id.clone(), lyrics: set.clone() });
+                self.wake();
+                self.lyrics.insert_recent(video_id.clone(), set);
+            }
         }
-        set
+
+        // 2. Fetch Better Lyrics SSE stream in continuation
+        let stream_res = self.lyrics.fetch_stream(&query).await;
+        let mut all_sources = self.lyrics.get_recent(&video_id).map(|s| s.sources).unwrap_or_default();
+        let mut updated = false;
+        match stream_res {
+            Ok(stream_sources) => {
+                for s in stream_sources {
+                    if !all_sources.iter().any(|existing| existing.provider == s.provider) {
+                        all_sources.push(s);
+                        updated = true;
+                    }
+                }
+            }
+            Err(e) => log::warn!("better lyrics failed: {e:#}"),
+        }
+
+        all_sources.sort_by_key(|l| lyrics::Provider::ALL.iter().position(|p| *p == l.provider));
+        let mut final_set = LyricsSet { sources: all_sources };
+        if let Ok(fail) = std::env::var("YTM_LYRICS_FAIL") {
+            final_set.sources.retain(|l| !fail.split(',').any(|k| k.trim() == l.provider.key()));
+        }
+
+        self.lyrics.insert_recent(video_id.clone(), final_set.clone());
+
+        if !has_fast || updated {
+            let _ = self.tx.send(Resp::Lyrics { video_id, lyrics: final_set });
+            self.wake();
+        }
     }
 
     /// The song's length from its stream, for a track listed without one (some home,
     /// radio and queue rows). Without a duration Better Lyrics only finds plain lyrics,
-    /// so wait for playback to resolve the stream, up to 15 s. The player's own duration
+    /// so wait for playback to resolve the stream briefly. The player's own duration
     /// counts too: starting a song clears it, and a restored session sets it.
     async fn stream_duration(&self, video_id: &str) -> Option<u32> {
-        for _ in 0..150 {
+        for _ in 0..5 {
             let ms = self.current.lock_unpoisoned().as_ref().filter(|(id, _)| id == video_id).map(|(_, s)| s.duration_ms);
             let ms = ms.filter(|ms| *ms > 0).or_else(|| self.audio.status.duration().map(|d| d.as_millis() as u64));
             if let Some(ms) = ms.filter(|ms| *ms > 0) {
                 return Some((ms / 1000) as u32);
             }
-            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            tokio::time::sleep(std::time::Duration::from_millis(60)).await;
         }
-        log::info!("lyrics: no duration for {video_id}");
+        log::debug!("lyrics: no duration for {video_id}");
         None
     }
 
@@ -1148,7 +1252,7 @@ impl Backend {
                 Some((this, listed, report)) => {
                     log::warn!("{listed}'s song won't start ({e}); playing the music video");
                     let _ = tx.send(Resp::PlayingAs { generation, listed: listed.clone(), song: None });
-                    this.request(Req::Play { video_id: listed, generation, at, report, song_of: None, song: None, track: None });
+                    this.request(Req::Play { video_id: listed, generation, at, report, extra: Box::default() });
                     wake();
                 }
                 None => {

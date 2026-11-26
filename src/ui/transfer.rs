@@ -1411,8 +1411,8 @@ pub fn settings_section(app: &mut App, ui: &mut Ui) {
         badge(ui, b);
         let x = b.right() + 16.0;
         let tw = rect.right() - x - 120.0;
-        ui.painter().text(pos2(x, rect.center().y - 10.0), Align2::LEFT_CENTER, "Transfer from Spotify", theme::semibold(14.5), theme::text());
-        let g = widgets::galley_wrapped(ui, "Copy your Liked Songs or any playlist into YouTube Music. It runs in the background, so you can keep listening.", theme::regular(12.5), theme::text_dim(), tw, 2);
+        ui.painter().text(pos2(x, rect.center().y - 10.0), Align2::LEFT_CENTER, "Transfer from Spotify", theme::semibold(15.5), theme::text());
+        let g = widgets::galley_wrapped(ui, "Copy your Liked Songs or any playlist into YouTube Music. It runs in the background, so you can keep listening.", theme::regular(11.0), theme::text_dim(), tw, 2);
         ui.painter().galley(pos2(x, rect.center().y + 2.0), g, theme::text_dim());
         let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect).layout(egui::Layout::right_to_left(egui::Align::Center)));
         open = pill(&mut child, "Open", None, true).clicked();

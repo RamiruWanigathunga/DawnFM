@@ -25,27 +25,13 @@ pub fn process(bytes: &[u8]) -> anyhow::Result<Art> {
     let (accent, dominant) = palette(&small);
     let mut px: Vec<[f32; 3]> = small.pixels().map(|p| [p[0] as f32, p[1] as f32, p[2] as f32]).collect();
 
-    // Kawarp's tint pass: pull near-black regions toward the accent so dark covers
-    // still produce a coloured backdrop instead of a black one.
-    let tint = [accent.r() as f32, accent.g() as f32, accent.b() as f32];
-    for p in &mut px {
-        let luma = (0.299 * p[0] + 0.587 * p[1] + 0.114 * p[2]) / 255.0;
-        let dark = 1.0 - smoothstep(0.0, 0.5, luma);
-        for c in 0..3 {
-            p[c] += (tint[c] - p[c]) * dark * 0.45;
-        }
-    }
-    // Four wide box-blur passes produce an ultra-smooth, creamy Gaussian blur effect.
+    // Four wide box-blur passes produce an ultra-smooth, creamy Gaussian blur effect
+    // that faithfully preserves the artwork's authentic colors, deep blacks, and natural gradients.
     for _ in 0..4 {
         px = box_blur(&px, SIZE as usize, 8);
     }
     let rgba = px.iter().flat_map(|p| [p[0] as u8, p[1] as u8, p[2] as u8, 255]).collect();
     Ok(Art { rgba, accent, dominant })
-}
-
-fn smoothstep(a: f32, b: f32, x: f32) -> f32 {
-    let t = ((x - a) / (b - a)).clamp(0.0, 1.0);
-    t * t * (3.0 - 2.0 * t)
 }
 
 fn box_blur(src: &[[f32; 3]], n: usize, r: usize) -> Vec<[f32; 3]> {
@@ -106,38 +92,7 @@ fn palette(img: &image::RgbImage) -> (Color32, Color32) {
         bins[idx].sum[2] += rgb[2];
     }
 
-    // 1. Most used color across the artwork (highest bin pixel count)
-    let mut max_count = 0;
-    let mut most_used = [128.0f32, 128.0f32, 128.0f32];
-    for bin in &bins {
-        if bin.count > max_count {
-            max_count = bin.count;
-            let c = bin.count as f32;
-            most_used = [bin.sum[0] / c, bin.sum[1] / c, bin.sum[2] / c];
-        }
-    }
-
-    // Manage dominant color: don't make it too dark or too white, keeping the artwork's hue/tint
-    let (mut dom_r, mut dom_g, mut dom_b) = (most_used[0] / 255.0, most_used[1] / 255.0, most_used[2] / 255.0);
-    let luma = 0.299 * dom_r + 0.587 * dom_g + 0.114 * dom_b;
-    if luma > 0.82 {
-        let factor = 0.82 / luma;
-        dom_r *= factor;
-        dom_g *= factor;
-        dom_b *= factor;
-    } else if luma < 0.16 {
-        let factor = 0.18 / luma.max(0.01);
-        dom_r = (dom_r * factor).min(1.0);
-        dom_g = (dom_g * factor).min(1.0);
-        dom_b = (dom_b * factor).min(1.0);
-    }
-    let dominant = Color32::from_rgb(
-        (dom_r * 255.0).round() as u8,
-        (dom_g * 255.0).round() as u8,
-        (dom_b * 255.0).round() as u8,
-    );
-
-    // 2. Vivid accent color for UI highlights, buttons, and progress bar
+    // 1. Vivid accent color for UI highlights, buttons, and progress bar
     let mut best_score = 0.0f32;
     let mut best_color = [200.0, 60.0, 80.0];
 
@@ -177,6 +132,56 @@ fn palette(img: &image::RgbImage) -> (Color32, Color32) {
     let avg = [sum[0] / total_pixels, sum[1] / total_pixels, sum[2] / total_pixels];
     let accent_raw = if best_score > 0.01 { best_color } else { avg };
     let accent = lift(accent_raw);
+
+    // 2. Most used color across the artwork (highest bin pixel count)
+    let mut max_count = 0;
+    let mut most_used = [128.0f32, 128.0f32, 128.0f32];
+    for bin in &bins {
+        if bin.count > max_count {
+            max_count = bin.count;
+            let c = bin.count as f32;
+            most_used = [bin.sum[0] / c, bin.sum[1] / c, bin.sum[2] / c];
+        }
+    }
+
+    // Manage dominant color: don't make it too dark or too white, keeping the artwork's hue/tint.
+    // If most_used is near-grayscale/black (sat < 0.15) but the artwork has a genuinely vivid accent, prefer accent_raw
+    let (most_r, most_g, most_b) = (most_used[0] / 255.0, most_used[1] / 255.0, most_used[2] / 255.0);
+    let most_max = most_r.max(most_g).max(most_b);
+    let most_min = most_r.min(most_g).min(most_b);
+    let most_sat = if most_max > 0.0 { (most_max - most_min) / most_max } else { 0.0 };
+
+    let (acc_r, acc_g, acc_b) = (accent_raw[0] / 255.0, accent_raw[1] / 255.0, accent_raw[2] / 255.0);
+    let acc_max = acc_r.max(acc_g).max(acc_b);
+    let acc_min = acc_r.min(acc_g).min(acc_b);
+    let accent_sat = if acc_max > 0.0 { (acc_max - acc_min) / acc_max } else { 0.0 };
+
+    let (mut dom_r, mut dom_g, mut dom_b) = if most_sat < 0.15 && accent_sat > 0.22 && best_score > 0.02 {
+        (acc_r, acc_g, acc_b)
+    } else {
+        (most_r, most_g, most_b)
+    };
+
+    let max_c = dom_r.max(dom_g).max(dom_b);
+    let min_c = dom_r.min(dom_g).min(dom_b);
+    let sat = if max_c > 0.0 { (max_c - min_c) / max_c } else { 0.0 };
+    let luma = 0.299 * dom_r + 0.587 * dom_g + 0.114 * dom_b;
+    if luma > 0.82 {
+        let factor = 0.82 / luma;
+        dom_r *= factor;
+        dom_g *= factor;
+        dom_b *= factor;
+    } else if luma < 0.16 && sat > 0.15 {
+        let factor = (0.18 / luma.max(0.01)).min(2.0);
+        dom_r = (dom_r * factor).min(1.0);
+        dom_g = (dom_g * factor).min(1.0);
+        dom_b = (dom_b * factor).min(1.0);
+    }
+    let dominant = Color32::from_rgb(
+        (dom_r * 255.0).round() as u8,
+        (dom_g * 255.0).round() as u8,
+        (dom_b * 255.0).round() as u8,
+    );
 
     (accent, dominant)
 }

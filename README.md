@@ -1,78 +1,61 @@
 <div align="center">
-  <img src="assets/icon/icon.png" width="128" alt="Dawn FM icon">
+  <img src="assets/icon/icon.png" width="120" alt="Dawn FM">
   <h1>Dawn FM</h1>
-  <p><strong>A fast, lightweight, native YouTube Music player for macOS</strong></p>
-  <p>No Electron, no web wrapper. Ultra-light on memory, instant playback, and native design.</p>
+  <p><strong>Fast, lightweight native YouTube Music player for macOS & Windows</strong></p>
+  <p>Pure Rust · No Electron · 120 FPS animations · Ultra-low memory</p>
 
   <p>
     <a href="https://github.com/wenujacodes/DawnFM/releases/latest"><img src="https://img.shields.io/github/v/release/wenujacodes/DawnFM?style=flat-square&color=a855f7&labelColor=0d1117" alt="Latest release"></a>
-    <img src="https://img.shields.io/badge/status-active%20development-22c55e?style=flat-square&labelColor=0d1117" alt="Active Development">
-    <img src="https://img.shields.io/badge/platform-macOS-333?style=flat-square&labelColor=0d1117" alt="Platforms">
+    <a href="https://github.com/wenujacodes/DawnFM/releases"><img src="https://img.shields.io/github/downloads/wenujacodes/DawnFM/total?style=flat-square&color=a855f7&labelColor=0d1117" alt="All-time Downloads"></a>
+    <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows-333?style=flat-square&labelColor=0d1117" alt="macOS | Windows">
     <a href="LICENSE"><img src="https://img.shields.io/github/license/wenujacodes/DawnFM?style=flat-square&color=333&labelColor=0d1117" alt="License: GPL-3.0"></a>
   </p>
 
-
-
-  <p>⭐ <em>Star the repo to help others discover Dawn FM!</em></p>
+  <p>
+    <a href="https://github.com/wenujacodes/DawnFM/releases/latest"><b>Download Releases</b></a> ·
+    <a href="#key-features">Features</a> ·
+    <a href="#installation">Install</a> ·
+    <a href="#build-from-source">Build</a>
+  </p>
 </div>
 
 ---
 
-## Screenshots
-
 <table>
   <tr>
-    <td width="50%"><img src="docs/readme/screenshot-1.jpeg" alt="Full player with artwork and lyrics"></td>
-    <td width="50%"><img src="docs/readme/screenshot-2.jpeg" alt="Browse view with shelves"></td>
-  </tr>
-  <tr>
-    <td align="center"><b>Player</b> — artwork, synced lyrics & controls</td>
-    <td align="center"><b>Browse</b> — music feeds, charts & library</td>
+    <td width="50%"><img src="docs/readme/screenshot-1.jpeg" alt="Player view"></td>
+    <td width="50%"><img src="docs/readme/screenshot-2.jpeg" alt="Browse view"></td>
   </tr>
 </table>
 
-## Features
+## Key Features
 
-- **Blazing Fast & Native**: Pure Rust UI using [egui](https://github.com/emilk/egui) and [rodio](https://github.com/RustAudio/rodio). Smooth 120 FPS animations with low CPU/RAM footprint.
-- **Synced Karaoke Lyrics**: Smooth syllable-by-syllable & timed lyrics with dynamic artwork-matched typography.
-- **Lossless & Spatial Audio**: Hi-Res Lossless and Dolby Atmos playback support with automatic fallback to YouTube audio.
-- **Seamless Playback**: Smart DJ-style automix, crossfade, and zero-latency track prefetching.
-- **Offline Downloads**: Save tracks and playlists locally for offline listening.
-- **Desktop Integrations**: macOS media keys, Now Playing widget, Dock menu, Discord Rich Presence, and Last.fm scrobbling.
-- **Library & Jam**: Google sign-in for full library synchronization and real-time Listen Together jam rooms.
-
-## Privacy
-
-Dawn FM is private and local-first:
-- **Zero Telemetry**: No analytics, user profiling, or third-party tracking scripts.
-- **Direct Connections**: All requests connect directly to YouTube Music and configured sources.
-- **Encrypted Storage**: Sensitive sign-in credentials are saved directly in your encrypted macOS Keychain.
+- **Native & Ultra-Fast**: Built with Rust, [egui](https://github.com/emilk/egui), and [rodio](https://github.com/RustAudio/rodio). Instant playback, near-zero idle resource usage, and smooth 120 FPS UI.
+- **Cross-Platform**: First-class support for **macOS** (Apple Silicon & Intel) and **Windows** (frameless custom titlebar, installer & portable zip).
+- **Karaoke Lyrics**: Timed syllable-by-syllable synchronized lyrics with artwork-adaptive blur and typography.
+- **Hi-Res Audio**: Lossless & Dolby Atmos playback with DJ automix and seamless crossfade.
+- **Offline & Full Screen**: Local song downloads, library sync via Google sign-in, and immersive auto-hiding full screen mode.
+- **Privacy First**: Zero telemetry, no analytics, direct YouTube Music connection, and credentials encrypted in OS keychain/credential manager.
 
 ## Installation
 
-1. Download the latest `.dmg` from [Releases](https://github.com/wenujacodes/DawnFM/releases/latest).
-2. Open the disk image and drag **Dawn FM** into `/Applications`.
-3. *First launch on macOS*: Right-click **Dawn FM** and select **Open** (or run `xattr -dr com.apple.quarantine "/Applications/Dawn FM.app"` in Terminal).
+Download the latest version from **[GitHub Releases](https://github.com/wenujacodes/DawnFM/releases/latest)**:
 
-## Building from source
+| Platform | Download | Note |
+|---|---|---|
+| **macOS** | `.dmg` (ARM64 / x64) | Drag to Applications. If prompted, click *Open Anyway* in System Settings. |
+| **Windows** | Setup `.exe` or Portable `.zip` | If SmartScreen appears, click *More info* → *Run anyway* (or file Properties → Unblock). |
 
-Requires the [Rust toolchain](https://rustup.rs/):
+## Build from Source
 
 ```sh
-git clone https://github.com/wenujacodes/DawnFM.git
-cd DawnFM
+git clone https://github.com/wenujacodes/DawnFM.git && cd DawnFM
 cargo build --release
-sh macos/bundle.sh target/release/dawnfm 2.2.0 out
+sh macos/bundle.sh target/release/dawnfm 2.4.4 out
 ```
 
-The signed bundle will be located at `out/Dawn FM.app`.
+## Credits
 
-## Contributing
-
-Please open an issue first, then a PR that closes it. See [CONTRIBUTING.md](CONTRIBUTING.md).
-
-## License & Credits
-
-- App icon designed by **[@RamiruWanigathunga](https://github.com/RamiruWanigathunga)**.
-- Based on [BitChord-PC-Continued](https://github.com/jackychan4891/BitChord-PC-Continued) by **[jackychan4891](https://github.com/jackychan4891)**.
-- Dawn FM is licensed under [GPL-3.0](LICENSE).
+- App icon: **[@RamiruWanigathunga](https://github.com/RamiruWanigathunga)**
+- Upstream base: [BitChord-PC-Continued](https://github.com/jackychan4891/BitChord-PC-Continued) by **[jackychan4891](https://github.com/jackychan4891)**
+- Licensed under [GPL-3.0](LICENSE)

@@ -254,13 +254,23 @@ impl App {
             Resp::ArtistPhoto { id, thumbs } => {
                 self.artist_photos.insert(id, thumbs);
             }
-            Resp::Artist(a) => {
+            Resp::Artist(mut a) => {
                 // A slow answer for an artist left meanwhile doesn't replace the one on screen.
                 if matches!(&self.page, Page::Artist(id) if *id != a.id) {
                     return;
                 }
                 if self.page == Page::Artist(a.id.clone()) {
                     self.loading = false;
+                }
+                let thumbs = if !a.banner.is_empty() {
+                    &a.banner
+                } else if !a.photo.is_empty() {
+                    &a.photo
+                } else {
+                    a.albums.first().map(|c| &c.thumbs[..]).unwrap_or(&[])
+                };
+                if !thumbs.is_empty() {
+                    self.request_artist_art(&a.id, thumbs);
                 }
                 let apple_key = format!("artist:{}", a.id);
                 let answered = self.apple_artists.get(&a.id).is_some_and(Option::is_some);
@@ -273,6 +283,9 @@ impl App {
                     }
                 }
                 let mut prefetch_urls = Vec::new();
+                if let Some(t) = crate::model::pick_thumb(&a.banner, 1440).or_else(|| a.banner.iter().max_by_key(|t| t.width)) {
+                    prefetch_urls.push(t.url.clone());
+                }
                 for card in a.albums.iter().chain(&a.playlists).take(8) {
                     if let Some(t) = crate::model::pick_thumb(&card.thumbs, 360) {
                         prefetch_urls.push(crate::model::sized(&t.url, 544));
@@ -285,6 +298,19 @@ impl App {
                 }
                 if !prefetch_urls.is_empty() {
                     crate::images::prefetch_thumbs(&self.backend, prefetch_urls);
+                }
+                // A page answered while a subscribe is in flight can carry the state from
+                // before it: keep the flipped button until YouTube confirms the change.
+                if let Some((channel, was)) = &self.optimistic_sub
+                    && let Some(sub) = a.following.as_mut().filter(|s| &s.channel == channel)
+                {
+                    sub.subscribed = self.artist.as_ref().filter(|p| p.id == a.id).and_then(|p| p.following.as_ref()).map_or(!*was, |s| s.subscribed);
+                }
+                self.artists_cache.insert(a.id.clone(), (a.clone(), std::time::Instant::now()));
+                if self.artists_cache.len() > 12 {
+                    if let Some(oldest) = self.artists_cache.iter().min_by_key(|(_, (_, t))| *t).map(|(k, _)| k.clone()) {
+                        self.artists_cache.remove(&oldest);
+                    }
                 }
                 self.artist = Some(a);
             }
@@ -301,7 +327,21 @@ impl App {
                 self.loading = false;
             }
             Resp::History(h) => {
+                if matches!(self.page, Page::Library(LibTab::Artists)) {
+                    for a in super::pages::played_artists(&h).into_iter().take(super::pages::HISTORY_ARTISTS_LIMIT) {
+                        if let Some(id) = a.id {
+                            if !self.artist_photos.contains_key(&id) {
+                                self.artist_photos.insert(id.clone(), Vec::new());
+                                self.backend.request(Req::ArtistPhoto(id));
+                            }
+                        }
+                    }
+                }
                 self.history = Some(h);
+                self.loading = false;
+            }
+            Resp::Artists(a) => {
+                self.library_artists = Some(a);
                 self.loading = false;
             }
             Resp::Downloaded { title, path } => {
@@ -336,6 +376,12 @@ impl App {
                 }
             }
             Resp::Art { key, art } => {
+                self.art_waiting.remove(&key);
+                self.art_colors.insert(key.clone(), art.dominant);
+                self.art_accents.insert(key.clone(), art.accent);
+                self.art_blurs.insert(key.clone(), art.rgba.clone());
+                self.art_blur_tex.remove(&key);
+                self.art_loaded_at.insert(key.clone(), now);
                 if self.mix_hold().is_none() && self.current_id() == Some(key.as_str()) {
                     self.accent = art.accent;
                     self.dominant = art.dominant;
@@ -354,6 +400,10 @@ impl App {
                 match info {
                     Some(artwork) => {
                         self.apple_missed.remove(&key);
+                        if let Some(logo) = &artwork.logo {
+                            let prefetch_url = logo.at_height(144);
+                            crate::images::prefetch_thumbs(&self.backend, vec![prefetch_url]);
+                        }
                         self.apple_artists.insert(id, Some(artwork));
                     }
                     None => {
@@ -451,6 +501,17 @@ impl App {
                 self.go(Page::Playlist(id));
             }
             Resp::PlaylistChanged { id, message } => self.on_playlist_changed(id, message),
+            Resp::Subscribed { channel, subscribed } => {
+                self.optimistic_sub = None;
+                if let Some(sub) = self.artist.as_mut().and_then(|a| a.following.as_mut()).filter(|s| s.channel == channel) {
+                    sub.subscribed = subscribed;
+                }
+                for (cached, _) in self.artists_cache.values_mut() {
+                    if let Some(sub) = cached.following.as_mut().filter(|s| s.channel == channel) {
+                        sub.subscribed = subscribed;
+                    }
+                }
+            }
             Resp::Collaboration(c) => {
                 if let Some(Dialog::Collaborate { id, info, busy, .. }) = &mut self.dialog
                     && *id == c.playlist_id
@@ -521,8 +582,8 @@ impl App {
     }
 
     /// Re-rank shelves on Home to elevate personalized mixes and maintain a balanced flow.
-    fn reorder_home_shelves(mut shelves: Vec<crate::model::Shelf>) -> Vec<crate::model::Shelf> {
-        if shelves.len() <= 2 {
+    fn reorder_home_shelves(mut shelves: Vec<crate::model::Shelf>, is_mood: bool) -> Vec<crate::model::Shelf> {
+        if is_mood || shelves.len() <= 2 {
             return shelves;
         }
         if let Some(pos) = shelves.iter().position(|s| s.title.eq_ignore_ascii_case("Mixed for you")) {
@@ -563,10 +624,19 @@ impl App {
         // The feed marks the active mood itself; keep the bar when it doesn't send chips.
         if chips.is_empty() {
             chips = self.home.as_ref().map(|h| h.chips.clone()).unwrap_or_default();
+        } else if !chips.iter().any(|c| c.selected) {
+            if let Some(prev) = &self.home {
+                for c in &mut chips {
+                    if let Some(p) = prev.chips.iter().find(|pc| pc.title == c.title) {
+                        c.selected = p.selected;
+                    }
+                }
+            }
         }
+        let is_mood = chips.iter().any(|c| c.selected);
         self.home = Some(HomeState {
             chips,
-            shelves: Self::reorder_home_shelves(page.shelves),
+            shelves: Self::reorder_home_shelves(page.shelves, is_mood),
             continuation: page.continuation,
             loading_more: None,
             picks_loading: false,
@@ -607,6 +677,7 @@ impl App {
 
     /// A playlist was edited, added to, removed from, saved or deleted; `message` says which.
     fn on_playlist_changed(&mut self, id: String, message: &'static str) {
+        self.optimistic_save = None;
         self.request_library();
         if message == "Playlist deleted" {
             // Its load is dropped too, and the queue stops waiting for it.
@@ -723,6 +794,25 @@ impl App {
         self.loading = false;
         self.home_loading = false;
         self.radio_pending = false;
+        // A save that failed didn't happen: take the optimistic entry back out.
+        if e.starts_with("Save to library failed")
+            && let Some((card, save)) = self.optimistic_save.take()
+        {
+            self.set_saved(&card, !save);
+        }
+        // Same for a subscription YouTube Music refused: the button goes back.
+        if (e.starts_with("Subscribe failed") || e.starts_with("Unsubscribe failed"))
+            && let Some((channel, was)) = self.optimistic_sub.take()
+        {
+            if let Some(sub) = self.artist.as_mut().and_then(|a| a.following.as_mut()).filter(|s| s.channel == channel) {
+                sub.subscribed = was;
+            }
+            for (cached, _) in self.artists_cache.values_mut() {
+                if let Some(sub) = cached.following.as_mut().filter(|s| s.channel == channel) {
+                    sub.subscribed = was;
+                }
+            }
+        }
         if let Some(h) = &mut self.home {
             h.loading_more = None;
             h.picks_loading = false;

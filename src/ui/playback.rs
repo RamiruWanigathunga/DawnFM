@@ -165,7 +165,7 @@ impl App {
         (self.play_songs && t.music_video && !self.jam.active()).then(|| t.clone())
     }
 
-    pub(super) fn playing(&self) -> bool {
+    pub fn playing(&self) -> bool {
         self.audio.status.playing.load(Ordering::Relaxed)
     }
 
@@ -208,7 +208,7 @@ impl App {
         self.resume_at = Some(Duration::from_millis(s.position_ms));
         self.listened_at = s.listened_at;
         self.request_art();
-        self.backend.request(Req::Lyrics(shown));
+        self.backend.request(Req::Lyrics(Box::new(shown)));
     }
 
     /// Ask for the queue YouTube Music keeps across devices when the app starts and
@@ -249,7 +249,7 @@ impl App {
         self.resume_at = Some(Duration::ZERO);
         self.resume_counts = true;
         self.request_art();
-        self.backend.request(Req::Lyrics(track.clone()));
+        self.backend.request(Req::Lyrics(Box::new(track.clone())));
         self.toast(format!("Picked up \"{}\" from your other device. Press play to carry on.", track.title));
     }
 
@@ -320,7 +320,17 @@ impl App {
         // A carried song version goes with its music video, which plays if the song won't.
         let song_of = if carried.is_none() && at.is_zero() { self.song_of(&track) } else { None };
         self.playing_as = carried.clone().map(|song| PlayingAs { generation: self.generation, listed: track.id.clone(), song });
-        self.backend.request(Req::Play { video_id: track.id.clone(), generation: self.generation, at, report, song_of, song: carried, track: Some(track.clone()) });
+        self.backend.request(Req::Play {
+            video_id: track.id.clone(),
+            generation: self.generation,
+            at,
+            report,
+            extra: Box::new(crate::backend::PlayExtra {
+                song_of,
+                song: carried,
+                track: Some(track.clone()),
+            }),
+        });
         if mixing {
             // The outgoing song keeps the art, lyrics and media info it still deserves.
         } else {
@@ -355,7 +365,7 @@ impl App {
         self.lyrics_extras = None;
         self.extras_asked = None;
         self.lyric_view.reset();
-        self.backend.request(Req::Lyrics(playing));
+        self.backend.request(Req::Lyrics(Box::new(playing)));
         self.segments = None;
         self.request_segments();
     }
@@ -367,7 +377,7 @@ impl App {
             && let Some(t) = self.current().cloned()
         {
             self.radio_pending = true;
-            self.backend.request(Req::Radio { song_of: self.song_of(&t), seed: t.id });
+            self.backend.request(Req::Radio { song_of: self.song_of(&t).map(Box::new), seed: t.id });
         }
     }
 
@@ -426,7 +436,14 @@ impl App {
     /// Fetch whatever plays after the current track so skipping is instant.
     pub(super) fn prefetch_next(&self) {
         if let Some(t) = self.queue.upcoming() {
-            self.backend.request(Req::Prefetch { video_id: t.id.clone(), song_of: self.song_of(t), track: Some(t.clone()) });
+            self.backend.request(Req::Prefetch {
+                video_id: t.id.clone(),
+                extra: Box::new(crate::backend::PrefetchExtra {
+                    song_of: self.song_of(t),
+                    track: Some(t.clone()),
+                }),
+            });
+            self.backend.request(Req::Lyrics(Box::new(t.clone())));
         }
     }
 

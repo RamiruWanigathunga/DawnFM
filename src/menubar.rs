@@ -4,7 +4,9 @@
 
 use std::sync::Mutex;
 
+#[cfg_attr(not(target_os = "macos"), allow(unused_imports))]
 use tray_icon::menu::accelerator::{Accelerator, Code, Modifiers};
+#[cfg_attr(not(target_os = "macos"), allow(unused_imports))]
 use tray_icon::menu::{AboutMetadata, Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu};
 
 use crate::sync::MutexExt;
@@ -53,6 +55,7 @@ fn item(id: &str, text: &str, mods: Modifiers, key: Option<Code>) -> MenuItem {
 /// Build the menu bar and route its clicks. Call once, on the main thread, once the
 /// app has finished launching. Also takes over the menu click handler for the
 /// tray's Show and Quit (there is one handler per process).
+#[cfg(target_os = "macos")]
 pub fn install(wake: impl Fn() + Send + Sync + Clone + 'static) {
     let cmd = Modifiers::META;
     let version = env!("CARGO_PKG_VERSION");
@@ -129,8 +132,6 @@ pub fn install(wake: impl Fn() + Send + Sync + Clone + 'static) {
     MenuEvent::set_event_handler(Some(move |e: MenuEvent| {
         let id = e.id.as_ref();
         match id {
-            "show" => crate::tray::push(crate::tray::Cmd::Show, &wake),
-            "quit" => crate::tray::push(crate::tray::Cmd::Quit, &wake),
             "mb-site" => open(REPO),
             "mb-issue" => open(&format!("{REPO}/issues/new")),
             _ => {
@@ -143,6 +144,9 @@ pub fn install(wake: impl Fn() + Send + Sync + Clone + 'static) {
     }));
     log::info!("menubar: installed");
 }
+
+#[cfg(not(target_os = "macos"))]
+pub fn install(_wake: impl Fn() + Send + Sync + Clone + 'static) {}
 
 fn open(url: &str) {
     let _ = std::process::Command::new("open").arg(url).spawn();

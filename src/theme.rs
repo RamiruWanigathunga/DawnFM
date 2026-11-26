@@ -8,7 +8,9 @@ use egui::{Color32, FontData, FontDefinitions, FontFamily, FontId};
 // ------------------------------------------------------------------ colours
 
 /// Base surface under the animated background (seen while it fades in).
-const BG: Color32 = Color32::from_rgb(11, 9, 11);
+const BG: Color32 = Color32::from_rgb(0x11, 0x11, 0x11);
+/// Sidebar surface colour in dark mode: #222629 (RGB: 34, 38, 41).
+pub const SIDEBAR_BG_DARK: Color32 = Color32::from_rgb(0x22, 0x26, 0x29);
 const TEXT: Color32 = Color32::from_rgb(242, 240, 245);
 const TEXT_DIM: Color32 = Color32::from_rgb(178, 172, 186);
 const TEXT_FAINT: Color32 = Color32::from_rgb(130, 124, 140);
@@ -63,14 +65,18 @@ pub fn bg() -> Color32 {
     if light() { BG_LIGHT } else { BG }
 }
 
-/// Menus and popups.
+/// Menus and popups: frosted glass blur style with translucent tint.
 pub fn menu_fill() -> Color32 {
-    if light() { Color32::WHITE } else { Color32::from_rgb(38, 34, 42) }
+    if light() {
+        Color32::from_rgba_premultiplied(246, 246, 248, 225)
+    } else {
+        Color32::from_rgba_premultiplied(0x11, 0x11, 0x11, 220)
+    }
 }
 
 /// Dialogs and cards that float over the page.
 pub fn surface_fill() -> Color32 {
-    if light() { Color32::from_rgb(252, 251, 253) } else { Color32::from_rgb(28, 24, 32) }
+    if light() { Color32::from_rgb(252, 251, 253) } else { Color32::from_rgb(0x11, 0x11, 0x11) }
 }
 
 /// Theme preset multiplier for every glass surface (f32 bits; 1.0 by default).
@@ -220,6 +226,117 @@ fn read_system_light() -> Option<bool> {
     None
 }
 
+/// Returns true if running on macOS higher than 15 (Darwin kernel >= 25, e.g. macOS 16 / 26+).
+pub fn is_macos_above_15() -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        static IS_ABOVE_15: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        *IS_ABOVE_15.get_or_init(|| {
+            let mut uts: libc::utsname = unsafe { std::mem::zeroed() };
+            if unsafe { libc::uname(&mut uts) } == 0 {
+                let rel = unsafe { std::ffi::CStr::from_ptr(uts.release.as_ptr()) }.to_str().unwrap_or_default();
+                let major: u32 = rel.split('.').next().and_then(|s| s.parse().ok()).unwrap_or(0);
+                major >= 25
+            } else {
+                false
+            }
+        })
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        false
+    }
+}
+
+/// Material constants and properties for macOS AppKit NSVisualEffectView.
+#[cfg(target_os = "macos")]
+pub mod macos_vibrancy {
+    pub const NS_VISUAL_EFFECT_MATERIAL_UNDER_WINDOW_BACKGROUND: isize = 21;
+    pub const NS_VISUAL_EFFECT_BLENDING_MODE_BEHIND_WINDOW: isize = 0;
+    pub const NS_VISUAL_EFFECT_STATE_FOLLOWS_WINDOW_ACTIVE_STATE: isize = 0;
+    pub const NS_VIEW_WIDTH_SIZABLE: usize = 2;
+    pub const NS_VIEW_HEIGHT_SIZABLE: usize = 16;
+    pub const NS_VIEW_AUTORESIZING_MASK: usize = NS_VIEW_WIDTH_SIZABLE | NS_VIEW_HEIGHT_SIZABLE;
+    pub const NS_WINDOW_BELOW: isize = -1;
+}
+
+/// On macOS, attaches an AppKit `NSVisualEffectView` using semantic material
+/// `NSVisualEffectMaterialUnderWindowBackground` and blending mode `BehindWindow` via `objc2`.
+/// The effect view is positioned behind the content view and resizes with the window.
+#[cfg(target_os = "macos")]
+pub fn apply_native_vibrancy() {
+    use objc2::msg_send;
+    use objc2::rc::Retained;
+    use objc2::runtime::AnyObject;
+    use objc2_foundation::NSRect;
+    use macos_vibrancy::*;
+
+    unsafe {
+        let app: Option<Retained<AnyObject>> = msg_send![objc2::class!(NSApplication), sharedApplication];
+        let Some(app) = app else {
+            log::warn!("vibrancy: NSApplication sharedApplication returned nil");
+            return;
+        };
+
+        let windows: Option<Retained<AnyObject>> = msg_send![&*app, windows];
+        let Some(windows) = windows else {
+            log::warn!("vibrancy: NSApplication windows returned nil");
+            return;
+        };
+
+        let count: usize = msg_send![&*windows, count];
+        if count == 0 {
+            log::warn!("vibrancy: no NSWindow instances found");
+            return;
+        }
+
+        let window: Option<Retained<AnyObject>> = msg_send![&*windows, objectAtIndex: 0usize];
+        let Some(window) = window else {
+            log::warn!("vibrancy: primary NSWindow is nil");
+            return;
+        };
+
+        let content_view: Option<Retained<AnyObject>> = msg_send![&*window, contentView];
+        let Some(content_view) = content_view else {
+            log::warn!("vibrancy: window contentView is nil");
+            return;
+        };
+
+        // Ensure native window shadow is active
+        let () = msg_send![&*window, setHasShadow: true];
+
+        let bounds: NSRect = msg_send![&*content_view, bounds];
+        let effect_alloc: *mut AnyObject = msg_send![objc2::class!(NSVisualEffectView), alloc];
+        if effect_alloc.is_null() {
+            log::warn!("vibrancy: failed to allocate NSVisualEffectView");
+            return;
+        }
+        let effect_view: *mut AnyObject = msg_send![effect_alloc, initWithFrame: bounds];
+        if effect_view.is_null() {
+            log::warn!("vibrancy: failed to initialize NSVisualEffectView");
+            return;
+        }
+
+        let () = msg_send![effect_view, setMaterial: NS_VISUAL_EFFECT_MATERIAL_UNDER_WINDOW_BACKGROUND];
+        let () = msg_send![effect_view, setBlendingMode: NS_VISUAL_EFFECT_BLENDING_MODE_BEHIND_WINDOW];
+        let () = msg_send![effect_view, setState: NS_VISUAL_EFFECT_STATE_FOLLOWS_WINDOW_ACTIVE_STATE];
+        let () = msg_send![effect_view, setAutoresizingMask: NS_VIEW_AUTORESIZING_MASK];
+
+        let superview: Option<Retained<AnyObject>> = msg_send![&*content_view, superview];
+        if let Some(superview) = superview {
+            let () = msg_send![&*superview, addSubview: effect_view, positioned: NS_WINDOW_BELOW, relativeTo: &*content_view];
+            log::info!("vibrancy: attached NSVisualEffectView behind contentView in superview");
+        } else {
+            let nil: *const AnyObject = std::ptr::null();
+            let () = msg_send![&*content_view, addSubview: effect_view, positioned: NS_WINDOW_BELOW, relativeTo: nil];
+            log::info!("vibrancy: attached NSVisualEffectView as backmost subview of contentView");
+        }
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn apply_native_vibrancy() {}
+
 /// The Windows accent colour, in the lighter shade Windows itself uses on dark
 /// surfaces (`AccentPalette`'s second entry), or the base accent if there's no palette.
 /// Read again every couple of seconds, so a new colour picked in Windows' settings
@@ -362,6 +479,7 @@ pub mod icon {
     pub const PIN: char = '\u{e259}';
     pub const PIN_OFF: char = '\u{e2b6}';
     pub const MAXIMIZE_2: char = '\u{e113}';
+    pub const SHARE: char = '\u{e19e}';
 }
 
 /// Inter (SIL OFL 1.1), the default face: regular / semibold / extra bold, subset to
@@ -819,6 +937,7 @@ pub fn install_style(ctx: &egui::Context) {
     ctx.global_style_mut(|s| {
         s.spacing.item_spacing = egui::vec2(8.0, 6.0);
         s.spacing.button_padding = egui::vec2(14.0, 7.0);
+        s.spacing.menu_margin = egui::Margin::symmetric(4, 5);
         s.spacing.scroll = egui::style::ScrollStyle::floating();
         // A very small give at the ends of every scroller (vendor/egui sets how small:
         // 5% of the view, a light pull), then a quick spring back. Coasting stays.
@@ -838,21 +957,25 @@ fn visuals() -> egui::Visuals {
     let p = crate::preset::active();
     let mut v = if light() { egui::Visuals::light() } else { egui::Visuals::dark() };
     v.panel_fill = bg();
-    // The built-in look's dark menus are the system's: a semi-translucent dark grey
-    // with a fine highlight border, matching native macOS menu appearance.
-    let mac_dark = p.id == crate::preset::DEFAULT_ID && !light();
-    v.window_fill = if mac_dark { Color32::from_rgba_premultiplied(50, 48, 52, 230) } else { surface_fill() };
+    v.window_fill = menu_fill();
     v.extreme_bg_color = glass(0.08);
     v.override_text_color = Some(text());
-    v.selection.bg_fill = with_alpha(p.accent(RED), if light() { 0.3 } else { 0.5 });
+    v.selection.bg_fill = p.accent(RED);
     v.hyperlink_color = text();
     v.interact_cursor = Some(egui::CursorIcon::PointingHand);
-    let pr = egui::CornerRadius::same(p.app.panel_radius.clamp(0.0, 32.0) as u8);
-    v.window_corner_radius = if mac_dark { egui::CornerRadius::same(8) } else { pr };
-    // The built-in look's menus are shaped like the system's.
-    v.menu_corner_radius = if p.id == crate::preset::DEFAULT_ID { egui::CornerRadius::same(6) } else { pr };
-    v.window_stroke = if mac_dark { egui::Stroke::new(0.5, Color32::from_white_alpha(40)) } else { egui::Stroke::new(1.0, glass(0.08)) };
-    v.popup_shadow = egui::epaint::Shadow { offset: [0, 8], blur: 28, spread: 0, color: shade(if light() { 0.16 } else { 0.5 }) };
+    v.window_corner_radius = egui::CornerRadius::same(10);
+    // The built-in look's menus are shaped like the system's with frosted glass corners.
+    v.menu_corner_radius = egui::CornerRadius::same(10);
+    v.window_stroke = if light() {
+        egui::Stroke::new(1.0, Color32::from_black_alpha(35))
+    } else {
+        egui::Stroke::new(1.0, glass(0.14))
+    };
+    v.popup_shadow = if light() {
+        egui::epaint::Shadow { offset: [0, 6], blur: 24, spread: 1, color: Color32::from_black_alpha(45) }
+    } else {
+        egui::epaint::Shadow { offset: [0, 8], blur: 30, spread: 1, color: Color32::from_black_alpha(160) }
+    };
     let r = egui::CornerRadius::same(p.chrome.radius.clamp(2.0, 28.0) as u8);
     for (w, fill) in [
         (&mut v.widgets.inactive, glass(0.08)),
@@ -869,4 +992,32 @@ fn visuals() -> egui::Visuals {
     v.widgets.noninteractive.bg_stroke = egui::Stroke::new(1.0, glass(0.08));
     v
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_macos_vibrancy_constants() {
+        #[cfg(target_os = "macos")]
+        {
+            use macos_vibrancy::*;
+            assert_eq!(NS_VISUAL_EFFECT_MATERIAL_UNDER_WINDOW_BACKGROUND, 21);
+            assert_eq!(NS_VISUAL_EFFECT_BLENDING_MODE_BEHIND_WINDOW, 0);
+            assert_eq!(NS_VISUAL_EFFECT_STATE_FOLLOWS_WINDOW_ACTIVE_STATE, 0);
+            assert_eq!(NS_VIEW_WIDTH_SIZABLE, 2);
+            assert_eq!(NS_VIEW_HEIGHT_SIZABLE, 16);
+            assert_eq!(NS_VIEW_AUTORESIZING_MASK, 18);
+            assert_eq!(NS_WINDOW_BELOW, -1);
+        }
+    }
+
+    #[test]
+    fn test_apply_native_vibrancy_does_not_panic() {
+        // In test environments where NSApplication may have zero windows or headless execution,
+        // apply_native_vibrancy must exit gracefully without panicking.
+        apply_native_vibrancy();
+    }
+}
+
 

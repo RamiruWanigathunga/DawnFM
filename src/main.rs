@@ -1,59 +1,12 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-mod appicon;
-mod apple;
-mod artist_signature;
-mod fullscreen;
-mod proxy;
-mod renderer;
-mod art;
-mod audio;
-mod backend;
-mod bidi;
-mod deeplink;
-mod dock;
-mod discord;
-mod dash;
-mod downloads;
-mod hires;
-mod images;
-mod jam;
-mod innertube;
-mod jsc;
-mod lastfm;
-mod login;
-mod lyrics;
-mod media;
-mod menubar;
-mod model;
-mod notify;
-mod motion;
-mod opus;
-mod preset;
-mod shader;
-mod sponsorblock;
-mod stream;
-mod sync;
-mod theme;
-mod transfer;
-mod translate;
-mod tray;
-mod turnstile;
-mod ui;
-mod update;
-mod webmusic;
-mod ytdlp;
-mod ytm;
-mod vault;
-mod ytmapi;
-
 use std::sync::{Arc, OnceLock};
 
 use crossbeam_channel::unbounded;
+use dawnfm::*;
 
-/// Window size on first launch, and the smallest it may be (points).
-pub const DEFAULT_SIZE: [f32; 2] = [1200.0, 780.0];
-pub const MIN_SIZE: [f32; 2] = [760.0, 480.0];
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 fn main() -> eframe::Result {
     // Child-process modes for the webview windows (see login.rs / turnstile.rs).
@@ -87,6 +40,7 @@ fn main() -> eframe::Result {
     }
     migrate_data();
     init_logging();
+    i18n::detect_and_set_locale();
     // Jam links on macOS come as an Apple Event, not argv: catch it before the loop starts.
     deeplink::install();
     update::clean_portable();
@@ -101,6 +55,7 @@ fn main() -> eframe::Result {
         .with_app_id("dawnfm")
         .with_inner_size(DEFAULT_SIZE)
         .with_min_inner_size(MIN_SIZE)
+        .with_transparent(true)
         // No grey title bar: the content runs to the top edge, under the window buttons.
         .with_decorations(!ui::custom_titlebar())
         .with_fullsize_content_view(true)
@@ -154,6 +109,8 @@ fn main() -> eframe::Result {
             dock::install(wake);
             // The Mac menu bar (Dawn FM, Controls, View, Window, Help).
             menubar::install(wake);
+            // Native macOS window vibrancy (NSVisualEffectView behind content view).
+            theme::apply_native_vibrancy();
             // Keep `ytm-rs:` links pointing at this copy; dev builds leave it alone
             // (even with YTM_UPDATE_FORCE).
             if update::installed() && !cfg!(debug_assertions) {
@@ -183,10 +140,19 @@ fn main() -> eframe::Result {
             let backend = backend::Backend::new(data_dir, resp_tx, audio.clone(), Arc::new(wake))?;
 
             egui_extras::install_image_loaders(&ctx);
-            ctx.add_bytes_loader(Arc::new(images::HttpImages::new(backend.clone())));
+            let http_images = Arc::new(images::HttpImages::new(backend.clone()));
+            images::register_http_images(http_images.clone());
+            ctx.add_bytes_loader(http_images);
 
             let (media_tx, media_rx) = unbounded();
-            let media = media::Media::new(None, media_tx, wake);
+            if let Some(h) = hwnd(cc) {
+                appicon::set_hwnd(h);
+                fullscreen::set_hwnd(h);
+                ui::set_titlebar_hwnd(h);
+                // eframe sets only the small icon; the taskbar button wants the big one.
+                appicon::set_window_icon(appicon::get(appicon::load(backend.data_dir())));
+            }
+            let media = media::Media::new(hwnd(cc), media_tx, wake);
 
             // Which GL driver this is, for reports of drawing problems.
             if let Some(gl) = &cc.gl {
@@ -227,6 +193,20 @@ fn main() -> eframe::Result {
     run
 }
 
+#[cfg(windows)]
+fn hwnd(cc: &eframe::CreationContext) -> Option<*mut std::ffi::c_void> {
+    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+    match cc.window_handle().ok()?.as_raw() {
+        RawWindowHandle::Win32(h) => Some(h.hwnd.get() as *mut std::ffi::c_void),
+        _ => None,
+    }
+}
+
+#[cfg(not(windows))]
+fn hwnd(_: &eframe::CreationContext) -> Option<*mut std::ffi::c_void> {
+    None
+}
+
 /// Log to stderr in debug builds; release builds have no console, so log to a file
 /// next to the settings (overwritten each launch).
 fn init_logging() {
@@ -251,54 +231,4 @@ fn init_logging() {
     builder.init();
 }
 
-/// The app's folder in Application Support, and the one it had before the rename.
-pub const DATA_NAME: &str = "DawnFM";
-/// Earlier names of that folder.
-const OLD_DATA_NAMES: [&str; 1] = ["ytm-rs"];
 
-/// Settings, caches and the sign-in: `data` beside the portable build's exe, else the
-/// user's app data. Dev hook: YTM_DATA_DIR runs on a separate profile.
-fn data_dir() -> std::path::PathBuf {
-    if let Some(d) = std::env::var_os("YTM_DATA_DIR") {
-        return d.into();
-    }
-    if let Some(dir) = update::portable_dir() {
-        return dir.join("data");
-    }
-    directories::ProjectDirs::from("", "", DATA_NAME).expect("no home directory").data_dir().to_path_buf()
-}
-
-/// First launch after the rename: copy the old folder's settings and caches into the
-/// new one (a copy, so another app still using the old folder keeps it).
-fn migrate_data() {
-    if std::env::var_os("YTM_DATA_DIR").is_some() || update::portable_dir().is_some() {
-        return;
-    }
-    let Some(new) = directories::ProjectDirs::from("", "", DATA_NAME) else { return };
-    let new = new.data_dir();
-    // The newest earlier folder that exists.
-    let Some(old) = OLD_DATA_NAMES.iter().filter_map(|n| directories::ProjectDirs::from("", "", n)).map(|d| d.data_dir().to_path_buf()).find(|d| d.is_dir()) else { return };
-    let old = old.as_path();
-    if new.exists() {
-        return;
-    }
-    fn copy(from: &std::path::Path, to: &std::path::Path) -> std::io::Result<()> {
-        std::fs::create_dir_all(to)?;
-        for e in std::fs::read_dir(from)?.flatten() {
-            let name = e.file_name();
-            // Old logs and half-done update downloads aren't worth keeping.
-            if name.to_string_lossy().ends_with(".log") || name == "updates" {
-                continue;
-            }
-            let (src, dst) = (e.path(), to.join(&name));
-            if e.file_type()?.is_dir() { copy(&src, &dst)? } else { std::fs::copy(&src, &dst).map(|_| ())? }
-        }
-        Ok(())
-    }
-    // Into a temporary folder first, so a failed copy is tried again next launch.
-    let tmp = new.with_extension("moving");
-    let _ = std::fs::remove_dir_all(&tmp);
-    if copy(old, &tmp).and_then(|_| std::fs::rename(&tmp, new)).is_err() {
-        let _ = std::fs::remove_dir_all(&tmp);
-    }
-}

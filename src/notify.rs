@@ -7,6 +7,7 @@
 //! macOS versions). The text goes in as script arguments, never into the script
 //! itself, so nothing in a title needs escaping. Failures are logged once.
 
+#[cfg_attr(not(target_os = "macos"), allow(unused_imports))]
 use std::sync::atomic::{AtomicBool, Ordering};
 
 /// Reads the title and the message from the arguments after the script.
@@ -29,19 +30,24 @@ pub fn text(title: &str, artist: &str) -> String {
     if artist.is_empty() { title.to_owned() } else { format!("{title} — {artist}") }
 }
 
-/// Show `body` as a notification from BitChord, without waiting for it.
+/// Show `body` as a notification from Dawn FM, without waiting for it.
 pub fn post(body: String) {
-    static WARNED: AtomicBool = AtomicBool::new(false);
-    std::thread::spawn(move || {
-        let ok = match std::process::Command::new("/usr/bin/osascript").args(args("Dawn FM", &body)).output() {
-            Ok(out) if out.status.success() => return,
-            Ok(out) => format!("{}: {}", out.status, String::from_utf8_lossy(&out.stderr).trim()),
-            Err(e) => e.to_string(),
-        };
-        if !WARNED.swap(true, Ordering::Relaxed) {
-            log::warn!("notify: couldn't show a notification ({ok})");
-        }
-    });
+    #[cfg(target_os = "macos")]
+    {
+        static WARNED: AtomicBool = AtomicBool::new(false);
+        std::thread::spawn(move || {
+            let ok = match std::process::Command::new("/usr/bin/osascript").args(args("Dawn FM", &body)).output() {
+                Ok(out) if out.status.success() => return,
+                Ok(out) => format!("{}: {}", out.status, String::from_utf8_lossy(&out.stderr).trim()),
+                Err(e) => e.to_string(),
+            };
+            if !WARNED.swap(true, Ordering::Relaxed) {
+                log::warn!("notify: couldn't show a notification ({ok})");
+            }
+        });
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = body;
 }
 
 #[cfg(test)]

@@ -39,7 +39,16 @@ impl Tray {
                     push(Cmd::Show, &w);
                 }
             }));
-            // Its menu's Show and Quit go through the menu bar's handler (`menubar`).
+            #[cfg(not(target_os = "macos"))]
+            {
+                let w = wake.clone();
+                tray_icon::menu::MenuEvent::set_event_handler(Some(move |e: tray_icon::menu::MenuEvent| match e.id.as_ref() {
+                    "show" => push(Cmd::Show, &w),
+                    "quit" => push(Cmd::Quit, &w),
+                    _ => {}
+                }));
+            }
+            #[cfg(target_os = "macos")]
             let _ = &wake;
         });
         Ok(Self { _icon: build(template_icon()?)? })
@@ -52,9 +61,13 @@ fn build(png: image::RgbaImage) -> anyhow::Result<TrayIcon> {
         &MenuItem::with_id("quit", "Quit", true, None),
     ])?;
     let (w, h) = png.dimensions();
-    Ok(TrayIconBuilder::new()
-        // Drawn by macOS in the menu bar's own colour, like other menu bar icons.
-        .with_icon_templated(tray_icon::Icon::from_rgba(png.into_raw(), w, h)?)
+    let builder = TrayIconBuilder::new();
+    #[cfg(target_os = "macos")]
+    let builder = builder.with_icon_templated(tray_icon::Icon::from_rgba(png.into_raw(), w, h)?);
+    #[cfg(not(target_os = "macos"))]
+    let builder = builder.with_icon(tray_icon::Icon::from_rgba(png.into_raw(), w, h)?);
+
+    Ok(builder
         .with_tooltip("Dawn FM")
         .with_menu(Box::new(menu))
         .with_menu_on_left_click(false)

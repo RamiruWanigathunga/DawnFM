@@ -124,7 +124,7 @@ const LONG_WORD: f64 = 1.5;
 const LINE_SYNC_DELAY: f64 = 0.05;
 /// Word groups longer than twice `blyrics-long-word-wrap-threshold` may break.
 const LONG_GROUP_CHARS: usize = 20;
-const USER_SCROLL_RESUME: f64 = 25.0;
+const USER_SCROLL_RESUME: f64 = 5.0;
 const DECO_ENTRY: f64 = 0.35;
 
 /// Resolved look for one frame: the extension's defaults, adjusted by the preset.
@@ -248,7 +248,7 @@ impl Cfg {
             scale: 0.95,
             active_scale: s.active_scale.max(1.0),
             padding: rem * 2.0 * (s.line_gap / 0.6).clamp(0.2, 3.0),
-            target_ratio: s.anchor.clamp(0.1, 0.7),
+            target_ratio: s.anchor.clamp(0.1, 0.7).min(0.28),
             centered,
             fill: s.fill,
             wave_crest: crest,
@@ -991,7 +991,12 @@ impl View {
             top = top.max(pos(lastl) + h(lastl) - view_h);
             top = top.min(pos(lastl)).min(pos(first));
             top = top.max(pos(anchor) + h(anchor) - view_h);
-            top = top.min(pos(anchor));
+            if anchor > 0 {
+                // Ensure the last played lyrics line (anchor - 1) remains visible above the active line.
+                top = top.min(pos(anchor - 1) - layout.pad_top.min(24.0));
+            } else {
+                top = top.min(pos(anchor));
+            }
             if let Some(y) = sung_y(anchor) {
                 // Keep the row being sung, and the one after it, in view.
                 top = top.max(pos(anchor) + y + line_h * 2.0 - view_h);
@@ -1117,11 +1122,23 @@ impl View {
                 let target = if hovered || on {
                     (1.0, 0.0)
                 } else {
-                    match first_active {
-                        Some(a) if i < a && !user => css.past.map_or((1.0, 0.0), |p| (p[0], p[1])),
-                        Some(a) if i > a => css.upcoming.map_or((1.0, 0.0), |p| (p[0], p[1])),
+                    let mut t = match first_active {
+                        Some(a) if i < a && !user => css.past.map_or((1.0, 0.0), |p| (p[0], (p[1] * 0.25).min(0.75))),
+                        Some(a) if i > a => css.upcoming.map_or((1.0, 0.0), |p| (p[0], (p[1] * 0.25).min(0.75))),
                         _ => (1.0, 0.0),
+                    };
+                    if let Some(a) = first_active {
+                        if i == a + 1 || i + 1 == a {
+                            t.0 = t.0.clamp(0.28, 0.35);
+                            t.1 = (t.1 * 0.2).min(0.35);
+                        } else if i + 2 == a || i == a + 2 {
+                            t.0 = t.0.min(0.25);
+                            t.1 = (t.1 * 0.3).min(0.55);
+                        } else {
+                            t.1 = t.1.min(0.75);
+                        }
                     }
+                    t
                 };
                 let line_ms = b.dur;
                 let (op_t, blur_t) = if hovered {
@@ -1145,6 +1162,12 @@ impl View {
                 let reveal = theme::anim_bool(&ctx, "lyr-reveal", user, 0.3);
                 let dim = if sung_now || rel == 0 {
                     cfg.inactive_alpha
+                } else if rel == 1 {
+                    0.35
+                } else if rel == -1 {
+                    0.32
+                } else if rel == -2 {
+                    0.22
                 } else if past {
                     lerp(cfg.past_alpha.unwrap_or(upcoming), upcoming, reveal)
                 } else {
@@ -1156,7 +1179,17 @@ impl View {
                     BlurScope::Past => past,
                     BlurScope::Upcoming => !past || reveal > 0.0,
                 };
-                let target = if cfg.blur > 0.0 && blur_on && !sung_now && rel != 0 { (cfg.blur * (1.0 + 0.35 * (dist - 1.0).clamp(0.0, 3.0))).min(9.0) } else { 0.0 };
+                let target = if rel == 0 || sung_now {
+                    0.0
+                } else if rel == 1 || rel == -1 {
+                    if cfg.blur > 0.0 && blur_on { (cfg.blur * 0.15).min(0.3) } else { 0.0 }
+                } else if rel == 2 || rel == -2 {
+                    if cfg.blur > 0.0 && blur_on { (cfg.blur * 0.25).min(0.5) } else { 0.0 }
+                } else if cfg.blur > 0.0 && blur_on {
+                    (cfg.blur * 0.35).min(0.75)
+                } else {
+                    0.0
+                };
                 let s = &mut self.states[i];
                 s.blur.set(target, f.now, 0.35, 0.0);
                 animating |= s.blur.moving(f.now);
@@ -1324,8 +1357,7 @@ impl View {
         }
         let view_h = rect.height();
         // `computeScrollPadding`
-        let first_h = blocks.first().map_or(0.0, |b| b.height);
-        let pad_top = (view_h * cfg.target_ratio - first_h / 2.0).max(0.0);
+        let pad_top = (view_h * 0.08).clamp(24.0, 48.0);
         let last_centre = blocks.iter().rev().find(|b| b.line.is_some()).map(|b| b.top + b.height / 2.0);
         let last_h = blocks.iter().rev().find(|b| b.line.is_some()).map_or(0.0, |b| b.height);
         let content = y;
@@ -1930,7 +1962,7 @@ struct Slot {
 
 const SLOT_STEP: usize = 64;
 /// Unused slots kept for the next glow or line to write into.
-const SPARE_SLOTS: usize = 8;
+const SPARE_SLOTS: usize = 2;
 
 impl Slot {
     fn uv(&self) -> Rect {
@@ -2048,11 +2080,21 @@ impl Glow {
                 painter.set(j.layer, Shape::mesh(mesh));
             }
         }
-        let gone: Vec<Slot> = (self.textures.extract_if(|_, (_, used)| now - *used >= 1.0).map(|(_, (s, _))| s))
-            .chain(self.lines.extract_if(|_, (.., used)| now - *used >= 4.0).map(|(_, (s, ..))| s))
+        let gone: Vec<Slot> = (self.textures.extract_if(|_, (_, used)| now - *used >= 0.5).map(|(_, (s, _))| s))
+            .chain(self.lines.extract_if(|_, (.., used)| now - *used >= 1.0).map(|(_, (s, ..))| s))
             .collect();
         for s in gone {
             self.recycle(s);
+        }
+        if self.lines.len() > 8 {
+            let mut line_times: Vec<(f64, (u64, usize))> = self.lines.iter().map(|(k, (.., used))| (*used, *k)).collect();
+            line_times.sort_unstable_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+            let to_remove = self.lines.len() - 8;
+            for (_, k) in line_times.into_iter().take(to_remove) {
+                if let Some((s, ..)) = self.lines.remove(&k) {
+                    self.recycle(s);
+                }
+            }
         }
     }
 
@@ -2448,6 +2490,38 @@ mod tests {
         // Far too big for a small image: not reused.
         let f = g.upload(&ctx, Some(d), img(10, 10), "t");
         assert_eq!(f.size, [64, 64]);
+    }
+
+    #[test]
+    fn off_screen_blur_textures_are_evicted_and_spare_slots_are_bounded() {
+        let ctx = egui::Context::default();
+        let painter = egui::Painter::new(ctx.clone(), egui::LayerId::background(), Rect::NOTHING);
+        let img = |w: usize, h: usize| ColorImage::filled([w, h], Color32::WHITE);
+        let mut g = Glow::default();
+
+        // 1. Verify spare slots are bounded by SPARE_SLOTS (2)
+        let mut slots = Vec::new();
+        for _ in 0..5 {
+            slots.push(g.upload(&ctx, None, img(64, 64), "test"));
+        }
+        for s in slots {
+            g.recycle(s);
+        }
+        assert_eq!(g.spare.len(), SPARE_SLOTS);
+
+        // 2. Insert 12 lines with varying timestamps
+        for i in 0..12 {
+            let s = g.upload(&ctx, None, img(64, 64), "test");
+            g.lines.insert((1, i), (s, (0, 0, 0), Rect::NOTHING, i as f64));
+        }
+        assert_eq!(g.lines.len(), 12);
+
+        // Run finish (which executes eviction of excess lines > 8 and aged lines)
+        g.finish(&ctx, &painter, Vec::new(), [1024, 1024], 1.0);
+
+        // Lines must be trimmed down to at most 8
+        assert!(g.lines.len() <= 8);
+        assert_eq!(g.spare.len(), SPARE_SLOTS);
     }
 
     #[test]

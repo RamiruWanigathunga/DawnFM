@@ -14,7 +14,7 @@ use tao::event::{Event, WindowEvent};
 use tao::event_loop::{ControlFlow, EventLoopBuilder};
 use tao::platform::run_return::EventLoopExtRunReturn;
 use tao::window::WindowBuilder;
-use wry::{PageLoadEvent, WebContext, WebViewBuilder};
+use wry::{WebContext, WebViewBuilder};
 
 /// Which sign-in.
 #[derive(Clone, Copy)]
@@ -133,8 +133,15 @@ impl<'a> BuildIn<'a> for WebViewBuilder<'a> {
     }
 }
 
+/// The cookies the browser would send to `url`.
+#[cfg(not(target_os = "macos"))]
+fn cookies_for(webview: &wry::WebView, url: &str) -> wry::Result<Vec<wry::cookie::Cookie<'static>>> {
+    webview.cookies_for_url(url)
+}
+
 /// On macOS wry's `cookies_for_url` keeps only cookies set for exactly the page's host, so
 /// Google's, set for `.youtube.com`, never came back and signing in never finished.
+#[cfg(target_os = "macos")]
 fn cookies_for(webview: &wry::WebView, url: &str) -> wry::Result<Vec<wry::cookie::Cookie<'static>>> {
     let host = url::Url::parse(url).ok().and_then(|u| u.host_str().map(str::to_owned)).unwrap_or_default();
     Ok(webview.cookies()?.into_iter().filter(|c| c.domain().is_some_and(|d| domain_matches(&host, d))).collect())
@@ -166,6 +173,7 @@ pub fn forget(profile_dir: &std::path::Path) {
 /// profile gets a data store of its own (macOS 14+; older ones share the default),
 /// named by an id kept in the folder. `forget` deletes the folder, so the next sign-in
 /// starts from a fresh store.
+#[cfg(target_os = "macos")]
 fn store_id(profile_dir: &std::path::Path) -> [u8; 16] {
     use sha1::Digest;
     let file = profile_dir.join("store-id");
@@ -190,10 +198,24 @@ fn run(site: Site, profile_dir: PathBuf) -> anyhow::Result<Outcome> {
         .with_inner_size(tao::dpi::LogicalSize::new(480.0, 720.0))
         .build(&event_loop)?;
 
+    if let Some(monitor) = window.primary_monitor().or_else(|| window.current_monitor()) {
+        let screen_size = monitor.size();
+        let scale = monitor.scale_factor();
+        let win_w = (480.0 * scale) as i32;
+        let win_h = (720.0 * scale) as i32;
+        let x = (screen_size.width as i32 - win_w) / 2;
+        let y = (screen_size.height as i32 - win_h) / 2;
+        window.set_outer_position(tao::dpi::PhysicalPosition::new(x.max(0), y.max(0)));
+    }
+
     let proxy = event_loop.create_proxy();
+    let proxy_nav = event_loop.create_proxy();
+    let proxy_retry = event_loop.create_proxy();
+    #[cfg(target_os = "macos")]
     let store = store_id(&profile_dir);
     let mut context = WebContext::new(Some(profile_dir));
     let builder = WebViewBuilder::new_with_web_context(&mut context);
+    #[cfg(target_os = "macos")]
     let builder = {
         use wry::WebViewBuilderExtDarwin;
         // WKWebView's own user agent has no "Version/… Safari/…", so YouTube Music takes it
@@ -207,8 +229,14 @@ fn run(site: Site, profile_dir: PathBuf) -> anyhow::Result<Outcome> {
     // the way it does Firefox and Safari, and the copy lasts.
     let webview = crate::proxy::webview(builder, matches!(site, Site::Google))
         .with_url(site.start())
-        .with_on_page_load_handler(move |ev, url| {
-            if matches!(ev, PageLoadEvent::Finished) && url.starts_with(site.home()) {
+        .with_navigation_handler(move |url| {
+            if url.starts_with(site.home()) {
+                let _ = proxy_nav.send_event(());
+            }
+            true
+        })
+        .with_on_page_load_handler(move |_ev, url| {
+            if url.starts_with(site.home()) {
                 let _ = proxy.send_event(());
             }
         })
@@ -218,23 +246,35 @@ fn run(site: Site, profile_dir: PathBuf) -> anyhow::Result<Outcome> {
     event_loop.run_return(|event, _, flow| {
         *flow = ControlFlow::Wait;
         match event {
-            Event::UserEvent(()) => match cookies_for(&webview, site.home()) {
-                Ok(cookies) => {
-                    // Landing there while signed out also fires this; only a signed-in
-                    // session has the session cookie (SAPISID, sp_dc).
-                    if let Some(c) = cookies.iter().find(|c| c.name() == site.session_cookie()) {
-                        outcome = Outcome::Cookie(match site {
-                            Site::Spotify => c.value().to_owned(),
-                            Site::Google => cookies.iter().map(|c| format!("{}={}", c.name(), c.value())).collect::<Vec<_>>().join("; "),
-                        });
+            Event::UserEvent(()) => {
+                // Immediately hide the window once redirected to the home site so
+                // the user never sees the web interface loading inside the dialog.
+                window.set_visible(false);
+                match cookies_for(&webview, site.home()) {
+                    Ok(cookies) => {
+                        // Landing there while signed out also fires this; only a signed-in
+                        // session has the session cookie (SAPISID, sp_dc).
+                        if let Some(c) = cookies.iter().find(|c| c.name() == site.session_cookie()) {
+                            outcome = Outcome::Cookie(match site {
+                                Site::Spotify => c.value().to_owned(),
+                                Site::Google => cookies.iter().map(|c| format!("{}={}", c.name(), c.value())).collect::<Vec<_>>().join("; "),
+                            });
+                            *flow = ControlFlow::Exit;
+                        } else {
+                            // If cookies are still synchronizing from the redirect, retry in a brief moment
+                            let retry = proxy_retry.clone();
+                            std::thread::spawn(move || {
+                                std::thread::sleep(std::time::Duration::from_millis(150));
+                                let _ = retry.send_event(());
+                            });
+                        }
+                    }
+                    Err(e) => {
+                        outcome = Outcome::Failed(format!("could not read cookies: {e}"));
                         *flow = ControlFlow::Exit;
                     }
                 }
-                Err(e) => {
-                    outcome = Outcome::Failed(format!("could not read cookies: {e}"));
-                    *flow = ControlFlow::Exit;
-                }
-            },
+            }
             Event::WindowEvent { event: WindowEvent::CloseRequested, .. } => *flow = ControlFlow::Exit,
             _ => {}
         }
