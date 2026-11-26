@@ -1404,17 +1404,41 @@ pub fn h_scroll<R>(ui: &mut Ui, id: &str, nudge: i32, count: usize, item_width: 
     (out.inner, reached_end)
 }
 
-/// The skeleton's light band sweeping across `r`, for anything still loading.
-pub fn shimmer_band(ui: &Ui, r: Rect, radius: f32, time: f64) {
-    let phase = ((time * 1.3) % 1.5) as f32 - 0.25;
-    let x = r.left() + (r.width() + 300.0) * phase - 150.0;
-    let band = Rect::from_min_max(pos2((x - 70.0).max(r.left()), r.top()), pos2((x + 70.0).min(r.right()), r.bottom()));
-    if band.width() > 0.0 {
-        ui.painter().rect_filled(band, radius, theme::glass(0.025));
-    }
+/// The pulsing skeleton placeholder color at `time` with an optional phase offset in seconds.
+///
+/// Smoothly breathes between subtle placeholder opacity (4.5%) and active pulse (9.5%),
+/// matching modern pulsing skeleton animations (e.g. Tailwind `animate-pulse` / shadcn).
+pub fn skeleton_color_at(time: f64, offset: f64) -> Color32 {
+    let phase = ((time - offset) * (std::f64::consts::TAU / 1.8)).cos() as f32;
+    let pulse = 0.5 - 0.5 * phase;
+    let a = 0.045 + 0.050 * pulse;
+    theme::glass(a)
 }
 
-/// Paint a remote image into `rect`: the skeleton's shimmer while it downloads (not
+/// The active skeleton color at `time`, smoothly pulsing between min and max opacity.
+pub fn skeleton_color(time: f64) -> Color32 {
+    skeleton_color_at(time, 0.0)
+}
+
+/// Paint a pulsing skeleton placeholder block inside `rect`.
+pub fn skeleton_rect(ui: &Ui, rect: Rect, radius: f32, time: f64) {
+    skeleton_rect_at(ui, rect, radius, time, 0.0);
+}
+
+/// Paint a pulsing skeleton placeholder block inside `rect` with a phase offset.
+pub fn skeleton_rect_at(ui: &Ui, rect: Rect, radius: f32, time: f64, offset: f64) {
+    if !ui.is_rect_visible(rect) || rect.width() <= 0.0 || rect.height() <= 0.0 {
+        return;
+    }
+    ui.painter().rect_filled(rect, radius, skeleton_color_at(time, offset));
+}
+
+/// Pulsing placeholder for anything still loading (replaces former shimmer band).
+pub fn shimmer_band(ui: &Ui, r: Rect, radius: f32, time: f64) {
+    skeleton_rect(ui, r, radius, time);
+}
+
+/// Paint a remote image into `rect`: a pulsing skeleton while it downloads (not
 /// egui's spinner), then a quick fade-in. One already loaded just shows.
 pub fn paint_remote(ui: &Ui, url: &str, rect: Rect, radius: f32, uv: Rect, tint: Color32) {
     const FADE: f64 = 0.14;
@@ -1439,8 +1463,8 @@ pub fn paint_remote(ui: &Ui, url: &str, rect: Rect, radius: f32, uv: Rect, tint:
         }
         Ok(egui::load::TexturePoll::Pending { .. }) => {
             ctx.data_mut(|d| d.insert_temp::<Option<f64>>(id, None));
-            shimmer_band(ui, rect, radius, now);
-            ctx.request_repaint_after(std::time::Duration::from_millis(16));
+            skeleton_rect(ui, rect, radius, now);
+            super::animate(ctx);
         }
         // A failed image keeps its plain placeholder.
         Err(_) => {}
@@ -1470,77 +1494,71 @@ pub fn paint_motion(ui: &Ui, rect: Rect, radius: f32, s: &MotionSprite) {
     ui.painter().add(shape);
 }
 
-/// Song rows still on their way, at the end of a list that's coming in.
+/// Song rows still on their way, with a smooth staggered pulsing animation.
 pub fn skeleton_rows(ui: &mut Ui, time: f64, rows: usize) {
-    for _ in 0..rows {
+    for i in 0..rows {
         let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), ROW_H), Sense::hover());
         if !ui.is_rect_visible(r) {
             continue;
         }
         let cy = r.center().y;
+        let offset = (i as f64) * 0.08;
         for (b, radius) in [
             (Rect::from_min_size(pos2(r.left() + 10.0, cy - 20.0), Vec2::splat(40.0)), theme::thumb_radius()),
             (Rect::from_min_size(pos2(r.left() + 64.0, cy - 13.0), vec2((r.width() * 0.3).min(260.0), 11.0)), 4.0),
             (Rect::from_min_size(pos2(r.left() + 64.0, cy + 4.0), vec2((r.width() * 0.18).min(160.0), 9.0)), 4.0),
             (Rect::from_min_size(pos2(r.right() - 56.0, cy - 5.0), vec2(36.0, 10.0)), 4.0),
         ] {
-            ui.painter().rect_filled(b, radius, theme::glass(0.06));
-            shimmer_band(ui, b, radius, time);
+            skeleton_rect_at(ui, b, radius, time, offset);
         }
-        ui.ctx().request_repaint_after(std::time::Duration::from_millis(16));
     }
+    super::animate(ui.ctx());
 }
 
-/// Shimmering placeholder blocks while a page loads.
+/// Pulsing placeholder blocks while a page loads.
 pub fn skeleton(ui: &mut Ui, time: f64, rows: usize, card: f32) {
-    let shimmer = |ui: &Ui, r: Rect, radius: f32| {
-        ui.painter().rect_filled(r, radius, theme::glass(0.06));
-        shimmer_band(ui, r, radius, time);
-    };
     let top = ui.cursor().top();
-    for _ in 0..rows {
+    for row in 0..rows {
         ui.add_space(26.0);
         let (t, _) = ui.allocate_exact_size(vec2(220.0, 26.0), Sense::hover());
-        shimmer(ui, t, 6.0);
+        let row_offset = (row as f64) * 0.12;
+        skeleton_rect_at(ui, t, 6.0, time, row_offset);
         ui.add_space(14.0);
         ui.horizontal(|ui| {
-            for _ in 0..8 {
+            for col in 0..8 {
                 let (r, _) = ui.allocate_exact_size(vec2(card, card + 50.0), Sense::hover());
-                shimmer(ui, Rect::from_min_size(r.min, Vec2::splat(card)), 8.0);
-                shimmer(ui, Rect::from_min_size(r.min + vec2(0.0, card + 12.0), vec2(card * 0.8, 12.0)), 4.0);
-                shimmer(ui, Rect::from_min_size(r.min + vec2(0.0, card + 32.0), vec2(card * 0.5, 10.0)), 4.0);
+                let col_offset = row_offset + (col as f64) * 0.04;
+                skeleton_rect_at(ui, Rect::from_min_size(r.min, Vec2::splat(card)), 8.0, time, col_offset);
+                skeleton_rect_at(ui, Rect::from_min_size(r.min + vec2(0.0, card + 12.0), vec2(card * 0.8, 12.0)), 4.0, time, col_offset);
+                skeleton_rect_at(ui, Rect::from_min_size(r.min + vec2(0.0, card + 32.0), vec2(card * 0.5, 10.0)), 4.0, time, col_offset);
             }
         });
     }
-    // Repaint smoothly at 60 fps while on screen
     if ui.is_rect_visible(Rect::from_x_y_ranges(ui.max_rect().x_range(), top..=ui.cursor().top())) {
-        ui.ctx().request_repaint_after(std::time::Duration::from_millis(16));
+        super::animate(ui.ctx());
     }
 }
 
-/// Shimmering card grid (wrapped) for Library pages (Playlists, Albums, Artists).
+/// Pulsing card grid (wrapped) for Library pages (Playlists, Albums, Artists).
 pub fn skeleton_grid(ui: &mut Ui, time: f64, card: f32, circle: bool, count: usize) {
-    let shimmer = |ui: &Ui, r: Rect, radius: f32| {
-        ui.painter().rect_filled(r, radius, theme::glass(0.06));
-        shimmer_band(ui, r, radius, time);
-    };
     let radius = if circle { card / 2.0 } else { theme::card_radius() };
     let top = ui.cursor().top();
     ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing = vec2(20.0, 22.0);
-        for _ in 0..count {
+        for i in 0..count {
             let (r, _) = ui.allocate_exact_size(vec2(card, card + 48.0), Sense::hover());
-            shimmer(ui, Rect::from_min_size(r.min, Vec2::splat(card)), radius);
+            let offset = (i as f64) * 0.04;
+            skeleton_rect_at(ui, Rect::from_min_size(r.min, Vec2::splat(card)), radius, time, offset);
             let title_w = card * 0.70;
             let title_x = if circle { (card - title_w) / 2.0 } else { 0.0 };
-            shimmer(ui, Rect::from_min_size(r.min + vec2(title_x, card + 10.0), vec2(title_w, 12.0)), 4.0);
+            skeleton_rect_at(ui, Rect::from_min_size(r.min + vec2(title_x, card + 10.0), vec2(title_w, 12.0)), 4.0, time, offset);
             if !circle {
-                shimmer(ui, Rect::from_min_size(r.min + vec2(0.0, card + 28.0), vec2(card * 0.45, 10.0)), 4.0);
+                skeleton_rect_at(ui, Rect::from_min_size(r.min + vec2(0.0, card + 28.0), vec2(card * 0.45, 10.0)), 4.0, time, offset);
             }
         }
     });
     if ui.is_rect_visible(Rect::from_x_y_ranges(ui.max_rect().x_range(), top..=ui.cursor().top())) {
-        ui.ctx().request_repaint_after(std::time::Duration::from_millis(16));
+        super::animate(ui.ctx());
     }
 }
 
