@@ -1301,32 +1301,68 @@ impl App {
         }
     }
 
-    pub(super) fn home_art_source(&self) -> Option<(String, String)> {
-        let h = self.home.as_ref()?;
+    fn home_art_candidates(&self) -> Vec<(String, String)> {
+        let Some(h) = self.home.as_ref() else { return Vec::new() };
+        let mut out = Vec::new();
         for s in &h.shelves {
-            let thumbs = match &s.kind {
+            let mut push_thumbs = |thumbs: &[crate::model::Thumb]| -> bool {
+                if let Some(t) = crate::model::pick_thumb(thumbs, 544).or_else(|| thumbs.first()) {
+                    let key = format!("home:{}", t.url);
+                    if !out.iter().any(|(k, _)| k == &key) {
+                        out.push((key, t.url.clone()));
+                    }
+                }
+                out.len() >= 8
+            };
+            match &s.kind {
                 crate::model::ShelfKind::Cards(cards) => {
-                    cards.iter().find_map(|c| (!c.thumbs.is_empty()).then_some(c.thumbs.as_slice()))
+                    for c in cards.iter().filter(|c| !c.thumbs.is_empty()).take(8) {
+                        if push_thumbs(&c.thumbs) {
+                            return out;
+                        }
+                    }
                 }
                 crate::model::ShelfKind::Songs { tracks, .. } => {
-                    tracks.iter().find_map(|t| (!t.thumbs.is_empty()).then_some(t.thumbs.as_slice()))
+                    for t in tracks.iter().filter(|t| !t.thumbs.is_empty()).take(8) {
+                        if push_thumbs(&t.thumbs) {
+                            return out;
+                        }
+                    }
                 }
-            };
-            if let Some(thumbs) = thumbs
-                && let Some(t) = crate::model::pick_thumb(thumbs, 544).or_else(|| thumbs.first())
-            {
-                return Some((format!("home:{}", t.url), t.url.clone()));
             }
         }
-        None
+        out
+    }
+
+    fn is_vibrant_art(&self, key: &str) -> bool {
+        let Some(&dom) = self.art_colors.get(key) else { return false };
+        let (_, s, v) = rgb_to_hsv(dom.r() as f32 / 255.0, dom.g() as f32 / 255.0, dom.b() as f32 / 255.0);
+        // Skip white/pale, near-black, or neutral grayscale covers when picking a vibrant backdrop.
+        s >= 0.22 && v >= 0.14 && !(v > 0.85 && s < 0.30)
+    }
+
+    pub(super) fn home_art_source(&self) -> Option<(String, String)> {
+        let candidates = self.home_art_candidates();
+        if let Some(vibrant) = candidates.iter().find(|(k, _)| self.is_vibrant_art(k)) {
+            return Some(vibrant.clone());
+        }
+        candidates.into_iter().next()
     }
 
     pub(super) fn request_home_art(&mut self) {
-        if let Some((key, url)) = self.home_art_source() {
-            if !self.art_colors.contains_key(&key) && !self.art_waiting.contains(&key) {
+        let candidates = self.home_art_candidates();
+        for (key, url) in candidates {
+            if self.art_colors.contains_key(&key) {
+                if self.is_vibrant_art(&key) {
+                    return;
+                }
+                continue;
+            }
+            if !self.art_waiting.contains(&key) {
                 self.art_waiting.insert(key.clone());
                 self.backend.request(crate::backend::Req::Art { key, url });
             }
+            return;
         }
     }
 }
@@ -1506,7 +1542,7 @@ impl App {
 
             let ys = [0.0f32, 0.18, 0.38, 0.60, 0.82, 1.0];
             let alphas = match (is_home, light) {
-                (true, true) => [0.30f32, 0.22, 0.13, 0.06, 0.02, 0.0],
+                (true, true) => [0.38f32, 0.29, 0.18, 0.08, 0.02, 0.0],
                 (true, false) => [0.56f32, 0.44, 0.25, 0.11, 0.03, 0.0],
                 (false, true) => [0.20f32, 0.15, 0.08, 0.03, 0.01, 0.0],
                 (false, false) => [0.52f32, 0.42, 0.22, 0.08, 0.02, 0.0],
@@ -1553,13 +1589,22 @@ impl App {
 
         // Warm backlit ambient halo behind the artwork, softly touching the sidebar too.
         if let Some(&acc) = self.art_accents.get(&key) {
+            if is_home && light {
+                let top_pastel = theme::lerp_color(acc, Color32::WHITE, 0.22);
+                let top_band = egui::Rect::from_min_max(area.min, egui::pos2(area.right(), (area.top() + 360.0).min(area.bottom())));
+                shell::vgradient(&p, top_band, theme::with_alpha(top_pastel, 0.24 * fade), Color32::TRANSPARENT);
+            }
             let breath = if self.playing() { 1.0 + 0.06 * (now as f32 * 0.8).sin() } else { 1.0 };
             let warm_acc = theme::lerp_color(acc, Color32::from_rgb(255, 224, 196), 0.16);
             let center = egui::pos2(area.left() + shell::SIDEBAR_W + 190.0, area.top() + 190.0);
             let rad_x = (area.width() * 0.46).clamp(320.0, 540.0);
             let rad_y = 310.0;
             let mut halo = egui::Mesh::default();
-            let halo_alpha = (if light { 0.08 } else { 0.17 }) * fade * breath;
+            let halo_alpha = (if light {
+                if is_home { 0.22 } else { 0.08 }
+            } else {
+                0.17
+            }) * fade * breath;
             halo.colored_vertex(center, theme::with_alpha(warm_acc, halo_alpha));
             const SEGS: usize = 24;
             for i in 0..=SEGS {
