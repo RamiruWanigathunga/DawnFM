@@ -443,7 +443,7 @@ pub enum CircleGlyph {
 
 /// The accent colour the app set for this frame.
 fn app_accent(ui: &Ui) -> Color32 {
-    ui.ctx().data(|d| d.get_temp::<Color32>(egui::Id::unique("accent"))).unwrap_or(theme::RED)
+    ui.ctx().data(|d| d.get_temp::<Color32>(egui::Id::unique("accent"))).unwrap_or(theme::BLUE)
 }
 
 /// "ALBUM · 2024" / "PLAYLIST · 42 SONGS · 2 HR 10 MIN": the line under the artist.
@@ -1798,31 +1798,35 @@ pub fn artist(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
 
     let artist_target = Target::Artist(id.to_owned());
 
-    // Top-right Share & More segmented pill on the hero banner
-    let pill_rect = Rect::from_min_size(pos2(hero.right() - 90.0, hero.top() + 18.0), vec2(70.0, 34.0));
-    share_more_pill(ui, pill_rect, "artist", &artist_target, acts, |ui, acts, target| {
-        let mut any = false;
-        if let Some(sub) = &a.following {
-            let label = if sub.subscribed { "Subscribed" } else { "Subscribe" };
-            let icon = if sub.subscribed { Some(icon::CHECK) } else { None };
-            if widgets::menu_action(ui, icon, label) {
-                acts.push(Action::SetSubscribed(!sub.subscribed));
-            }
-            any = true;
-        }
-        if !top.is_empty() {
-            if widgets::menu_action(ui, Some(icon::RADIO), "Start Radio") {
-                acts.push(Action::Radio(top[0].clone()));
-            }
-            any = true;
-        }
-        if any {
-            widgets::menu_separator(ui);
-        }
-        if widgets::menu_action(ui, Some(icon::SHARE), "Share") {
-            acts.push(Action::Share(target.clone()));
-        }
-    });
+    // Top-right frosted circular Share button on the hero banner
+    let share_rect = Rect::from_min_size(pos2(hero.right() - 54.0, hero.top() + 18.0), vec2(34.0, 34.0));
+    let light_hero = theme::light();
+    let share_shadow = if light_hero { 18 } else { 35 };
+    ui.painter().circle_filled(share_rect.center() + vec2(0.0, 1.0), 17.0, Color32::from_black_alpha(share_shadow));
+    let share_resp = named(ui.interact(share_rect, ui.scope_id().with(("artist", "share")), Sense::click()), "Share")
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
+        .on_hover_text("Share");
+    let share_fill = if light_hero {
+        if share_resp.hovered() { Color32::from_black_alpha(26) } else { Color32::from_black_alpha(15) }
+    } else if share_resp.hovered() {
+        theme::glass(0.20)
+    } else {
+        theme::glass(0.12)
+    };
+    let share_stroke = if light_hero { Color32::from_black_alpha(25) } else { theme::glass(0.16) };
+    ui.painter().circle_filled(share_rect.center(), 17.0, share_fill);
+    ui.painter().circle_stroke(share_rect.center(), 17.0, egui::Stroke::new(1.0, share_stroke));
+    let share_fg = if light_hero {
+        Color32::from_rgb(0x18, 0x14, 0x1c)
+    } else if share_resp.hovered() {
+        Color32::WHITE
+    } else {
+        theme::lerp_color(theme::text_dim(), theme::text(), 0.5)
+    };
+    widgets::icon_at(ui, share_rect.center(), icon::SHARE, 15.0, share_fg);
+    if share_resp.clicked() {
+        acts.push(Action::Share(artist_target.clone()));
+    }
 
     let (below, _) = ui.allocate_exact_size(vec2(w, 58.0), Sense::hover());
     let base_x = hero.left() + 28.0;
@@ -3089,7 +3093,7 @@ fn seconds_slider(ui: &mut Ui, v: &mut u32, range: std::ops::RangeInclusive<u32>
     resp.widget_info(|| egui::WidgetInfo::slider(ui.is_enabled(), value as f64, name));
     let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
     let h = if resp.hovered() || resp.dragged() { 1.0 } else { 0.0 };
-    let accent = ui.ctx().data(|d| d.get_temp::<Color32>(egui::Id::unique("accent"))).unwrap_or(theme::RED);
+    let accent = ui.ctx().data(|d| d.get_temp::<Color32>(egui::Id::unique("accent"))).unwrap_or(theme::BLUE);
     let t = (value - lo) as f32 / (hi - lo) as f32;
     let knob = pos2(egui::lerp(track.left()..=track.right(), t), track.center().y);
     ui.painter().rect_filled(track, 2.0, theme::glass(0.15));
