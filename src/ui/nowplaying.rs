@@ -1291,7 +1291,7 @@ fn sleep_options(app: &mut App, ui: &mut Ui) {
     let resp = named(resp, &t!("sleep_timer")).on_hover_cursor(egui::CursorIcon::PointingHand);
     let over = resp.hovered();
     if over {
-        let accent = ui.ctx().data(|d| d.get_temp::<Color32>(egui::Id::unique("accent"))).unwrap_or(theme::RED);
+        let accent = ui.ctx().data(|d| d.get_temp::<Color32>(egui::Id::unique("accent"))).unwrap_or(theme::BLUE);
         ui.painter().rect_filled(rect, 4.0, accent);
     }
     let color = if over {
@@ -1346,7 +1346,7 @@ fn sleep_row(ui: &mut Ui, label: &str, current: bool) -> bool {
     let resp = named(resp, label).on_hover_cursor(egui::CursorIcon::PointingHand);
     let over = resp.hovered();
     if over {
-        let accent = ui.ctx().data(|d| d.get_temp::<Color32>(egui::Id::unique("accent"))).unwrap_or(theme::RED);
+        let accent = ui.ctx().data(|d| d.get_temp::<Color32>(egui::Id::unique("accent"))).unwrap_or(theme::BLUE);
         ui.painter().rect_filled(rect, 4.0, accent);
     }
     let color = if over {
@@ -1542,7 +1542,7 @@ fn source_row(ui: &mut Ui, name: &str, sync: SyncKind, current: bool) -> bool {
     let resp = named(resp, &format!("Lyrics source {name}")).on_hover_cursor(egui::CursorIcon::PointingHand);
     let over = resp.hovered();
     if over {
-        let accent = ui.ctx().data(|d| d.get_temp::<Color32>(egui::Id::unique("accent"))).unwrap_or(theme::RED);
+        let accent = ui.ctx().data(|d| d.get_temp::<Color32>(egui::Id::unique("accent"))).unwrap_or(theme::BLUE);
         ui.painter().rect_filled(rect, 4.0, accent);
     }
     let fg = if over {
@@ -1570,7 +1570,7 @@ fn switch_row(ui: &mut Ui, label: &str, on: &mut bool) {
     if resp.clicked() {
         *on = !*on;
     }
-    let accent = ui.ctx().data(|d| d.get_temp::<Color32>(egui::Id::unique("accent"))).unwrap_or(theme::RED);
+    let accent = ui.ctx().data(|d| d.get_temp::<Color32>(egui::Id::unique("accent"))).unwrap_or(theme::BLUE);
     let h = theme::anim_bool(ui.ctx(), resp.id.with("h"), resp.hovered(), 0.12);
     if h > 0.0 {
         ui.painter().rect_filled(rect, 4.0, accent);

@@ -808,7 +808,7 @@ impl App {
             prefer_atmos,
             audio_info: None,
             art_changed: -10.0,
-            accent: theme::RED,
+            accent: theme::BLUE,
             dominant: Color32::from_rgb(0x18, 0x14, 0x1c),
             theme_id: crate::preset::DEFAULT_ID.to_owned(),
             chrome_applied: None,

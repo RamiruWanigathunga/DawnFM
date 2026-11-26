@@ -335,7 +335,7 @@ pub fn chip(ui: &mut Ui, label: &str, selected: bool) -> Response {
     let s = theme::anim_bool(ui.ctx(), resp.id.with("s"), selected, 0.2);
     let radius = rect.height() / 2.0;
     let light = theme::light();
-    let accent = ui.ctx().data(|d| d.get_temp::<Color32>(egui::Id::unique("accent"))).unwrap_or(theme::RED);
+    let accent = ui.ctx().data(|d| d.get_temp::<Color32>(egui::Id::unique("accent"))).unwrap_or(theme::BLUE);
 
     // Soft drop shadow (subtle accent glow when selected)
     let shadow_alpha = if light { 20 } else { 38 };
@@ -374,8 +374,8 @@ pub fn chip(ui: &mut Ui, label: &str, selected: bool) -> Response {
 /// resizing the window doesn't fetch a new size every frame and small covers (rows,
 /// sidebar, player bar) share one download.
 fn fetch_px(px: u32) -> u32 {
-    const STEPS: [u32; 9] = [60, 120, 180, 240, 360, 544, 720, 960, 1200];
-    STEPS.into_iter().find(|&s| s >= px).unwrap_or(1200)
+    const STEPS: [u32; 10] = [60, 120, 180, 240, 360, 544, 720, 960, 1200, 1600];
+    STEPS.into_iter().find(|&s| s >= px).unwrap_or(1600)
 }
 
 /// How long the window's size must hold still before it counts as resized.
@@ -403,11 +403,11 @@ fn resizing(ctx: &egui::Context) -> bool {
 fn steady_url(ctx: &egui::Context, base: &str, px: u32) -> String {
     let want = sized(base, px);
     let id = egui::Id::unique(("cover-shown", base));
-    // Mid-resize, a cover that has a picture keeps it: every size step crossed would
-    // otherwise start a load, a decode and a texture upload for each cover on the page,
-    // and dragging the window edge would stutter. They catch up once it settles.
+    // Mid-resize, a cover that has a picture keeps it cleanly — but never stretch a tiny
+    // thumbnail (< 544px) into a fullscreen / large album cover.
     if resizing(ctx)
         && let Some(shown) = ctx.data(|d| d.get_temp::<u32>(id))
+        && (shown >= 544 || px <= 360)
     {
         return sized(base, shown);
     }
@@ -417,7 +417,7 @@ fn steady_url(ctx: &egui::Context, base: &str, px: u32) -> String {
         return want;
     }
     match ctx.data(|d| d.get_temp::<u32>(id)) {
-        Some(shown) if shown != px => sized(base, shown),
+        Some(shown) if shown != px && (shown >= 544 || px <= 360) => sized(base, shown),
         _ => want,
     }
 }
@@ -444,7 +444,7 @@ pub fn paint_cover_xfade_px(ui: &Ui, site: egui::Id, rect: Rect, thumbs: &[Thumb
     }
     let px = fetch_px(px);
     ui.painter().rect_filled(rect, radius, theme::glass(0.07));
-    let Some(t) = pick_thumb(thumbs, px.min(544)) else {
+    let Some(t) = pick_thumb(thumbs, px) else {
         icon_at(ui, rect.center(), icon::MUSIC, rect.width() * 0.3, theme::text_faint());
         return;
     };
@@ -467,7 +467,7 @@ pub fn paint_cover_px(ui: &Ui, rect: Rect, thumbs: &[Thumb], radius: f32, zoom: 
     }
     let px = fetch_px(px);
     ui.painter().rect_filled(rect, radius, theme::glass(0.07));
-    let Some(t) = pick_thumb(thumbs, px.min(544)) else {
+    let Some(t) = pick_thumb(thumbs, px) else {
         icon_at(ui, rect.center(), icon::MUSIC, rect.width() * 0.3, theme::text_faint());
         return;
     };
@@ -505,7 +505,7 @@ pub fn paint_cover_fade(ui: &Ui, site: egui::Id, rect: Rect, thumbs: &[Thumb], p
         return;
     }
     let px = fetch_px(px);
-    let Some(t) = pick_thumb(thumbs, px.min(544)) else { return };
+    let Some(t) = pick_thumb(thumbs, px) else { return };
     let url = steady_url(ui.ctx(), &t.url, px);
     let ready = matches!(egui::Image::new(&url).load_for_size(ui.ctx(), rect.size()), Ok(egui::load::TexturePoll::Ready { .. }));
     let uv = t.square_uv();
@@ -541,7 +541,7 @@ fn fade_mesh(ui: &Ui, url: &str, rect: Rect, uv: Rect, tint: Color32, fade_from:
 /// Start loading a cover at `px` without drawing it, so it's ready when it appears.
 pub fn preload_cover(ctx: &egui::Context, thumbs: &[Thumb], px: u32) {
     let px = fetch_px(px);
-    if let Some(t) = pick_thumb(thumbs, px.min(544)) {
+    if let Some(t) = pick_thumb(thumbs, px) {
         let _ = egui::Image::new(sized(&t.url, px)).load_for_size(ctx, Vec2::splat(px as f32));
     }
 }
@@ -553,7 +553,7 @@ pub fn preload_cover(ctx: &egui::Context, thumbs: &[Thumb], px: u32) {
 pub fn paint_disc(ui: &Ui, site: egui::Id, center: Pos2, r: f32, thumbs: &[Thumb], angle: f32, tint: Color32, px: u32) {
     ui.painter().circle_filled(center, r, theme::glass(0.07));
     let px = fetch_px(px);
-    let Some(t) = pick_thumb(thumbs, px.min(544)) else { return };
+    let Some(t) = pick_thumb(thumbs, px) else { return };
     let url = steady_url(ui.ctx(), &t.url, px);
     let ready = matches!(egui::Image::new(&url).load_for_size(ui.ctx(), Vec2::splat(r * 2.0)), Ok(egui::load::TexturePoll::Ready { .. }));
     let uv = t.square_uv();
@@ -776,7 +776,7 @@ fn menu_row(ui: &mut Ui, label: &str, draw: Option<impl FnOnce(&Ui, Pos2, Color3
     let response = named(response, label);
     let over = response.hovered();
     if over {
-        let accent = ui.ctx().data(|d| d.get_temp::<Color32>(egui::Id::unique("accent"))).unwrap_or(theme::RED);
+        let accent = ui.ctx().data(|d| d.get_temp::<Color32>(egui::Id::unique("accent"))).unwrap_or(theme::BLUE);
         ui.painter().rect_filled(rect, 6.0, accent);
     }
     let color = if over {
