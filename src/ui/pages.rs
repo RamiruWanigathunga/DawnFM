@@ -1207,7 +1207,11 @@ fn recent_searches(ui: &mut Ui, app: &mut App) {
         let (rect, resp) = ui.allocate_exact_size(vec2(w, 64.0), Sense::click());
         let resp = named(resp, &r.title).on_hover_cursor(egui::CursorIcon::PointingHand);
         let h = if resp.contains_pointer() { 1.0 } else { 0.0 };
-        ui.painter().rect_filled(rect, 10.0, theme::glass(0.05 + 0.06 * h));
+        if h > 0.0 {
+            ui.painter().rect_filled(rect, 10.0, theme::glass(0.08 * h));
+        } else {
+            ui.painter().hline((rect.left() + 8.0)..=(rect.right() - 8.0), rect.bottom() - 0.5, egui::Stroke::new(1.0, theme::glass(0.08)));
+        }
         let art = Rect::from_min_size(rect.left_top() + vec2(8.0, 8.0), Vec2::splat(48.0));
         let radius = if r.round { 24.0 } else { 6.0 };
         match r.thumb.as_deref().filter(|u| !u.is_empty()) {

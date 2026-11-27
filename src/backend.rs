@@ -567,7 +567,7 @@ impl Backend {
         std::fs::create_dir_all(&storage)?;
         let data_dir = storage;
         let http = crate::proxy::http();
-        let lyrics = Arc::new(lyrics::Client::new());
+        let lyrics = Arc::new(lyrics::Client::new(http.clone()));
         let translate = Arc::new(crate::translate::Client::new(http, &data_dir));
         let jsc = Arc::new(jsc::Solver::new(&data_dir));
         let api = Arc::new(ytmapi::Api::new(&data_dir));
@@ -1230,36 +1230,63 @@ impl Backend {
         }
 
         let fail_env = std::env::var("YTM_LYRICS_FAIL").ok();
-        let source = if crate::spotify::is_spotify_id(&video_id) {
-            match self.spotify.lyrics(&video_id).await {
-                Ok(Some((lines, lang))) => {
-                    lyrics::Lyrics::from_raw(lyrics::Provider::Spotify, lines, lang, Vec::new())
-                }
-                Ok(None) => None,
-                Err(e) => {
-                    log::debug!("spotify lyrics {video_id}: {e:#}");
-                    None
-                }
-            }
-        } else {
-            match ytm::lyrics(&self.api, &video_id, self.is_logged_in()).await {
-                Ok(l) => l,
-                Err(e) => {
-                    log::info!("youtube music lyrics {video_id}: {e:#}");
-                    None
-                }
-            }
+        let blocked = |p: lyrics::Provider| {
+            fail_env
+                .as_deref()
+                .is_some_and(|fail| fail.split(',').any(|k| k.trim() == p.key()))
         };
+        let usable = |l: &lyrics::Lyrics| l.lines.iter().any(|x| !x.instrumental && !x.text.trim().is_empty());
 
-        let sources: Vec<lyrics::Lyrics> = source
-            .into_iter()
-            .filter(|src| {
-                fail_env
-                    .as_deref()
-                    .is_none_or(|fail| !fail.split(',').any(|k| k.trim() == src.provider.key()))
-            })
-            .collect();
-        let set = LyricsSet { sources };
+        let artist = t.artist_line();
+        let mut source: Option<lyrics::Lyrics> = None;
+        let mut ytm_id: Option<String> = (!crate::spotify::is_spotify_id(&video_id)).then(|| video_id.clone());
+
+        if crate::spotify::is_spotify_id(&video_id) {
+            if !blocked(lyrics::Provider::Spotify) {
+                match self.spotify.lyrics(&video_id).await {
+                    Ok(Some((lines, lang))) => {
+                        source = lyrics::Lyrics::from_raw(lyrics::Provider::Spotify, lines, lang, Vec::new())
+                            .filter(usable);
+                    }
+                    Ok(None) => {}
+                    Err(e) => log::debug!("spotify lyrics {video_id}: {e:#}"),
+                }
+            }
+            if source.is_none()
+                && let Ok(matched) = self.resolve_spotify_ytm(&video_id, Some(t)).await
+            {
+                ytm_id = Some(matched.id.clone());
+                if !blocked(lyrics::Provider::YouTubeMusic) {
+                    match ytm::lyrics(&self.api, &matched.id, self.is_logged_in()).await {
+                        Ok(l) => source = l.filter(usable),
+                        Err(e) => log::info!("youtube music lyrics {}: {e:#}", matched.id),
+                    }
+                }
+            }
+        } else if !blocked(lyrics::Provider::YouTubeMusic) {
+            match ytm::lyrics(&self.api, &video_id, self.is_logged_in()).await {
+                Ok(l) => source = l.filter(usable),
+                Err(e) => log::info!("youtube music lyrics {video_id}: {e:#}"),
+            }
+        }
+
+        if source.is_none() {
+            let dur = t.duration.or_else(|| {
+                self.current
+                    .lock_unpoisoned()
+                    .as_ref()
+                    .filter(|(id, _)| id == &video_id)
+                    .map(|(_, s)| (s.duration_ms / 1000) as u32)
+                    .filter(|&d| d > 0)
+            });
+            if let Some(fb) = self.lyrics.fetch_fallback(ytm_id.as_deref(), &t.title, &artist, dur).await
+                && !blocked(fb.provider)
+            {
+                source = Some(fb);
+            }
+        }
+
+        let set = LyricsSet { sources: source.into_iter().collect() };
         self.lyrics.insert_recent(video_id.clone(), set.clone());
         let _ = self.tx.send(Resp::Lyrics { video_id, lyrics: set });
         self.wake();
