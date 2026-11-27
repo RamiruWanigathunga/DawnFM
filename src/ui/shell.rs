@@ -200,11 +200,9 @@ pub const SIDEBAR_W: f32 = 220.0;
 fn top_button(ui: &mut Ui, rect: Rect, key: &str, name: &str, paint: impl FnOnce(&Ui, Pos2, Color32)) -> bool {
     let resp = ui.interact(rect, ui.scope_id().with(("side-top", key)), Sense::click());
     let resp = named(resp, name).on_hover_text(name).on_hover_cursor(egui::CursorIcon::PointingHand);
-    let h = if resp.hovered() { 1.0 } else { 0.0 };
-    if h > 0.0 {
-        ui.painter().rect_filled(rect, 6.0, theme::glass(0.10 * h));
-    }
-    paint(ui, rect.center(), theme::lerp_color(theme::text_dim(), theme::text(), h));
+    let press = crate::glass::press(ui, &resp, rect, 0.75);
+    widgets::paint_glass_hover(ui, resp.id, &press, press.hover);
+    paint(ui, press.rect.center(), theme::lerp_color(theme::text_dim(), theme::text(), press.hover));
     resp.clicked()
 }
 

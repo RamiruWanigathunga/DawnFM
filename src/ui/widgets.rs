@@ -210,17 +210,30 @@ pub fn heart(ui: &Ui, center: Pos2, size: f32, fill: f32, outline: Color32, fill
 }
 
 /// Circular icon button with an animated hover halo.
+/// Paint an interactive capsule Liquid Glass backdrop when `vis > 0.01` (with frosted fallback).
+pub fn paint_glass_hover(ui: &Ui, id: egui::Id, press: &crate::glass::PressEffect, vis: f32) {
+    if vis <= 0.01 {
+        return;
+    }
+    let draw_r = press.rect;
+    if crate::renderer::active() == crate::renderer::Renderer::OpenGl {
+        let mut style = crate::glass::control(crate::glass::Corner::Capsule, theme::light(), press.hover * 0.7, vis);
+        press.apply(&mut style);
+        crate::glass::paint(ui, id.with("glass"), draw_r, style);
+    } else {
+        ui.painter().rect_filled(draw_r, draw_r.height() * 0.5, theme::glass(0.12 * vis));
+    }
+}
+
 pub fn icon_button(ui: &mut Ui, glyph: char, size: f32, name: &str, active: bool) -> Response {
     let d = size + 16.0;
     let (rect, resp) = ui.allocate_exact_size(Vec2::splat(d), Sense::click());
     let resp = named(resp, name).on_hover_text(name).on_hover_cursor(egui::CursorIcon::PointingHand);
-    let h = if resp.hovered() { 1.0 } else { 0.0 };
-    if h > 0.0 {
-        ui.painter().circle_filled(rect.center(), d / 2.0, theme::glass(0.10 * h));
-    }
-    let color = if active { theme::text() } else { theme::lerp_color(theme::text_dim(), theme::text(), h) };
-    let press = if resp.is_pointer_button_down_on() { 0.9 } else { 1.0 };
-    icon_at(ui, rect.center(), glyph, size * press, color);
+    let press = crate::glass::press(ui, &resp, rect, 0.75);
+    let vis = press.hover.max(if active { 1.0 } else { 0.0 });
+    paint_glass_hover(ui, resp.id, &press, vis);
+    let color = if active { theme::text() } else { theme::lerp_color(theme::text_dim(), theme::text(), press.hover) };
+    icon_at(ui, press.rect.center(), glyph, size * press.scale, color);
     resp
 }
 
