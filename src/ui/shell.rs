@@ -211,6 +211,36 @@ fn history_button(ui: &mut Ui, rect: Rect, glyph: char, name: &str) -> bool {
     top_button(ui, rect, name, name, |ui, at, c| icon_at(ui, at, glyph, 16.0, c))
 }
 
+/// Animates a collapsible sidebar section's height and opacity over `k` (`0.0..=1.0`).
+fn animated_section(ui: &mut Ui, id_salt: &str, k: f32, add_contents: impl FnOnce(&mut Ui)) {
+    if k <= 0.001 {
+        return;
+    }
+    let h_key = egui::Id::unique(("sidebar-sec-h", id_salt));
+    if k >= 0.999 {
+        let start_y = ui.cursor().min.y;
+        add_contents(ui);
+        let full_h = (ui.cursor().min.y - start_y).max(0.0);
+        ui.ctx().data_mut(|d| d.insert_temp(h_key, full_h));
+        return;
+    }
+    let cached_h = ui.ctx().data(|d| d.get_temp::<f32>(h_key)).unwrap_or(150.0);
+    let vis_h = (cached_h * k).max(0.0);
+    let top = ui.cursor().min;
+    let clip = Rect::from_min_size(top, vec2(ui.available_width(), vis_h));
+    ui.allocate_exact_size(vec2(ui.available_width(), vis_h), Sense::hover());
+    let content_rect = Rect::from_min_size(
+        pos2(top.x, top.y - (cached_h - vis_h) * 0.35),
+        vec2(ui.available_width(), 2000.0),
+    );
+    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(content_rect));
+    child.set_clip_rect(clip.intersect(ui.clip_rect()));
+    child.set_opacity(k);
+    add_contents(&mut child);
+    let measured = (child.cursor().min.y - content_rect.top()).max(0.0);
+    ui.ctx().data_mut(|d| d.insert_temp(h_key, measured));
+}
+
 /// The sidebar: the search box, the app's pages and the playlists.
 pub fn sidebar(app: &mut App, ui: &mut Ui) {
     const ICON_X: f32 = 24.0;
@@ -256,7 +286,7 @@ pub fn sidebar(app: &mut App, ui: &mut Ui) {
         row(ui, &|ui: &Ui, at: Pos2, c: Color32| icon_at(ui, at, glyph, 15.0, c), label, page, selected, go_to);
     };
     // A section's heading; a click folds the section away (remembered across launches).
-    let section = |ui: &mut Ui, title: &str| -> bool {
+    let section = |ui: &mut Ui, title: &str| -> f32 {
         let key = egui::Id::unique(("sidebar-section", title));
         let mut open = ui.data_mut(|d| *d.get_persisted_mut_or_insert_with(key, || true));
         let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 24.0), Sense::click());
@@ -264,13 +294,19 @@ pub fn sidebar(app: &mut App, ui: &mut Ui) {
         let h = if resp.hovered() { 1.0 } else { 0.0 };
         let c = theme::lerp_color(theme::text_faint(), theme::text_dim(), h);
         ui.painter().text(pos2(r.left() + 8.0, r.center().y), Align2::LEFT_CENTER, title, theme::semibold(11.0), c);
-        let k = theme::anim_bool(ui.ctx(), resp.id.with("open"), open, 0.15);
-        icon_at(ui, pos2(r.right() - 12.0, r.center().y), if k > 0.5 { icon::CHEVRON_DOWN } else { icon::CHEVRON_RIGHT }, 12.0, c);
+        let k = theme::anim_bool(ui.ctx(), resp.id.with("open"), open, 0.22);
+        let chev = pos2(r.right() - 12.0, r.center().y);
+        if k < 0.99 {
+            icon_at(ui, chev, icon::CHEVRON_RIGHT, 12.0, c.gamma_multiply(1.0 - k));
+        }
+        if k > 0.01 {
+            icon_at(ui, chev, icon::CHEVRON_DOWN, 12.0, c.gamma_multiply(k));
+        }
         if resp.clicked() {
             open = !open;
             ui.data_mut(|d| d.insert_persisted(key, open));
         }
-        open
+        k
     };
     let nav = |ui: &mut Ui, glyph: &'static [u8], size: f32, label: &str, page: Page, selected: bool, go_to: &mut Option<Page>| {
         let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 30.0), Sense::click());
@@ -309,7 +345,8 @@ pub fn sidebar(app: &mut App, ui: &mut Ui) {
         nav(ui, glyphs::HOME, APPLE, &t!("home"), Page::Home, p == Page::Home, &mut go_to);
         nav(ui, glyphs::EXPLORE, APPLE, &t!("new"), Page::New, p == Page::New, &mut go_to);
         ui.add_space(4.0);
-        if section(ui, &t!("library")) {
+        let lib_k = section(ui, &t!("library"));
+        animated_section(ui, "library", lib_k, |ui| {
             let lib = |tab: LibTab| p == Page::Library(tab);
             nav(ui, glyphs::LIBRARY, APPLE, &t!("playlists"), Page::Library(LibTab::Playlists), lib(LibTab::Playlists), &mut go_to);
             icon_row(ui, icon::CIRCLE_USER, &t!("artists"), Page::Library(LibTab::Artists), lib(LibTab::Artists), &mut go_to);
@@ -319,10 +356,11 @@ pub fn sidebar(app: &mut App, ui: &mut Ui) {
                 icon_row(ui, icon::HISTORY, &t!("recently_played"), Page::Library(LibTab::History), lib(LibTab::History), &mut go_to);
             }
             nav(ui, glyphs::DOWNLOAD, APPLE, &t!("downloads"), Page::Downloads, p == Page::Downloads, &mut go_to);
-        }
+        });
         if !app.pinned.is_empty() {
             ui.add_space(4.0);
-            if section(ui, "Pinned") {
+            let pin_k = section(ui, "Pinned");
+            animated_section(ui, "pinned", pin_k, |ui| {
                 for c in &app.pinned {
                     let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 30.0), Sense::click());
                     let resp = named(resp, &c.title).on_hover_cursor(egui::CursorIcon::PointingHand);
@@ -349,10 +387,10 @@ pub fn sidebar(app: &mut App, ui: &mut Ui) {
                         app.actions.push(Action::Open(c.target.clone()));
                     }
                 }
-            }
+            });
         }
         ui.add_space(4.0);
-        let playlists_open = section(ui, &t!("playlists"));
+        let playlists_k = section(ui, &t!("playlists"));
 
         // Playlists that appeared since the order was last changed join it at the end, so a
         // drag can place any of them.
@@ -384,8 +422,14 @@ pub fn sidebar(app: &mut App, ui: &mut Ui) {
                 }
                 return;
             }
-            if !playlists_open {
+            if playlists_k <= 0.001 {
                 return;
+            }
+            if playlists_k < 0.999 {
+                let r = ui.available_rect_before_wrap();
+                let clip_h = (pl_h * playlists_k).max(0.0);
+                ui.set_clip_rect(Rect::from_min_size(r.min, vec2(r.width(), clip_h)).intersect(ui.clip_rect()));
+                ui.set_opacity(playlists_k);
             }
             egui::ScrollArea::vertical()
                 .id_salt("sidebar-pl")
