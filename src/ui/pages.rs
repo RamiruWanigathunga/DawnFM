@@ -3349,6 +3349,10 @@ fn settings_appearance(app: &mut App, ui: &mut Ui) {
                 super::shell::zoom_step(&ctx, false);
             }
         });
+        divider(ui);
+        setting_row(ui, "Home gradient", Some("Show a soft ambient artwork gradient behind the Home page."), |ui| {
+            toggle(ui, &mut app.home_gradient, "Home gradient");
+        });
     });
 }
 

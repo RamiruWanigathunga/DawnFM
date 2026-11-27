@@ -464,6 +464,7 @@ pub struct App {
     /// Light or dark pages (the ytm-rs theme's; see `light_pages`).
     appearance: theme::Appearance,
     reactive_bg: bool,
+    home_gradient: bool,
     /// Skip the parts of music videos SponsorBlock marks as not music.
     sponsorblock: bool,
     /// Crossfade between songs, and over how many seconds.
@@ -847,6 +848,7 @@ impl App {
             // Dev hook: YTM_APPEARANCE=light|dark|system tries a mode without saving it.
             appearance: theme::Appearance::from_key(&dev_var("YTM_APPEARANCE").map(str::to_owned).or_else(|| get("appearance")).unwrap_or_default()),
             reactive_bg: get("reactive_bg").is_none_or(|v| v == "1"),
+            home_gradient: get("home_gradient").is_some_and(|v| v == "1"),
             sponsorblock: get("sponsorblock").is_some_and(|v| v == "1"),
             crossfade: get("crossfade").is_some_and(|v| v == "1"),
             automix: get("automix").is_some_and(|v| v == "1"),
@@ -1559,7 +1561,10 @@ impl App {
         }
 
         let is_home = matches!(self.page, Page::Home);
-        let home_vis = theme::anim_bool(ctx, "page-backdrop-home", is_home, 0.70);
+        let home_vis = theme::anim_bool(ctx, "page-backdrop-home", is_home && self.home_gradient, 0.70);
+        if is_home && !self.home_gradient && home_vis <= 0.001 {
+            return;
+        }
 
         let key = match &self.page {
             Page::Album(id) => format!("album:{id}"),
@@ -2306,6 +2311,7 @@ impl eframe::App for App {
             storage.set_string("font", theme::font_choice());
         }
         storage.set_string("reactive_bg", b(self.reactive_bg));
+        storage.set_string("home_gradient", b(self.home_gradient));
         storage.set_string("signature_api", self.signature_api.clone());
         storage.set_string("hires_source", self.hires_sources.join("\n"));
         storage.set_string("prefer_atmos", b(self.prefer_atmos));
