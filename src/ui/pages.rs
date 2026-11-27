@@ -670,7 +670,7 @@ pub fn share_more_pill(
     let light = theme::light();
     let glass_slot = ui.painter().add(egui::Shape::Noop);
 
-    let mid_x = pill_rect.min.x + 35.0;
+    let mid_x = pill_rect.center().x;
     let share_rect = Rect::from_min_max(pill_rect.min, pos2(mid_x, pill_rect.max.y));
     let more_rect = Rect::from_min_max(pos2(mid_x, pill_rect.min.y), pill_rect.max);
 
@@ -698,17 +698,16 @@ pub fn share_more_pill(
     } else {
         let pill_shadow = if light { 18 } else { 35 };
         let pill_fill = if light { Color32::from_black_alpha(15) } else { theme::glass(0.12) };
+        let r = draw_pill.height() * 0.5;
         ui.painter().set(glass_slot, egui::Shape::Vec(vec![
-            egui::Shape::rect_filled(draw_pill.translate(vec2(0.0, 1.0)), 17.0, Color32::from_black_alpha(pill_shadow)),
-            egui::Shape::rect_filled(draw_pill, 17.0, pill_fill),
+            egui::Shape::rect_filled(draw_pill.translate(vec2(0.0, 1.0)), r, Color32::from_black_alpha(pill_shadow)),
+            egui::Shape::rect_filled(draw_pill, r, pill_fill),
         ]));
     }
 
     let share_active = share_resp.hovered() || share_resp.is_pointer_button_down_on();
     let more_active = more_resp.hovered() || more_resp.is_pointer_button_down_on() || more_open;
     let target_cx = if more_active { more_rect.center().x } else { share_rect.center().x };
-    let rest_d = (draw_pill.height() - 6.0).max(20.0);
-    let held_d = (draw_pill.height() - 2.0).max(22.0);
     let held_side = share_resp.is_pointer_button_down_on() || more_resp.is_pointer_button_down_on();
     widgets::capsule_indicator(
         ui,
@@ -718,8 +717,8 @@ pub fn share_more_pill(
         target_cx,
         share_active || more_active,
         held_side,
-        rest_d,
-        held_d,
+        25.0,
+        27.0,
         |vis| if light { Color32::from_black_alpha((22.0 * vis) as u8) } else { Color32::from_white_alpha((34.0 * vis) as u8) },
         Some(|vis: f32| if light { Color32::from_white_alpha((90.0 * vis) as u8) } else { Color32::from_white_alpha((30.0 * vis) as u8) }),
     );
@@ -1854,7 +1853,7 @@ pub fn collection(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
 
                     // 1. Search pill on the far right (first in right_to_left)
                     let search_w = 190.0f32.min(ui.available_width() - 80.0).max(120.0);
-                    let (search_rect, search_hit) = ui.allocate_exact_size(vec2(search_w, 34.0), Sense::click());
+                    let (search_rect, search_hit) = ui.allocate_exact_size(vec2(search_w, 32.0), Sense::click());
                     let search_hit = search_hit.on_hover_cursor(egui::CursorIcon::Text);
                     let search_bg_slot = ui.painter().add(egui::Shape::Noop);
 
@@ -1888,12 +1887,12 @@ pub fn collection(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
                         let search_shadow = if light { 18 } else { 35 };
                         let search_fill = if light { Color32::from_black_alpha(15) } else { theme::glass(0.12) };
                         ui.painter().set(search_bg_slot, egui::Shape::Vec(vec![
-                            egui::Shape::rect_filled(search_rect.translate(vec2(0.0, 1.0)), 17.0, Color32::from_black_alpha(search_shadow)),
-                            egui::Shape::rect_filled(search_rect, 17.0, search_fill),
+                            egui::Shape::rect_filled(search_rect.translate(vec2(0.0, 1.0)), 16.0, Color32::from_black_alpha(search_shadow)),
+                            egui::Shape::rect_filled(search_rect, 16.0, search_fill),
                         ]));
                     }
                     if search_focus > 0.01 {
-                        ui.painter().rect_stroke(search_rect, 17.0, egui::Stroke::new(1.5, theme::with_alpha(app_accent(ui), search_focus)), egui::StrokeKind::Inside);
+                        ui.painter().rect_stroke(search_rect, 16.0, egui::Stroke::new(1.5, theme::with_alpha(app_accent(ui), search_focus)), egui::StrokeKind::Inside);
                     }
                     if edit_resp.changed() {
                         if current_query.is_empty() {
@@ -1912,7 +1911,7 @@ pub fn collection(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
                     }
 
                     // 2. Share & More segmented pill
-                    let (pill_rect, _) = ui.allocate_exact_size(vec2(70.0, 34.0), Sense::hover());
+                    let (pill_rect, _) = ui.allocate_exact_size(vec2(72.0, 32.0), Sense::hover());
                     let app_logged_in = app.logged_in;
                     let tracks_empty = tracks.is_empty();
                     let pin_card = Card {

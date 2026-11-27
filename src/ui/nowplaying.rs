@@ -331,17 +331,17 @@ fn body(app: &mut App, ui: &mut Ui, now: f64) {
         let accent = app.accent_color();
         let fg_base = if bg_light { Color32::from_rgb(0x18, 0x14, 0x1c) } else { Color32::WHITE };
 
-        // 1. Top-left pill beside macOS traffic lights: [ Close (X)  Fullscreen ] (single undivided capsule with fluid circle hover)
+        // 1. Top-left pill beside macOS traffic lights: [ Close (X)  Fullscreen ] (single undivided 72×32 capsule)
         let tl_x = area.left() + if is_fullscreen || cfg!(windows) { 20.0 } else { 86.0 };
-        let tl_w = if cfg!(windows) { 32.0 } else { 68.0 };
-        let tl_rect = Rect::from_min_size(pos2(tl_x, header_top), vec2(tl_w, 30.0));
+        let tl_w = if cfg!(windows) { 32.0 } else { 72.0 };
+        let tl_rect = Rect::from_min_size(pos2(tl_x, header_top), vec2(tl_w, 32.0));
         ui.ctx().data_mut(|d| d.insert_temp(egui::Id::unique("np-top-left-rect"), tl_rect));
         let tl_slot = ui.painter().add(egui::Shape::Noop);
 
         let close_rect = if cfg!(windows) {
             tl_rect
         } else {
-            Rect::from_min_max(tl_rect.min, pos2(tl_rect.min.x + 34.0, tl_rect.max.y))
+            Rect::from_min_max(tl_rect.min, pos2(tl_rect.center().x, tl_rect.max.y))
         };
         let close_sense = if interactive { Sense::click() } else { Sense::hover() };
         let close_resp = named(ui.interact(close_rect, ui.scope_id().with("np-close"), close_sense), &t!("minimise_now_playing"))
@@ -349,7 +349,7 @@ fn body(app: &mut App, ui: &mut Ui, now: f64) {
         let close_resp = if interactive { close_resp.on_hover_cursor(egui::CursorIcon::PointingHand) } else { close_resp };
 
         let fs_opt = if !cfg!(windows) {
-            let fs_rect = Rect::from_min_max(pos2(tl_rect.min.x + 34.0, tl_rect.min.y), tl_rect.max);
+            let fs_rect = Rect::from_min_max(pos2(tl_rect.center().x, tl_rect.min.y), tl_rect.max);
             let fs_label = if is_fullscreen { t!("exit_full_screen") } else { t!("full_screen") };
             let fs_sense = if interactive { Sense::click() } else { Sense::hover() };
             let fs_resp = named(ui.interact(fs_rect, ui.scope_id().with("np-fs"), fs_sense), &fs_label).on_hover_text(&fs_label);
@@ -382,8 +382,8 @@ fn body(app: &mut App, ui: &mut Ui, now: f64) {
             tl_target_cx,
             close_active || fs_active,
             tl_held,
-            (tl_draw.height() - 6.0).max(20.0),
-            (tl_draw.height() - 2.0).max(22.0),
+            25.0,
+            27.0,
             |vis| if bg_light { Color32::from_black_alpha((24.0 * vis) as u8) } else { Color32::from_white_alpha((36.0 * vis) as u8) },
             Some(|vis: f32| if bg_light { Color32::from_white_alpha((80.0 * vis) as u8) } else { Color32::from_white_alpha((28.0 * vis) as u8) }),
         );
@@ -405,7 +405,7 @@ fn body(app: &mut App, ui: &mut Ui, now: f64) {
         // 2. Top-right Sound Level / Volume pill: [ ───●  🔊 ]
         let r_gap = super::titlebar::right_gap(ui.ctx(), header, 0.0);
         let tr_right = area.right() - 20.0 - r_gap;
-        let tr_rect = Rect::from_min_size(pos2(tr_right - 144.0, header_top), vec2(144.0, 30.0));
+        let tr_rect = Rect::from_min_size(pos2(tr_right - 144.0, header_top), vec2(144.0, 32.0));
         ui.ctx().data_mut(|d| d.insert_temp(egui::Id::unique("np-top-right-rect"), tr_rect));
         paint_np_capsule(ui, "np-tr-glass", tr_rect, bg_light);
 
@@ -450,7 +450,7 @@ fn body(app: &mut App, ui: &mut Ui, now: f64) {
         }
 
         if cover_hidden {
-            let opt_r = Rect::from_center_size(pos2(tr_rect.left() - 24.0, tr_rect.center().y), Vec2::splat(30.0));
+            let opt_r = Rect::from_center_size(pos2(tr_rect.left() - 24.0, tr_rect.center().y), Vec2::splat(32.0));
             if interactive {
                 options_menu(app, ui, opt_r, &heard, app.np_tab == NpTab::Lyrics && !no_lyrics, None);
             }
