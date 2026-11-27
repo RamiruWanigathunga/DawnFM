@@ -1580,13 +1580,7 @@ fn switch_row(ui: &mut Ui, label: &str, on: &mut bool) {
         *on = !*on;
     }
     let accent = ui.ctx().data(|d| d.get_temp::<Color32>(egui::Id::unique("accent"))).unwrap_or(theme::BLUE);
-    let h = theme::anim_bool(ui.ctx(), resp.id.with("h"), resp.hovered(), 0.12);
-    if h > 0.0 {
-        ui.painter().rect_filled(rect, 4.0, accent);
-    }
-    let fg = if resp.hovered() {
-        Color32::WHITE
-    } else if theme::light() {
+    let fg = if theme::light() {
         Color32::from_rgb(32, 32, 32)
     } else {
         Color32::from_rgb(235, 235, 235)
