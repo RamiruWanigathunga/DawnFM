@@ -173,6 +173,120 @@ pub async fn searched_song(api: &Api, video: &Track) -> anyhow::Result<Option<Tr
     Ok(hits.into_iter().take(5).find(|h| same_song(video, h)))
 }
 
+// ------------------------------------------------------------- lyrics
+
+/// Official YouTube Music lyrics for `video_id`, fetched via `next` -> Lyrics tab
+/// `browseEndpoint` (`MPLYt_...`) -> `browse`. Returns synced lines (`timedLyricsModel`)
+/// when available, falling back to plain lyrics (`musicDescriptionShelfRenderer`).
+pub async fn lyrics(api: &Api, video_id: &str, auth: bool) -> anyhow::Result<Option<crate::lyrics::Lyrics>> {
+    let next_body = json!({
+        "videoId": video_id,
+        "isAudioOnly": true,
+    });
+    let next = api.call("next", next_body, auth).await?;
+    let Some((browse_id, params)) = parse_lyrics_endpoint(&next) else {
+        return Ok(None);
+    };
+    let mut browse_body = json!({ "browseId": browse_id });
+    if let Some(p) = params {
+        browse_body["params"] = json!(p);
+    }
+    let browse = api.call("browse", browse_body, auth).await?;
+    Ok(parse_lyrics(&browse))
+}
+
+fn parse_lyrics_endpoint(v: &Value) -> Option<(String, Option<String>)> {
+    let tabs = arr(&v["contents"]["singleColumnMusicWatchNextResultsRenderer"]["tabbedRenderer"]["watchNextTabbedResultsRenderer"]["tabs"]);
+    let find = |pred: &dyn Fn(&Value) -> bool| -> Option<(String, Option<String>)> {
+        for item in tabs {
+            let t = &item["tabRenderer"];
+            if t["unselectable"].as_bool() == Some(true) || !pred(t) {
+                continue;
+            }
+            let ep = &t["endpoint"]["browseEndpoint"];
+            let Some(id) = ep["browseId"].as_str().filter(|s| !s.is_empty()) else { continue };
+            let params = ep["params"].as_str().filter(|s| !s.is_empty()).map(str::to_owned);
+            return Some((id.to_owned(), params));
+        }
+        None
+    };
+    find(&|t| t["endpoint"]["browseEndpoint"]["browseId"].as_str().is_some_and(|id| id.starts_with("MPLYt")))
+        .or_else(|| find(&|t| t["title"].as_str().is_some_and(|s| s.eq_ignore_ascii_case("lyrics"))))
+}
+
+fn find_key<'a>(v: &'a Value, key: &str) -> Option<&'a Value> {
+    match v {
+        Value::Object(map) => {
+            if let Some(found) = map.get(key) {
+                return Some(found);
+            }
+            map.values().find_map(|child| find_key(child, key))
+        }
+        Value::Array(items) => items.iter().find_map(|child| find_key(child, key)),
+        _ => None,
+    }
+}
+
+fn parse_ms(v: &Value) -> Option<i32> {
+    v.as_i64()
+        .or_else(|| v.as_str().and_then(|s| s.trim().parse::<i64>().ok()))
+        .map(|n| n.clamp(0, i32::MAX as i64) as i32)
+}
+
+fn parse_lyrics(v: &Value) -> Option<crate::lyrics::Lyrics> {
+    use crate::lyrics::{Line, Lyrics, Provider};
+
+    if let Some(model) = find_key(v, "timedLyricsModel") {
+        let data = arr(&model["lyricsData"]["timedLyricsData"]);
+        let data = if data.is_empty() { arr(&model["timedLyricsData"]) } else { data };
+        let mut lines: Vec<Line> = Vec::with_capacity(data.len());
+        for entry in data {
+            let Some(start) = parse_ms(&entry["cueRange"]["startTimeMilliseconds"]) else { continue };
+            let raw = entry["lyricLine"].as_str().unwrap_or("").trim();
+            if raw.is_empty() {
+                continue;
+            }
+            let end = parse_ms(&entry["cueRange"]["endTimeMilliseconds"]);
+            let dur = end.map(|e| (e - start).max(0)).unwrap_or(0);
+            lines.push(Line {
+                start,
+                dur,
+                text: raw.to_owned(),
+                instrumental: raw == "♪",
+                ..Default::default()
+            });
+        }
+        for i in 0..lines.len() {
+            if lines[i].dur == 0 {
+                let next_start = lines.get(i + 1).map(|l| l.start).unwrap_or(lines[i].start + 4000);
+                lines[i].dur = (next_start - lines[i].start).max(0);
+            }
+        }
+        if lines.iter().any(|l| !l.instrumental && !l.text.trim().is_empty()) {
+            return Lyrics::from_raw(Provider::YouTubeMusic, lines, None, Vec::new());
+        }
+    }
+
+    if let Some(shelf) = find_key(v, "musicDescriptionShelfRenderer") {
+        let desc = text(&shelf["description"])
+            .or_else(|| shelf["description"]["simpleText"].as_str().map(str::to_owned))?;
+        let normalized = desc.replace("\r\n", "\n").replace('\r', "\n");
+        let mut raw_lines: Vec<String> = normalized.split('\n').map(|s| s.trim_end().to_owned()).collect();
+        while raw_lines.first().is_some_and(|s| s.trim().is_empty()) {
+            raw_lines.remove(0);
+        }
+        while raw_lines.last().is_some_and(|s| s.trim().is_empty()) {
+            raw_lines.pop();
+        }
+        if raw_lines.iter().any(|s| !s.trim().is_empty()) {
+            let lines: Vec<Line> = raw_lines.into_iter().map(|text| Line { text, ..Default::default() }).collect();
+            return Lyrics::from_raw(Provider::YouTubeMusic, lines, None, Vec::new());
+        }
+    }
+
+    None
+}
+
 /// Whether `hit` (a song from a search) is the song of the music video `video`: the same
 /// title once the video's own markings are off, the same kind of recording (no live,
 /// remix, cover, clean… on one side only), everyone on the video credited on the song,
@@ -2225,6 +2339,62 @@ mod tests {
             let found = searched_song(&api, &v).await.unwrap();
             println!("{} -> {:?}", v.title, found.as_ref().map(|s| (&s.id, &s.title, s.artist_line(), s.duration)));
         }
+    }
+
+    #[test]
+    fn lyrics_endpoint_skips_unselectable_tab_and_finds_mplyt() {
+        let disabled = json!({"contents": {"singleColumnMusicWatchNextResultsRenderer": {"tabbedRenderer": {"watchNextTabbedResultsRenderer": {"tabs": [
+            {"tabRenderer": {"title": "Up next"}},
+            {"tabRenderer": {"title": "Lyrics", "unselectable": true}},
+        ]}}}}});
+        assert_eq!(parse_lyrics_endpoint(&disabled), None);
+
+        let enabled = json!({"contents": {"singleColumnMusicWatchNextResultsRenderer": {"tabbedRenderer": {"watchNextTabbedResultsRenderer": {"tabs": [
+            {"tabRenderer": {"title": "Up next"}},
+            {"tabRenderer": {"title": "Paroles", "endpoint": {"browseEndpoint": {"browseId": "MPLYt_abc", "params": "xyz"}}}},
+        ]}}}}});
+        assert_eq!(parse_lyrics_endpoint(&enabled), Some(("MPLYt_abc".into(), Some("xyz".into()))));
+    }
+
+    #[test]
+    fn parse_lyrics_handles_timed_and_plain_official_responses() {
+        let timed = json!({
+            "contents": {"sectionListRenderer": {"contents": [{
+                "elementRenderer": {"newElement": {"type": {"componentType": {"model": {
+                    "timedLyricsModel": {
+                        "lyricsData": {
+                            "timedLyricsData": [
+                                {"lyricLine": "First line", "cueRange": {"startTimeMilliseconds": "1000", "endTimeMilliseconds": "3000"}},
+                                {"lyricLine": "♪", "cueRange": {"startTimeMilliseconds": "3000", "endTimeMilliseconds": "9000"}},
+                                {"lyricLine": "Second line", "cueRange": {"startTimeMilliseconds": 9000, "endTimeMilliseconds": 12000}}
+                            ]
+                        }
+                    }
+                }}}}}
+            }]}}
+        });
+        let parsed = parse_lyrics(&timed).expect("timed lyrics");
+        assert_eq!(parsed.provider, crate::lyrics::Provider::YouTubeMusic);
+        assert_eq!(parsed.sync, crate::lyrics::Sync::Line);
+        assert_eq!(parsed.lines.len(), 3);
+        assert_eq!(parsed.lines[0].start, 1000);
+        assert_eq!(parsed.lines[0].dur, 2000);
+        assert!(parsed.lines[1].instrumental);
+        assert_eq!(parsed.lines[2].text, "Second line");
+
+        let plain = json!({
+            "contents": {"sectionListRenderer": {"contents": [{
+                "musicDescriptionShelfRenderer": {
+                    "description": {"runs": [{"text": "\nLine one\r\n\r\nLine two\n\n"}]},
+                    "footer": {"runs": [{"text": "Source: LyricFind"}]}
+                }
+            }]}}
+        });
+        let parsed_plain = parse_lyrics(&plain).expect("plain lyrics");
+        assert_eq!(parsed_plain.provider, crate::lyrics::Provider::YouTubeMusic);
+        assert_eq!(parsed_plain.sync, crate::lyrics::Sync::None);
+        let texts: Vec<&str> = parsed_plain.lines.iter().map(|l| l.text.as_str()).collect();
+        assert_eq!(texts, vec!["Line one", "", "Line two"]);
     }
 }
 

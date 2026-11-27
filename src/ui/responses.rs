@@ -353,17 +353,8 @@ impl App {
             }
             Resp::Lyrics { video_id, lyrics } => {
                 if self.shown().is_some_and(|t| t.id == video_id) {
-                    let available = self.lyric_prefs.available(&lyrics);
                     let shown = self.lyric_prefs.choose(&video_id, &lyrics);
-                    let missing: Vec<&str> = self.lyric_prefs.order.iter().filter(|(p, on)| *on && !available.contains(p)).map(|(p, _)| p.key()).collect();
-                    log::info!(
-                        "lyrics: showing {} ({}/{}); available: {}; no lyrics from: {}",
-                        shown.map_or("nothing", |p| p.key()),
-                        shown.and_then(|p| available.iter().position(|x| *x == p)).map_or(0, |i| i + 1),
-                        available.len(),
-                        available.iter().map(|p| p.key()).collect::<Vec<_>>().join(", "),
-                        missing.join(", ")
-                    );
+                    log::info!("lyrics: {}", shown.map_or("none", |p| p.key()));
                     self.lyrics = Some((video_id, lyrics));
                 }
             }

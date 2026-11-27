@@ -41,7 +41,6 @@ pub mod theme;
 pub mod transfer;
 pub mod translate;
 pub mod tray;
-pub mod turnstile;
 pub mod ui;
 pub mod update;
 pub mod vault;

@@ -7,7 +7,7 @@ use egui::{Color32, Rect, Sense, Ui, Vec2, pos2, vec2};
 use super::widgets::{self, icon_at, named, text_at};
 use super::{Action, App, NpTab, Repeat, karaoke};
 use crate::i18n::t;
-use crate::lyrics::{Lyrics, Sync, SyncKind};
+use crate::lyrics::{Lyrics, Sync};
 use crate::shader::Params;
 use crate::theme::{self, icon};
 
@@ -1146,27 +1146,8 @@ fn plain_lyrics(app: &mut App, ui: &mut Ui, rect: Rect, lyrics: &Lyrics) {
     });
 }
 
-/// Sync-type colours from the extension's dock (syllable, word, line, unsynced).
-fn sync_color(k: SyncKind) -> Color32 {
-    match k {
-        SyncKind::Syllable => Color32::from_rgb(196, 160, 255),
-        SyncKind::Word => Color32::from_rgb(130, 200, 255),
-        SyncKind::Line => Color32::from_rgb(255, 205, 110),
-        SyncKind::Unsynced => Color32::from_rgb(170, 170, 170),
-    }
-}
-
-fn sync_label(k: SyncKind) -> &'static str {
-    match k {
-        SyncKind::Syllable => "Syllable synced",
-        SyncKind::Word => "Word synced",
-        SyncKind::Line => "Line synced",
-        SyncKind::Unsynced => "Not synced",
-    }
-}
-
-/// The ⋯ menu: the song's actions, and with lyrics showing, the source picker,
-/// translation and romanization toggles, and this song's timing offset above them.
+/// The ⋯ menu: the song's actions, and with lyrics showing, translation and
+/// romanization toggles and this song's timing offset above them.
 pub(crate) fn options_menu(
     app: &mut App,
     ui: &mut Ui,
@@ -1239,40 +1220,28 @@ pub(crate) fn options_menu(
 fn lyric_options(app: &mut App, ui: &mut Ui) {
     let Some((id, set)) = app.lyrics.as_ref() else { return };
     let id = id.clone();
-    let available = app.lyric_prefs.available(set);
     let Some(shown) = app.lyric_prefs.choose(&id, set) else { return };
-    let n = available.len();
-    let mut pick = None;
-    menu_caption(ui, if n > 1 { "LYRICS SOURCE" } else { "LYRICS SOURCE · ONLY ONE FOUND" });
-    for p in &available {
-        if source_row(ui, p.name(), p.sync(), *p == shown) {
-            pick = Some(*p);
-        }
-    }
-    menu_divider(ui);
+    let synced = set.get(shown).is_some_and(|l| l.sync != Sync::None);
     let tip = format!("Translation · {}", lang_name(&app.lyric_prefs.target));
     switch_row(ui, &tip, &mut app.show_trans);
     switch_row(ui, &t!("romanization"), &mut app.show_roman);
-    // This song's timing for the shown source: ‹ +0.0s ›
-    let off = app.lyric_prefs.song_offset(&id, shown);
-    let (row, _) = ui.allocate_exact_size(vec2(ui.available_width(), 24.0), Sense::hover());
-    ui.painter().text(pos2(row.left() + 10.0, row.center().y), egui::Align2::LEFT_CENTER, t!("timing"), theme::regular(13.0), theme::text());
-    let mut sub = ui.new_child(egui::UiBuilder::new().max_rect(row.shrink2(vec2(6.0, 0.0))).layout(egui::Layout::right_to_left(egui::Align::Center)));
-    sub.spacing_mut().item_spacing.x = 2.0;
-    if mini_icon(&mut sub, icon::CHEVRON_RIGHT, "Lyrics later (+0.1 s)", true).clicked() {
-        app.lyric_prefs.set_song_offset(&id, shown, off + 0.1);
-    }
-    let label = format!("{off:+.1}s").replace("+0.0", "0.0");
-    if mini_text(&mut sub, &label, false, "This song's lyrics timing. Double-click to reset.").double_clicked() {
-        app.lyric_prefs.set_song_offset(&id, shown, 0.0);
-    }
-    if mini_icon(&mut sub, icon::CHEVRON_LEFT, "Lyrics earlier (−0.1 s)", true).clicked() {
-        app.lyric_prefs.set_song_offset(&id, shown, off - 0.1);
-    }
-    if let Some(p) = pick.filter(|p| *p != shown) {
-        app.lyric_prefs.pick(&id, set, p);
-        log::info!("lyrics: showing {} ({}/{}) by choice", p.key(), available.iter().position(|x| *x == p).map_or(0, |i| i + 1), n);
-        app.lyric_view.reset();
+    if synced {
+        // This song's timing: ‹ +0.0s ›
+        let off = app.lyric_prefs.song_offset(&id, shown);
+        let (row, _) = ui.allocate_exact_size(vec2(ui.available_width(), 24.0), Sense::hover());
+        ui.painter().text(pos2(row.left() + 10.0, row.center().y), egui::Align2::LEFT_CENTER, t!("timing"), theme::regular(13.0), theme::text());
+        let mut sub = ui.new_child(egui::UiBuilder::new().max_rect(row.shrink2(vec2(6.0, 0.0))).layout(egui::Layout::right_to_left(egui::Align::Center)));
+        sub.spacing_mut().item_spacing.x = 2.0;
+        if mini_icon(&mut sub, icon::CHEVRON_RIGHT, "Lyrics later (+0.1 s)", true).clicked() {
+            app.lyric_prefs.set_song_offset(&id, shown, off + 0.1);
+        }
+        let label = format!("{off:+.1}s").replace("+0.0", "0.0");
+        if mini_text(&mut sub, &label, false, "This song's lyrics timing. Double-click to reset.").double_clicked() {
+            app.lyric_prefs.set_song_offset(&id, shown, 0.0);
+        }
+        if mini_icon(&mut sub, icon::CHEVRON_LEFT, "Lyrics earlier (−0.1 s)", true).clicked() {
+            app.lyric_prefs.set_song_offset(&id, shown, off - 0.1);
+        }
     }
 }
 
@@ -1530,33 +1499,6 @@ fn rate_text(hz: u32) -> String {
 
 fn size_text(bytes: u64) -> String {
     if bytes >= 1024 * 1024 { format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0)) } else { format!("{:.0} KB", bytes as f64 / 1024.0) }
-}
-
-/// A lyrics source: its sync type's dot, name and sync type, with a check on the one shown.
-fn source_row(ui: &mut Ui, name: &str, sync: SyncKind, current: bool) -> bool {
-    let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 26.0), Sense::click());
-    let resp = named(resp, &format!("Lyrics source {name}")).on_hover_cursor(egui::CursorIcon::PointingHand);
-    let over = resp.hovered();
-    if over {
-        let accent = ui.ctx().data(|d| d.get_temp::<Color32>(egui::Id::unique("accent"))).unwrap_or(theme::BLUE);
-        ui.painter().rect_filled(rect, 4.0, accent);
-    }
-    let fg = if over {
-        Color32::WHITE
-    } else if theme::light() {
-        Color32::from_rgb(32, 32, 32)
-    } else {
-        Color32::from_rgb(235, 235, 235)
-    };
-    ui.painter().circle_filled(pos2(rect.left() + 14.0, rect.center().y), 3.0, if over { Color32::WHITE } else { sync_color(sync) });
-    let x = rect.left() + 26.0;
-    text_at(ui, pos2(x, rect.center().y - 8.5), name, theme::semibold(13.0), fg, rect.right() - x - 70.0);
-    let sub_fg = if over { Color32::from_white_alpha(200) } else { theme::text_dim() };
-    text_at(ui, pos2(rect.right() - 65.0, rect.center().y - 8.0), sync_label(sync), theme::regular(11.0), sub_fg, 40.0);
-    if current {
-        widgets::icon_at(ui, pos2(rect.right() - 15.0, rect.center().y), icon::CHECK, 13.0, fg);
-    }
-    resp.clicked()
 }
 
 /// A label with an on/off switch; the whole row toggles.
