@@ -2260,34 +2260,16 @@ impl eframe::App for App {
         let update_ready = self.updater.as_ref().is_some_and(|u| matches!(u.state(), crate::update::State::Ready { .. }));
         if let Some(u) = &self.updater
             && self.restart_for_update
+            && update_ready
         {
             u.install(true);
-        }
-        if self.restart_app && !update_ready {
-            relaunch();
+        } else if self.restart_for_update || self.restart_app {
+            crate::update::relaunch_current();
         }
     }
 }
 
 const SESSION_KEY: &str = "session";
-
-/// Start this exe again once this process has saved and exited.
-fn relaunch() {
-    let Ok(exe) = std::env::current_exe() else { return };
-    log::info!("restarting");
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-        const DETACHED_PROCESS: u32 = 0x0000_0008;
-        let script = format!("ping -n 3 127.0.0.1 >NUL & start \"\" \"{}\"", exe.display());
-        let _ = std::process::Command::new("cmd").arg("/C").raw_arg(&script).creation_flags(CREATE_NO_WINDOW | DETACHED_PROCESS).spawn();
-    }
-    #[cfg(not(windows))]
-    {
-        let _ = std::process::Command::new(exe).spawn();
-    }
-}
 
 /// What the sidebar and the account button show, kept for the next launch.
 #[derive(serde::Serialize, serde::Deserialize)]
