@@ -821,7 +821,7 @@ fn card_menu_contents(ui: &mut Ui, c: &Card, liked: bool, acts: &mut Vec<Action>
     match &c.target {
         Target::Song(t) => song_menu(ui, t, liked, None, None, acts),
         t => {
-            ui.set_width(210.0);
+            ui.set_width(178.0);
             ui.add_space(2.0);
             if menu_action(ui, Some(icon::PLAY), "Play") {
                 acts.push(Action::PlayCollection(t.clone(), false));
@@ -901,7 +901,7 @@ fn menu_action_star(ui: &mut Ui, liked: bool, label: &str) -> bool {
 
 /// `remove`: the song's row in the open playlist, when it's yours and the song can come out.
 pub fn song_menu(ui: &mut Ui, t: &Track, liked: bool, remove: Option<usize>, remove_queue: Option<usize>, acts: &mut Vec<Action>) {
-    ui.set_width(210.0);
+    ui.set_width(178.0);
     ui.add_space(2.0);
     song_actions(ui, t, liked, remove, remove_queue, acts);
     menu_separator(ui);
