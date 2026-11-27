@@ -1866,19 +1866,18 @@ pub fn collection(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
         16.0,
     );
     let bar_min = pos2(page_right - right_pad - bar_w, top);
+    let area_rect = Rect::from_min_size(bar_min, vec2(bar_w, 32.0));
     let coll_search = &mut app.coll_search;
     let accent = rows.accent;
     egui::Area::new(egui::Id::unique(("coll-top-bar", id)))
         .fixed_pos(bar_min)
+        .constrain(false)
         .order(egui::Order::Middle)
         .show(ui.ctx(), |ui| {
             let light = theme::light();
-            ui.set_min_size(vec2(bar_w, 32.0));
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing = vec2(10.0, 0.0);
-
-                // 1. Share & More segmented pill (72×32 pt)
-                let (pill_rect, _) = ui.allocate_exact_size(vec2(72.0, 32.0), Sense::hover());
+            ui.scope_builder(egui::UiBuilder::new().max_rect(area_rect), |ui| {
+                // 1. Share & More segmented pill (72×32 pt, fixed on the left)
+                let pill_rect = Rect::from_min_size(area_rect.min, vec2(72.0, 32.0));
                 let pin_card = Card {
                     title: c.title.clone(),
                     subtitle: c.byline(),
@@ -1988,9 +1987,10 @@ pub fn collection(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
                     }
                 });
 
-                // 2. Search pill on the far right (190×32 pt)
-                let (search_rect, search_hit) = ui.allocate_exact_size(vec2(search_w, 32.0), Sense::click());
-                let search_hit = search_hit.on_hover_cursor(egui::CursorIcon::Text);
+                // 2. Search pill on the right with a fixed 10 pt gap after Share/More
+                let search_rect = Rect::from_min_size(pos2(pill_rect.right() + 10.0, area_rect.top()), vec2(search_w, 32.0));
+                let search_hit = ui.interact(search_rect, ui.scope_id().with(("coll-search-hit", id)), Sense::click())
+                    .on_hover_cursor(egui::CursorIcon::Text);
                 let search_bg_slot = ui.painter().add(egui::Shape::Noop);
 
                 widgets::icon_at(ui, pos2(search_rect.left() + 16.0, search_rect.center().y), icon::SEARCH, 13.5, theme::text_dim());
@@ -2003,8 +2003,8 @@ pub fn collection(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
                 let text_right = if clearable { search_rect.right() - 28.0 } else { search_rect.right() - 12.0 };
                 let text_rect = Rect::from_min_max(pos2(search_rect.left() + 33.0, search_rect.top() + 3.0), pos2(text_right, search_rect.bottom() - 3.0));
                 let placeholder = if is_album { "Find in Album" } else { "Find in Playlist" };
-                let edit_resp = ui.put(
-                    text_rect,
+                let mut edit_ui = ui.new_child(egui::UiBuilder::new().max_rect(text_rect));
+                let edit_resp = edit_ui.add(
                     egui::TextEdit::singleline(&mut current_query)
                         .id(ui.scope_id().with(("coll-search-edit", id)))
                         .hint_text(egui::RichText::new(placeholder).color(theme::text_dim()))
