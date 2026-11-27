@@ -331,12 +331,12 @@ fn body(app: &mut App, ui: &mut Ui, now: f64) {
         let accent = app.accent_color();
         let fg_base = if bg_light { Color32::from_rgb(0x18, 0x14, 0x1c) } else { Color32::WHITE };
 
-        // 1. Top-left pill beside macOS traffic lights: [ Close (X) | Fullscreen ]
+        // 1. Top-left pill beside macOS traffic lights: [ Close (X)  Fullscreen ] (single undivided capsule with fluid circle hover)
         let tl_x = area.left() + if is_fullscreen || cfg!(windows) { 20.0 } else { 86.0 };
         let tl_w = if cfg!(windows) { 32.0 } else { 68.0 };
         let tl_rect = Rect::from_min_size(pos2(tl_x, header_top), vec2(tl_w, 30.0));
         ui.ctx().data_mut(|d| d.insert_temp(egui::Id::unique("np-top-left-rect"), tl_rect));
-        paint_np_capsule(ui, "np-tl-glass", tl_rect, bg_light);
+        let tl_slot = ui.painter().add(egui::Shape::Noop);
 
         let close_rect = if cfg!(windows) {
             tl_rect
@@ -347,30 +347,56 @@ fn body(app: &mut App, ui: &mut Ui, now: f64) {
         let close_resp = named(ui.interact(close_rect, ui.scope_id().with("np-close"), close_sense), &t!("minimise_now_playing"))
             .on_hover_text(&t!("minimise_now_playing"));
         let close_resp = if interactive { close_resp.on_hover_cursor(egui::CursorIcon::PointingHand) } else { close_resp };
-        if close_resp.hovered() && interactive {
-            let cr = if cfg!(windows) {
-                egui::CornerRadius::same(15)
-            } else {
-                egui::CornerRadius { nw: 15, ne: 0, sw: 15, se: 0 }
-            };
-            ui.painter().rect_filled(close_rect, cr, theme::glass(0.12));
-        }
-        icon_at(ui, close_rect.center(), icon::X, 14.5, theme::with_alpha(fg_base, if close_resp.hovered() { 1.0 } else { 0.88 }));
-        if interactive && close_resp.clicked() {
-            close = true;
-        }
 
-        if !cfg!(windows) {
+        let fs_opt = if !cfg!(windows) {
             let fs_rect = Rect::from_min_max(pos2(tl_rect.min.x + 34.0, tl_rect.min.y), tl_rect.max);
             let fs_label = if is_fullscreen { t!("exit_full_screen") } else { t!("full_screen") };
             let fs_sense = if interactive { Sense::click() } else { Sense::hover() };
             let fs_resp = named(ui.interact(fs_rect, ui.scope_id().with("np-fs"), fs_sense), &fs_label).on_hover_text(&fs_label);
             let fs_resp = if interactive { fs_resp.on_hover_cursor(egui::CursorIcon::PointingHand) } else { fs_resp };
-            if fs_resp.hovered() && interactive {
-                ui.painter().rect_filled(fs_rect, egui::CornerRadius { nw: 0, ne: 15, sw: 0, se: 15 }, theme::glass(0.12));
-            }
-            let fs_col = if is_fullscreen { accent } else { theme::with_alpha(fg_base, if fs_resp.hovered() { 1.0 } else { 0.88 }) };
-            icon_at(ui, fs_rect.center(), icon::MAXIMIZE_2, 14.0, fs_col);
+            Some((fs_rect, fs_resp))
+        } else {
+            None
+        };
+
+        let p_close = crate::glass::press(ui, &close_resp, tl_rect, if interactive { 0.75 } else { 0.0 });
+        let p_fs = fs_opt.as_ref().map(|(_, r)| crate::glass::press(ui, r, tl_rect, if interactive { 0.75 } else { 0.0 }));
+        let (tl_draw, tl_press) = match p_fs {
+            Some(pf) if pf.amount.abs() > p_close.amount.abs() => (pf.rect, pf),
+            _ => (p_close.rect, p_close),
+        };
+        let tl_tint = if bg_light { Color32::from_white_alpha(48) } else { Color32::from_rgba_unmultiplied(24, 24, 28, 42) };
+        let mut tl_style = crate::glass::Style::clear(crate::glass::Corner::Capsule, Some(tl_tint), if bg_light { 0.10 } else { 0.88 }, 1.0);
+        tl_press.apply(&mut tl_style);
+        crate::glass::paint_at(ui, tl_slot, ui.scope_id().with("np-tl-glass"), tl_draw, tl_style);
+
+        let close_active = interactive && (close_resp.hovered() || close_resp.is_pointer_button_down_on());
+        let fs_active = interactive && fs_opt.as_ref().is_some_and(|(_, r)| r.hovered() || r.is_pointer_button_down_on());
+        let tl_target_cx = if fs_active { fs_opt.as_ref().unwrap().0.center().x } else { close_rect.center().x };
+        let tl_held = close_resp.is_pointer_button_down_on() || fs_opt.as_ref().is_some_and(|(_, r)| r.is_pointer_button_down_on());
+        widgets::capsule_indicator(
+            ui,
+            ui.scope_id().with("np-tl-hover"),
+            tl_rect,
+            tl_draw,
+            tl_target_cx,
+            close_active || fs_active,
+            tl_held,
+            (tl_draw.height() - 6.0).max(20.0),
+            (tl_draw.height() - 2.0).max(22.0),
+            |vis| if bg_light { Color32::from_black_alpha((24.0 * vis) as u8) } else { Color32::from_white_alpha((36.0 * vis) as u8) },
+            Some(|vis: f32| if bg_light { Color32::from_white_alpha((80.0 * vis) as u8) } else { Color32::from_white_alpha((28.0 * vis) as u8) }),
+        );
+
+        let tl_shift = tl_draw.center() - tl_rect.center();
+        icon_at(ui, close_rect.center() + tl_shift, icon::X, 14.5 * p_close.scale, theme::with_alpha(fg_base, 0.88 + 0.12 * p_close.hover));
+        if interactive && close_resp.clicked() {
+            close = true;
+        }
+        if let Some((fs_rect, fs_resp)) = fs_opt {
+            let pf = p_fs.unwrap();
+            let fs_col = if is_fullscreen { accent } else { theme::with_alpha(fg_base, 0.88 + 0.12 * pf.hover) };
+            icon_at(ui, fs_rect.center() + tl_shift, icon::MAXIMIZE_2, 14.0 * pf.scale, fs_col);
             if interactive && fs_resp.clicked() {
                 app.set_fullscreen(ui.ctx(), !is_fullscreen);
             }
@@ -430,10 +456,10 @@ fn body(app: &mut App, ui: &mut Ui, now: f64) {
             }
         }
 
-        // 3. Bottom-right segmented capsule: [ Lyrics | Queue ]
+        // 3. Bottom-right capsule: [ Lyrics  Queue ] with fluid sliding active circle & fluid hover circle
         let br_rect = Rect::from_min_size(pos2(area.right() - 24.0 - 72.0, area.bottom() - 18.0 - 32.0), vec2(72.0, 32.0));
         ui.ctx().data_mut(|d| d.insert_temp(egui::Id::unique("np-bottom-right-rect"), br_rect));
-        paint_np_capsule(ui, "np-br-glass", br_rect, bg_light);
+        let br_slot = ui.painter().add(egui::Shape::Noop);
 
         let lyr_rect = Rect::from_min_max(br_rect.min, pos2(br_rect.center().x, br_rect.max.y));
         let q_rect = Rect::from_min_max(pos2(br_rect.center().x, br_rect.min.y), br_rect.max);
@@ -446,34 +472,69 @@ fn body(app: &mut App, ui: &mut Ui, now: f64) {
         let lyr_resp = named(ui.interact(lyr_rect, ui.scope_id().with("np-br-lyrics"), lyr_sense), &t!("lyrics"))
             .on_hover_text(&t!("lyrics"));
         let lyr_resp = if interactive && !no_lyrics { lyr_resp.on_hover_cursor(egui::CursorIcon::PointingHand) } else { lyr_resp };
-        if lyr_active {
-            ui.painter().circle_filled(lyr_rect.center(), 12.5, fg_base);
-        } else if lyr_resp.hovered() && interactive && !no_lyrics {
-            ui.painter().circle_filled(lyr_rect.center(), 12.5, theme::glass(0.14));
-        }
-        let lyr_col = if no_lyrics {
-            theme::with_alpha(fg_base, 0.35)
-        } else if lyr_active {
-            inv_fg
-        } else {
-            theme::with_alpha(fg_base, if lyr_resp.hovered() { 1.0 } else { 0.85 })
-        };
-        super::glyphs::draw(ui, lyr_rect.center(), 15.0, super::glyphs::LYRICS, lyr_col);
-        if interactive && !no_lyrics && lyr_resp.clicked() {
-            app.np_tab = if lyr_active { NpTab::Art } else { NpTab::Lyrics };
-        }
 
         let q_sense = if interactive { Sense::click() } else { Sense::hover() };
         let q_resp = named(ui.interact(q_rect, ui.scope_id().with("np-br-queue"), q_sense), &t!("view_queue"))
             .on_hover_text(&t!("view_queue"));
         let q_resp = if interactive { q_resp.on_hover_cursor(egui::CursorIcon::PointingHand) } else { q_resp };
-        if q_active {
-            ui.painter().circle_filled(q_rect.center(), 12.5, fg_base);
-        } else if q_resp.hovered() && interactive {
-            ui.painter().circle_filled(q_rect.center(), 12.5, theme::glass(0.14));
+
+        let p_lyr = crate::glass::press(ui, &lyr_resp, br_rect, if interactive && !no_lyrics { 0.75 } else { 0.0 });
+        let p_q = crate::glass::press(ui, &q_resp, br_rect, if interactive { 0.75 } else { 0.0 });
+        let (br_draw, br_press) = if p_q.amount.abs() > p_lyr.amount.abs() { (p_q.rect, p_q) } else { (p_lyr.rect, p_lyr) };
+        let br_tint = if bg_light { Color32::from_white_alpha(48) } else { Color32::from_rgba_unmultiplied(24, 24, 28, 42) };
+        let mut br_style = crate::glass::Style::clear(crate::glass::Corner::Capsule, Some(br_tint), if bg_light { 0.10 } else { 0.88 }, 1.0);
+        br_press.apply(&mut br_style);
+        crate::glass::paint_at(ui, br_slot, ui.scope_id().with("np-br-glass"), br_draw, br_style);
+
+        let br_held = lyr_resp.is_pointer_button_down_on() || q_resp.is_pointer_button_down_on();
+        let active_cx = if q_active { q_rect.center().x } else { lyr_rect.center().x };
+        widgets::capsule_indicator(
+            ui,
+            ui.scope_id().with("np-br-active"),
+            br_rect,
+            br_draw,
+            active_cx,
+            lyr_active || q_active,
+            br_held,
+            25.0,
+            27.0,
+            |vis| theme::with_alpha(fg_base, vis),
+            None::<fn(f32) -> Color32>,
+        );
+
+        // Fluid hover circle for whichever side is hovered while inactive
+        let lyr_hover = interactive && !no_lyrics && !lyr_active && lyr_resp.hovered();
+        let q_hover = interactive && !q_active && q_resp.hovered();
+        let hover_cx = if q_hover { q_rect.center().x } else { lyr_rect.center().x };
+        widgets::capsule_indicator(
+            ui,
+            ui.scope_id().with("np-br-hover"),
+            br_rect,
+            br_draw,
+            hover_cx,
+            lyr_hover || q_hover,
+            false,
+            25.0,
+            27.0,
+            |vis| if bg_light { Color32::from_black_alpha((24.0 * vis) as u8) } else { Color32::from_white_alpha((34.0 * vis) as u8) },
+            None::<fn(f32) -> Color32>,
+        );
+
+        let br_shift = br_draw.center() - br_rect.center();
+        let lyr_k = crate::glass::spring_bool(ui.ctx(), ui.scope_id().with("np-br-lyr-k"), lyr_active, crate::glass::Tuning::SNAP);
+        let lyr_col = if no_lyrics {
+            theme::with_alpha(fg_base, 0.35)
+        } else {
+            theme::lerp_color(theme::with_alpha(fg_base, 0.85 + 0.15 * p_lyr.hover), inv_fg, lyr_k)
+        };
+        super::glyphs::draw(ui, lyr_rect.center() + br_shift, 15.0 * p_lyr.scale, super::glyphs::LYRICS, lyr_col);
+        if interactive && !no_lyrics && lyr_resp.clicked() {
+            app.np_tab = if lyr_active { NpTab::Art } else { NpTab::Lyrics };
         }
-        let q_col = if q_active { inv_fg } else { theme::with_alpha(fg_base, if q_resp.hovered() { 1.0 } else { 0.85 }) };
-        super::glyphs::draw(ui, q_rect.center(), 15.0, super::glyphs::QUEUE, q_col);
+
+        let q_k = crate::glass::spring_bool(ui.ctx(), ui.scope_id().with("np-br-q-k"), q_active, crate::glass::Tuning::SNAP);
+        let q_col = theme::lerp_color(theme::with_alpha(fg_base, 0.85 + 0.15 * p_q.hover), inv_fg, q_k);
+        super::glyphs::draw(ui, q_rect.center() + br_shift, 15.0 * p_q.scale, super::glyphs::QUEUE, q_col);
         if interactive && q_resp.clicked() {
             app.np_tab = if q_active {
                 let prev = ui.ctx().data(|d| d.get_temp(egui::Id::unique("np-last-tab-prior"))).unwrap_or(if no_lyrics { NpTab::Art } else { NpTab::Lyrics });

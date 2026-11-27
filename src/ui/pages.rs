@@ -706,59 +706,23 @@ pub fn share_more_pill(
 
     let share_active = share_resp.hovered() || share_resp.is_pointer_button_down_on();
     let more_active = more_resp.hovered() || more_resp.is_pointer_button_down_on() || more_open;
-    let any_active = share_active || more_active;
-    let hover_id = ui.scope_id().with((id_salt, "pill-hover"));
-    let vis = crate::glass::spring_bool(ui.ctx(), hover_id.with("vis"), any_active, crate::glass::Tuning::SNAP).clamp(0.0, 1.0);
-    let last_dx_id = hover_id.with("last-dx");
-    let target_dx = if any_active {
-        let dx = if more_active {
-            more_rect.center().x - pill_rect.min.x
-        } else {
-            share_rect.center().x - pill_rect.min.x
-        };
-        ui.ctx().data_mut(|d| d.insert_temp(last_dx_id, dx));
-        dx
-    } else {
-        ui.ctx().data(|d| d.get_temp::<f32>(last_dx_id)).unwrap_or(share_rect.center().x - pill_rect.min.x)
-    };
-    let mut thumb = crate::glass::load_thumb(ui.ctx(), hover_id);
-    if any_active && vis <= 0.02 {
-        thumb.pos.value = target_dx;
-        thumb.pos.velocity = 0.0;
-    }
+    let target_cx = if more_active { more_rect.center().x } else { share_rect.center().x };
     let rest_d = (draw_pill.height() - 6.0).max(20.0);
     let held_d = (draw_pill.height() - 2.0).max(22.0);
     let held_side = share_resp.is_pointer_button_down_on() || more_resp.is_pointer_button_down_on();
-    let thumb_frame = thumb.step(
-        ui.ctx(),
-        target_dx,
-        crate::glass::Tuning::SMOOTH,
+    widgets::capsule_indicator(
+        ui,
+        ui.scope_id().with((id_salt, "pill-hover")),
+        pill_rect,
+        draw_pill,
+        target_cx,
+        share_active || more_active,
         held_side,
-        Vec2::splat(rest_d),
-        Vec2::splat(held_d),
+        rest_d,
+        held_d,
+        |vis| if light { Color32::from_black_alpha((22.0 * vis) as u8) } else { Color32::from_white_alpha((34.0 * vis) as u8) },
+        Some(|vis: f32| if light { Color32::from_white_alpha((90.0 * vis) as u8) } else { Color32::from_white_alpha((30.0 * vis) as u8) }),
     );
-    crate::glass::store_thumb(ui.ctx(), hover_id, thumb);
-
-    if vis > 0.01 {
-        let scale = 0.76 + 0.24 * vis;
-        let size = thumb_frame.size * scale;
-        let center = pos2(draw_pill.center().x + (thumb.pos.value - pill_rect.width() * 0.5), draw_pill.center().y);
-        let circle = Rect::from_center_size(center, size);
-        let r = circle.height() * 0.5;
-        let (fill, rim) = if light {
-            (
-                Color32::from_black_alpha((22.0 * vis) as u8),
-                Color32::from_white_alpha((90.0 * vis) as u8),
-            )
-        } else {
-            (
-                Color32::from_white_alpha((34.0 * vis) as u8),
-                Color32::from_white_alpha((30.0 * vis) as u8),
-            )
-        };
-        ui.painter().rect_filled(circle, r, fill);
-        ui.painter().rect_stroke(circle, r, egui::Stroke::new(0.8, rim), egui::StrokeKind::Inside);
-    }
 
     let shift = draw_pill.center() - pill_rect.center();
     let share_fg = if light {

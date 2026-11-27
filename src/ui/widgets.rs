@@ -430,6 +430,53 @@ fn show_glass_popup(popup: egui::Popup<'_>, add_contents: impl FnOnce(&mut Ui)) 
     }
 }
 
+/// Fluid spring-animated circular indicator inside a multi-button pill (`rest_pill` -> `draw_pill`).
+/// Glides smoothly with droplet stretch when `target_cx` moves horizontally across buttons,
+/// and scales smoothly in/out when `shown` toggles.
+#[allow(clippy::too_many_arguments)]
+pub fn capsule_indicator(
+    ui: &egui::Ui,
+    id: egui::Id,
+    rest_pill: Rect,
+    draw_pill: Rect,
+    target_cx: f32,
+    shown: bool,
+    held: bool,
+    rest_d: f32,
+    held_d: f32,
+    fill: impl FnOnce(f32) -> Color32,
+    rim: Option<impl FnOnce(f32) -> Color32>,
+) -> f32 {
+    let vis = crate::glass::spring_bool(ui.ctx(), id.with("vis"), shown, crate::glass::Tuning::SNAP).clamp(0.0, 1.0);
+    let last_dx_id = id.with("last-dx");
+    let dx = if shown {
+        let dx = target_cx - rest_pill.min.x;
+        ui.ctx().data_mut(|d| d.insert_temp(last_dx_id, dx));
+        dx
+    } else {
+        ui.ctx().data(|d| d.get_temp::<f32>(last_dx_id)).unwrap_or(target_cx - rest_pill.min.x)
+    };
+    let mut thumb = crate::glass::load_thumb(ui.ctx(), id);
+    if shown && vis <= 0.02 {
+        thumb.pos.value = dx;
+        thumb.pos.velocity = 0.0;
+    }
+    let frame = thumb.step(ui.ctx(), dx, crate::glass::Tuning::SMOOTH, held, Vec2::splat(rest_d), Vec2::splat(held_d));
+    crate::glass::store_thumb(ui.ctx(), id, thumb);
+
+    if vis > 0.01 {
+        let scale = 0.76 + 0.24 * vis;
+        let center = pos2(draw_pill.center().x + (thumb.pos.value - rest_pill.width() * 0.5), draw_pill.center().y);
+        let circle = Rect::from_center_size(center, frame.size * scale);
+        let r = circle.height() * 0.5;
+        ui.painter().rect_filled(circle, r, fill(vis));
+        if let Some(rim_fn) = rim {
+            ui.painter().rect_stroke(circle, r, egui::Stroke::new(0.8, rim_fn(vis)), egui::StrokeKind::Inside);
+        }
+    }
+    vis
+}
+
 /// The size to fetch an image at for `px` pixels: rounded up to a few fixed steps, so
 /// resizing the window doesn't fetch a new size every frame and small covers (rows,
 /// sidebar, player bar) share one download.
