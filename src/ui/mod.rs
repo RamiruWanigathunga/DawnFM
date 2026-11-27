@@ -2091,24 +2091,6 @@ impl eframe::App for App {
                     });
                 self.scroll_panes.push(r.response.rect);
             }
-            // Lyrics beside the pages; Up next takes the place when it's open.
-            let l = crate::glass::spring_bool(&ctx, egui::Id::unique("lyrics-drawer"), self.lyrics_drawer && !self.queue_open && !self.np_open, crate::glass::Tuning::SMOOTH).clamp(0.0, 1.0);
-            if l > 0.01 {
-                let drawer_fill = self.lyrics_panel_fill(&ctx);
-                let r = egui::Panel::right("lyrics-drawer").resizable(false)
-                    .exact_size(DRAWER_W * l)
-                    .frame(egui::Frame::NONE)
-                    .show_separator_line(false)
-                    .show(ui, |ui| {
-                        let tint = theme::with_alpha(drawer_fill, if light { 0.22 } else { 0.30 });
-                        let style = crate::glass::Style::thick(crate::glass::Corner::Circular(0.0), Some(tint), if light { 0.08 } else { 0.90 }, 1.0);
-                        crate::glass::paint(ui, egui::Id::unique("lyrics-drawer-liquid-glass"), ui.max_rect(), style);
-                        egui::Frame::NONE
-                            .inner_margin(egui::Margin { left: 20, right: 16, top: 16, bottom: 16 })
-                            .show(ui, |ui| nowplaying::lyrics_drawer(self, ui, now));
-                    });
-                self.scroll_panes.push(r.response.rect);
-            }
             let main_right = ui.available_rect_before_wrap().right();
             let is_artist = matches!(self.page, Page::Artist(_));
             let left_margin = if is_artist { 0 } else { 28 };
@@ -2141,6 +2123,39 @@ impl eframe::App for App {
                             shell::player_bar(self, ui, now, true);
                         });
                     });
+            }
+            // Floating lyrics panel over the right side of the pages; Up next replaces it when open.
+            let l = crate::glass::spring_bool(&ctx, egui::Id::unique("lyrics-drawer"), self.lyrics_drawer && !self.queue_open && !self.np_open, crate::glass::Tuning::SMOOTH).clamp(0.0, 1.0);
+            if l > 0.01 {
+                let drawer_fill = self.lyrics_panel_fill(&ctx);
+                let pad_r = 16.0;
+                let top = (titlebar::top_margin(14, 44.0) as f32).max(16.0);
+                let bottom_gap = if self.page == Page::Settings || np >= 0.99 { 16.0 } else { self.bar_height() + 12.0 };
+                let bottom = (screen.bottom() - bottom_gap).max(top + 240.0);
+                let float_w = DRAWER_W.min((screen.width() - shell::SIDEBAR_W - 36.0).max(240.0));
+                let slide = (1.0 - l) * 28.0;
+                let float_rect = egui::Rect::from_min_max(
+                    egui::pos2(screen.right() - pad_r - float_w + slide, top),
+                    egui::pos2(screen.right() - pad_r + slide, bottom),
+                );
+                egui::Area::new(egui::Id::unique("lyrics-drawer"))
+                    .fixed_pos(float_rect.min)
+                    .order(egui::Order::Middle)
+                    .show(&ctx, |ui| {
+                        ui.set_opacity(l);
+                        // Swallow clicks outside interactive lyric lines so pages behind don't react.
+                        ui.allocate_rect(float_rect, egui::Sense::click());
+                        let corner = crate::glass::Corner::Radius(theme::panel_radius().max(16) as f32);
+                        let tint = theme::with_alpha(drawer_fill, if light { 0.24 } else { 0.36 });
+                        let style = crate::glass::Style::thick(corner, Some(tint), if light { 0.08 } else { 0.90 }, 1.0);
+                        crate::glass::paint(ui, egui::Id::unique("lyrics-drawer-liquid-glass"), float_rect, style);
+                        ui.scope_builder(egui::UiBuilder::new().max_rect(float_rect).layout(egui::Layout::top_down(egui::Align::Min)), |ui| {
+                            egui::Frame::NONE
+                                .inner_margin(egui::Margin { left: 20, right: 16, top: 14, bottom: 14 })
+                                .show(ui, |ui| nowplaying::lyrics_drawer(self, ui, now));
+                        });
+                    });
+                self.scroll_panes.push(float_rect);
             }
         }
         if np > 0.001 {
