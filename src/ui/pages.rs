@@ -1765,7 +1765,19 @@ pub fn collection(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
     let is_less = app.suggest_less.contains(id);
     let photo = artist_id.as_ref().and_then(|a| app.artist_photos.get(a)).filter(|t| !t.is_empty());
     let is_liked = id == "LM" || id == super::LIKED_MUSIC || id == "VLLM" || id == crate::spotify::SPOTIFY_LIKED_ID;
-    ui.add_space(18.0);
+    let target = if is_album { Target::Album(id.to_owned()) } else { Target::Playlist(id.to_owned()) };
+    // Liked Music and Episodes for later are the account's own lists: they can't be
+    // saved, removed, edited or deleted.
+    let auto = matches!(id, "LM" | "SE") || id == crate::spotify::SPOTIFY_LIKED_ID;
+    let saved = active_lib.as_ref().is_some_and(|l| {
+        let cards = if is_album { &l.albums } else { &l.playlists };
+        cards.iter().any(|card| card.target == target)
+    });
+    // Saving only applies to someone else's playlist or an album.
+    let save_id = if is_album { c.save_id.clone() } else { (!c.owned).then(|| id.to_owned()) };
+    let owned = !is_album && c.owned;
+    // Clear the floating top-right Share/More + Search bar before the cover and title begin.
+    ui.add_space(30.0);
     ui.horizontal_top(|ui| {
         if !is_liked {
             let (img, _) = ui.allocate_exact_size(Vec2::splat(side), Sense::hover());
@@ -1781,17 +1793,6 @@ pub fn collection(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
             ui.add_space(28.0);
         }
         ui.vertical(|ui| {
-            let target = if is_album { Target::Album(id.to_owned()) } else { Target::Playlist(id.to_owned()) };
-            // Liked Music and Episodes for later are the account's own lists: they can't be
-            // saved, removed, edited or deleted.
-            let auto = matches!(id, "LM" | "SE") || id == crate::spotify::SPOTIFY_LIKED_ID;
-            let saved = active_lib.as_ref().is_some_and(|l| {
-                let cards = if is_album { &l.albums } else { &l.playlists };
-                cards.iter().any(|card| card.target == target)
-            });
-            // Saving only applies to someone else's playlist or an album.
-            let save_id = if is_album { c.save_id.clone() } else { (!c.owned).then(|| id.to_owned()) };
-            let owned = !is_album && c.owned;
             // Bottom-aligned with the cover, as in Music: title, artist, kind and year, buttons.
             // The account's own lists have no byline row (it'd only name the listener), so
             // the rest sits lower by its height to stay bottom-aligned.
@@ -1846,191 +1847,212 @@ pub fn collection(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
                         acts.push(Action::SaveCollection(save_id, !saved));
                     }
                 }
-                // Actions at the right end of the row: Find in Album search bar and Share/More segmented pill.
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.spacing_mut().item_spacing = vec2(10.0, 0.0);
-                    let light = theme::light();
+            });
+        });
+    });
 
-                    // 1. Search pill on the far right (first in right_to_left)
-                    let search_w = 190.0f32.min(ui.available_width() - 80.0).max(120.0);
-                    let (search_rect, search_hit) = ui.allocate_exact_size(vec2(search_w, 32.0), Sense::click());
-                    let search_hit = search_hit.on_hover_cursor(egui::CursorIcon::Text);
-                    let search_bg_slot = ui.painter().add(egui::Shape::Noop);
+    // Top-right floating header controls matching Apple Music: [Share | ...] + [Find in Album/Playlist].
+    let screen = ui.ctx().content_rect();
+    let page_right = ui.clip_rect().right().min(screen.right());
+    let top = screen.top() + super::titlebar::top_margin(6, 32.0) as f32;
+    let avail_w = (page_right - (screen.left() + super::shell::SIDEBAR_W)).max(240.0);
+    let search_w = 190.0f32.min((avail_w - 116.0).max(120.0));
+    let bar_w = 72.0 + 10.0 + search_w;
+    let right_pad = super::titlebar::right_gap(
+        ui.ctx(),
+        Rect::from_min_size(pos2(page_right - bar_w - 16.0, top), vec2(bar_w + 16.0, 32.0)),
+        16.0,
+    );
+    let bar_min = pos2(page_right - right_pad - bar_w, top);
+    let coll_search = &mut app.coll_search;
+    let accent = rows.accent;
+    egui::Area::new(egui::Id::unique(("coll-top-bar", id)))
+        .fixed_pos(bar_min)
+        .order(egui::Order::Middle)
+        .show(ui.ctx(), |ui| {
+            let light = theme::light();
+            ui.set_min_size(vec2(bar_w, 32.0));
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing = vec2(10.0, 0.0);
 
-                    widgets::icon_at(ui, pos2(search_rect.left() + 16.0, search_rect.center().y), icon::SEARCH, 13.5, theme::text_dim());
-
-                    let mut current_query = match &app.coll_search {
-                        Some((fid, q)) if fid == id => q.clone(),
-                        _ => String::new(),
-                    };
-                    let clearable = !current_query.is_empty();
-                    let text_right = if clearable { search_rect.right() - 28.0 } else { search_rect.right() - 12.0 };
-                    let text_rect = Rect::from_min_max(pos2(search_rect.left() + 33.0, search_rect.top() + 3.0), pos2(text_right, search_rect.bottom() - 3.0));
-                    let placeholder = if is_album { "Find in Album" } else { "Find in Playlist" };
-                    let edit_resp = ui.put(
-                        text_rect,
-                        egui::TextEdit::singleline(&mut current_query)
-                            .hint_text(egui::RichText::new(placeholder).color(theme::text_dim()))
-                            .font(theme::regular(13.0))
-                            .text_color(theme::text())
-                            .frame(egui::Frame::NONE)
-                            .align(egui::Align2::LEFT_CENTER)
-                            .desired_width(text_rect.width()),
-                    );
-                    if search_hit.clicked() {
-                        edit_resp.request_focus();
+                // 1. Share & More segmented pill (72×32 pt)
+                let (pill_rect, _) = ui.allocate_exact_size(vec2(72.0, 32.0), Sense::hover());
+                let pin_card = Card {
+                    title: c.title.clone(),
+                    subtitle: c.byline(),
+                    thumbs: c.thumbs.clone(),
+                    target: target.clone(),
+                    round: false,
+                    links: c.artists.clone(),
+                };
+                let missing_dl: Vec<Track> = tracks.iter().filter(|t| crate::downloads::path(&t.id).is_none()).cloned().collect();
+                let coll_id = id.to_owned();
+                let app_logged_in = app.logged_in;
+                let tracks_empty = tracks.is_empty();
+                share_more_pill(ui, pill_rect, "coll", &target, acts, |ui, acts, target| {
+                    let mut any = false;
+                    // 1. Pin album / Pin playlist
+                    if !auto {
+                        let label = match (is_album, is_pinned) {
+                            (true, false) => "Pin album",
+                            (true, true) => "Unpin album",
+                            (false, false) => "Pin playlist",
+                            (false, true) => "Unpin playlist",
+                        };
+                        if widgets::menu_action(ui, None, label) {
+                            acts.push(Action::TogglePin(pin_card.clone()));
+                        }
+                        any = true;
                     }
-                    let search_focus = theme::anim_bool(ui.ctx(), ui.scope_id().with("col-search-focus"), edit_resp.has_focus(), 0.2);
-                    if crate::renderer::active() == crate::renderer::Renderer::OpenGl {
-                        crate::glass::paint_at(ui, search_bg_slot, ui.scope_id().with("col-search-glass"), search_rect, crate::glass::control(crate::glass::Corner::Capsule, light, search_focus * 0.5, 1.0));
-                    } else {
-                        let search_shadow = if light { 18 } else { 35 };
-                        let search_fill = if light { Color32::from_black_alpha(15) } else { theme::glass(0.12) };
-                        ui.painter().set(search_bg_slot, egui::Shape::Vec(vec![
-                            egui::Shape::rect_filled(search_rect.translate(vec2(0.0, 1.0)), 16.0, Color32::from_black_alpha(search_shadow)),
-                            egui::Shape::rect_filled(search_rect, 16.0, search_fill),
-                        ]));
+                    // 2. Add to library (only when not already saved and can be saved)
+                    if !auto && !saved && let Some(sid) = &save_id {
+                        if widgets::menu_action(ui, None, "Add to library") {
+                            acts.push(Action::SaveCollection(sid.clone(), true));
+                        }
+                        any = true;
                     }
-                    if search_focus > 0.01 {
-                        ui.painter().rect_stroke(search_rect, 16.0, egui::Stroke::new(1.5, theme::with_alpha(app_accent(ui), search_focus)), egui::StrokeKind::Inside);
-                    }
-                    if edit_resp.changed() {
-                        if current_query.is_empty() {
-                            app.coll_search = None;
-                        } else {
-                            app.coll_search = Some((id.to_owned(), current_query.clone()));
-                        }
-                    }
-                    if clearable {
-                        let clear_rect = Rect::from_center_size(pos2(search_rect.right() - 14.0, search_rect.center().y), Vec2::splat(18.0));
-                        let clear_resp = named(ui.interact(clear_rect, ui.scope_id().with("search_clear"), Sense::click()), "Clear search").on_hover_cursor(egui::CursorIcon::PointingHand);
-                        widgets::icon_at(ui, clear_rect.center(), icon::X, 11.0, if clear_resp.hovered() { theme::text() } else { theme::text_dim() });
-                        if clear_resp.clicked() {
-                            app.coll_search = None;
-                        }
-                    }
-
-                    // 2. Share & More segmented pill
-                    let (pill_rect, _) = ui.allocate_exact_size(vec2(72.0, 32.0), Sense::hover());
-                    let app_logged_in = app.logged_in;
-                    let tracks_empty = tracks.is_empty();
-                    let pin_card = Card {
-                        title: c.title.clone(),
-                        subtitle: c.byline(),
-                        thumbs: c.thumbs.clone(),
-                        target: target.clone(),
-                        round: false,
-                        links: c.artists.clone(),
-                    };
-                    let missing_dl: Vec<Track> = tracks.iter().filter(|t| crate::downloads::path(&t.id).is_none()).cloned().collect();
-                    let coll_id = id.to_owned();
-                    share_more_pill(ui, pill_rect, "coll", &target, acts, |ui, acts, target| {
-                        let mut any = false;
-                        // 1. Pin album / Pin playlist
-                        if !auto {
-                            let label = match (is_album, is_pinned) {
-                                (true, false) => "Pin album",
-                                (true, true) => "Unpin album",
-                                (false, false) => "Pin playlist",
-                                (false, true) => "Unpin playlist",
-                            };
-                            if widgets::menu_action(ui, None, label) {
-                                acts.push(Action::TogglePin(pin_card.clone()));
-                            }
-                            any = true;
-                        }
-                        // 2. Add to library (only when not already saved and can be saved)
-                        if !auto && !saved && let Some(sid) = &save_id {
-                            if widgets::menu_action(ui, None, "Add to library") {
-                                acts.push(Action::SaveCollection(sid.clone(), true));
-                            }
-                            any = true;
-                        }
-                        // 3–5. Download, Add to playlist, Play next
-                        if !tracks_empty {
-                            if any {
-                                widgets::menu_separator(ui);
-                            }
-                            any = true;
-                            if missing_dl.is_empty() {
-                                if widgets::menu_action(ui, None, "Show in folder") {
-                                    crate::downloads::open_folder();
-                                }
-                            } else if widgets::menu_action(ui, None, "Download") {
-                                acts.push(Action::DownloadMany(missing_dl.clone()));
-                            }
-                            if widgets::menu_action(ui, None, "Add to playlist") {
-                                acts.push(Action::AddToPlaylist(tracks.to_vec()));
-                            }
-                            if widgets::menu_action(ui, Some(icon::LIST_PLUS), "Play next") {
-                                acts.push(Action::PlayNextMany(tracks.to_vec()));
-                            }
-                        }
-                        // 6–7. Favourite & Suggest less
-                        if !auto {
-                            if any {
-                                widgets::menu_separator(ui);
-                            }
-                            any = true;
-                            if widgets::menu_action(ui, None, if is_fav { "Undo favourite" } else { "Favourite" }) {
-                                acts.push(Action::ToggleFavouriteCollection(coll_id.clone()));
-                            }
-                            if !owned
-                                && widgets::menu_action(ui, None, if is_less { "Undo suggest less" } else { "Suggest less" })
-                            {
-                                acts.push(Action::SuggestLess(coll_id.clone()));
-                            }
-                        }
-                        // Extra context actions: Select, owned playlist management, 8. Delete from library, Share
-                        let has_select = app_logged_in && !auto && !tracks_empty;
-                        let has_delete_lib = !auto && saved && save_id.is_some();
-                        if any && (has_select || owned || has_delete_lib) {
-                            widgets::menu_separator(ui);
-                            any = false;
-                        }
-                        if has_select {
-                            any = true;
-                            if widgets::menu_action(ui, None, if selecting { "Done selecting" } else { "Select" }) {
-                                if selecting { stop_select = true } else { start_select = true }
-                            }
-                        }
-                        if owned {
-                            any = true;
-                            if widgets::menu_action(ui, None, "Edit playlist") {
-                                acts.push(Action::EditPlaylist);
-                            }
-                            if widgets::menu_action(ui, None, "Collaborate") {
-                                acts.push(Action::Collaborate);
-                            }
-                            if widgets::menu_action(ui, None, "Delete playlist") {
-                                acts.push(Action::DeletePlaylist);
-                            }
-                        }
-                        // 8. Delete from library (when saved to library and removable)
-                        if !auto && saved && let Some(sid) = &save_id {
-                            any = true;
-                            if widgets::menu_action(ui, None, "Delete from library") {
-                                acts.push(Action::SaveCollection(sid.clone(), false));
-                            }
-                        }
+                    // 3–5. Download, Add to playlist, Play next
+                    if !tracks_empty {
                         if any {
                             widgets::menu_separator(ui);
                         }
-                        if widgets::menu_action(ui, Some(icon::SHARE), "Share") {
-                            acts.push(Action::Share(target.clone()));
+                        any = true;
+                        if missing_dl.is_empty() {
+                            if widgets::menu_action(ui, None, "Show in folder") {
+                                crate::downloads::open_folder();
+                            }
+                        } else if widgets::menu_action(ui, None, "Download") {
+                            acts.push(Action::DownloadMany(missing_dl.clone()));
                         }
-                    });
+                        if widgets::menu_action(ui, None, "Add to playlist") {
+                            acts.push(Action::AddToPlaylist(tracks.to_vec()));
+                        }
+                        if widgets::menu_action(ui, Some(icon::LIST_PLUS), "Play next") {
+                            acts.push(Action::PlayNextMany(tracks.to_vec()));
+                        }
+                    }
+                    // 6–7. Favourite & Suggest less
+                    if !auto {
+                        if any {
+                            widgets::menu_separator(ui);
+                        }
+                        any = true;
+                        if widgets::menu_action(ui, None, if is_fav { "Undo favourite" } else { "Favourite" }) {
+                            acts.push(Action::ToggleFavouriteCollection(coll_id.clone()));
+                        }
+                        if !owned
+                            && widgets::menu_action(ui, None, if is_less { "Undo suggest less" } else { "Suggest less" })
+                        {
+                            acts.push(Action::SuggestLess(coll_id.clone()));
+                        }
+                    }
+                    // Extra context actions: Select, owned playlist management, 8. Delete from library, Share
+                    let has_select = app_logged_in && !auto && !tracks_empty;
+                    let has_delete_lib = !auto && saved && save_id.is_some();
+                    if any && (has_select || owned || has_delete_lib) {
+                        widgets::menu_separator(ui);
+                        any = false;
+                    }
+                    if has_select {
+                        any = true;
+                        if widgets::menu_action(ui, None, if selecting { "Done selecting" } else { "Select" }) {
+                            if selecting { stop_select = true } else { start_select = true }
+                        }
+                    }
+                    if owned {
+                        any = true;
+                        if widgets::menu_action(ui, None, "Edit playlist") {
+                            acts.push(Action::EditPlaylist);
+                        }
+                        if widgets::menu_action(ui, None, "Collaborate") {
+                            acts.push(Action::Collaborate);
+                        }
+                        if widgets::menu_action(ui, None, "Delete playlist") {
+                            acts.push(Action::DeletePlaylist);
+                        }
+                    }
+                    // 8. Delete from library (when saved to library and removable)
+                    if !auto && saved && let Some(sid) = &save_id {
+                        any = true;
+                        if widgets::menu_action(ui, None, "Delete from library") {
+                            acts.push(Action::SaveCollection(sid.clone(), false));
+                        }
+                    }
+                    if any {
+                        widgets::menu_separator(ui);
+                    }
+                    if widgets::menu_action(ui, Some(icon::SHARE), "Share") {
+                        acts.push(Action::Share(target.clone()));
+                    }
                 });
-            });
-            if start_select {
-                app.selection.start(&app.page);
-            }
-            if stop_select {
-                app.selection.clear();
-            }
 
+                // 2. Search pill on the far right (190×32 pt)
+                let (search_rect, search_hit) = ui.allocate_exact_size(vec2(search_w, 32.0), Sense::click());
+                let search_hit = search_hit.on_hover_cursor(egui::CursorIcon::Text);
+                let search_bg_slot = ui.painter().add(egui::Shape::Noop);
+
+                widgets::icon_at(ui, pos2(search_rect.left() + 16.0, search_rect.center().y), icon::SEARCH, 13.5, theme::text_dim());
+
+                let mut current_query = match coll_search {
+                    Some((fid, q)) if fid == id => q.clone(),
+                    _ => String::new(),
+                };
+                let clearable = !current_query.is_empty();
+                let text_right = if clearable { search_rect.right() - 28.0 } else { search_rect.right() - 12.0 };
+                let text_rect = Rect::from_min_max(pos2(search_rect.left() + 33.0, search_rect.top() + 3.0), pos2(text_right, search_rect.bottom() - 3.0));
+                let placeholder = if is_album { "Find in Album" } else { "Find in Playlist" };
+                let edit_resp = ui.put(
+                    text_rect,
+                    egui::TextEdit::singleline(&mut current_query)
+                        .id(ui.scope_id().with(("coll-search-edit", id)))
+                        .hint_text(egui::RichText::new(placeholder).color(theme::text_dim()))
+                        .font(theme::regular(13.0))
+                        .text_color(theme::text())
+                        .frame(egui::Frame::NONE)
+                        .align(egui::Align2::LEFT_CENTER)
+                        .desired_width(text_rect.width()),
+                );
+                if search_hit.clicked() {
+                    edit_resp.request_focus();
+                }
+                let search_focus = theme::anim_bool(ui.ctx(), ui.scope_id().with("col-search-focus"), edit_resp.has_focus(), 0.2);
+                if crate::renderer::active() == crate::renderer::Renderer::OpenGl {
+                    crate::glass::paint_at(ui, search_bg_slot, ui.scope_id().with(("col-search-glass", id)), search_rect, crate::glass::control(crate::glass::Corner::Capsule, light, search_focus * 0.5, 1.0));
+                } else {
+                    let search_shadow = if light { 18 } else { 35 };
+                    let search_fill = if light { Color32::from_black_alpha(15) } else { theme::glass(0.12) };
+                    ui.painter().set(search_bg_slot, egui::Shape::Vec(vec![
+                        egui::Shape::rect_filled(search_rect.translate(vec2(0.0, 1.0)), 16.0, Color32::from_black_alpha(search_shadow)),
+                        egui::Shape::rect_filled(search_rect, 16.0, search_fill),
+                    ]));
+                }
+                if search_focus > 0.01 {
+                    ui.painter().rect_stroke(search_rect, 16.0, egui::Stroke::new(1.5, theme::with_alpha(accent, search_focus)), egui::StrokeKind::Inside);
+                }
+                if edit_resp.changed() {
+                    if current_query.is_empty() {
+                        *coll_search = None;
+                    } else {
+                        *coll_search = Some((id.to_owned(), current_query.clone()));
+                    }
+                }
+                if clearable {
+                    let clear_rect = Rect::from_center_size(pos2(search_rect.right() - 14.0, search_rect.center().y), Vec2::splat(18.0));
+                    let clear_resp = named(ui.interact(clear_rect, ui.scope_id().with("search_clear"), Sense::click()), "Clear search").on_hover_cursor(egui::CursorIcon::PointingHand);
+                    widgets::icon_at(ui, clear_rect.center(), icon::X, 11.0, if clear_resp.hovered() { theme::text() } else { theme::text_dim() });
+                    if clear_resp.clicked() {
+                        *coll_search = None;
+                    }
+                }
+            });
         });
-    });
+
+    if start_select {
+        app.selection.start(&app.page);
+    }
+    if stop_select {
+        app.selection.clear();
+    }
     ui.add_space(26.0);
     let needle = app.coll_search.as_ref().filter(|(fid, _)| fid == id).map(|(_, q)| q.trim().to_lowercase()).unwrap_or_default();
     let filtered: Vec<Track> = if needle.is_empty() {
