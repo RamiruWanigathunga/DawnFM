@@ -239,6 +239,50 @@ pub fn heart(ui: &Ui, center: Pos2, size: f32, fill: f32, outline: Color32, fill
 }
 
 /// Circular icon button with an animated hover halo.
+/// Draws a circular hover/press under-shadow and expanding click touch ripple behind an
+/// icon button; returns `(hover, icon_scale)`.
+pub fn paint_icon_touch(ui: &Ui, resp: &Response, rect: Rect, light_bg: bool) -> (f32, f32) {
+    let now = ui.input(|i| i.time);
+    let hover = theme::anim_bool(ui.ctx(), resp.id.with("th"), resp.hovered(), 0.14);
+    let held = resp.is_pointer_button_down_on();
+    let hold = theme::anim_bool(ui.ctx(), resp.id.with("tp"), held, 0.10);
+    let click_key = resp.id.with("tc");
+    if resp.clicked() || (held && hold < 0.05) {
+        ui.ctx().data_mut(|d| d.insert_temp(click_key, now));
+    }
+    let pulse_t = ui
+        .ctx()
+        .data(|d| d.get_temp::<f64>(click_key))
+        .map_or(1.0_f32, |t0| ((now - t0) / 0.34).clamp(0.0, 1.0) as f32);
+    if pulse_t < 1.0 {
+        ui.ctx().request_repaint();
+    }
+
+    let base_r = rect.width().min(rect.height()) * 0.5;
+    let tint = |alpha: f32| {
+        let a = (alpha.clamp(0.0, 1.0) * 255.0).round() as u8;
+        if light_bg { Color32::from_black_alpha(a) } else { Color32::from_white_alpha(a) }
+    };
+
+    let under_a = (hover * 0.08 + hold * 0.14).clamp(0.0, 0.24);
+    if under_a > 0.004 {
+        let under_r = base_r * (0.86 + 0.14 * hover.max(hold));
+        ui.painter().circle_filled(rect.center(), under_r, tint(under_a));
+    }
+
+    if pulse_t < 1.0 {
+        let ease = 1.0 - (1.0 - pulse_t).powi(3);
+        let ripple_r = base_r * (0.35 + 0.80 * ease);
+        let ripple_a = (1.0 - pulse_t).powf(0.85) * 0.24;
+        if ripple_a > 0.004 {
+            ui.painter().circle_filled(rect.center(), ripple_r, tint(ripple_a));
+        }
+    }
+
+    let scale = 1.0 - 0.10 * hold + if pulse_t < 1.0 { 0.06 * (pulse_t * std::f32::consts::PI).sin() } else { 0.0 };
+    (hover, scale)
+}
+
 /// Paint an interactive capsule Liquid Glass backdrop when `vis > 0.01` (with frosted fallback).
 pub fn paint_glass_hover(ui: &Ui, id: egui::Id, press: &crate::glass::PressEffect, vis: f32) {
     if vis <= 0.01 {

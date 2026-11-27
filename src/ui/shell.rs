@@ -862,10 +862,11 @@ pub fn player_bar(app: &mut App, ui: &mut Ui, now: f64, _frosted: bool) {
     };
 
     // Shuffle (if show_modes)
+    let light_bar = theme::light();
     if show_modes {
         let r_shuf = tbtn(ui, x_shuf, "shuffle", &t!("shuffle_up_next"));
-        let h = if r_shuf.hovered() { 1.0 } else { 0.0 };
-        glyphs::draw(ui, r_shuf.rect.center(), 17.0, glyphs::SHUFFLE, ink(h));
+        let (h, s) = widgets::paint_icon_touch(ui, &r_shuf, r_shuf.rect, light_bar);
+        glyphs::draw(ui, r_shuf.rect.center(), 17.0 * s, glyphs::SHUFFLE, ink(h));
         if r_shuf.clicked() {
             app.shuffle_upcoming();
         }
@@ -873,8 +874,8 @@ pub fn player_bar(app: &mut App, ui: &mut Ui, now: f64, _frosted: bool) {
 
     // Previous
     let r_prev = tbtn(ui, x_prev, "prev", &t!("previous"));
-    let h = if r_prev.hovered() { 1.0 } else { 0.0 };
-    glyphs::draw(ui, r_prev.rect.center(), 19.5, glyphs::PREVIOUS, ink(h));
+    let (h, s) = widgets::paint_icon_touch(ui, &r_prev, r_prev.rect, light_bar);
+    glyphs::draw(ui, r_prev.rect.center(), 19.5 * s, glyphs::PREVIOUS, ink(h));
     if r_prev.clicked() && enabled {
         app.prev();
     }
@@ -882,7 +883,7 @@ pub fn player_bar(app: &mut App, ui: &mut Ui, now: f64, _frosted: bool) {
     // Play / Pause
     let play_label = if playing { t!("pause") } else { t!("play") };
     let r_play = tbtn(ui, x_play, "play", &play_label);
-    let h = if r_play.hovered() { 1.0 } else { 0.0 };
+    let (h, s) = widgets::paint_icon_touch(ui, &r_play, r_play.rect, light_bar);
     let c = r_play.rect.center();
     let morph = theme::anim_bool(&ctx, "bar-play-morph", playing || app.buffering, 0.18);
     if app.buffering {
@@ -893,10 +894,10 @@ pub fn player_bar(app: &mut App, ui: &mut Ui, now: f64, _frosted: bool) {
     } else {
         let fg = ink(0.9 + 0.1 * h);
         if morph < 1.0 {
-            glyphs::draw(ui, c, 22.5, glyphs::PLAY, theme::with_alpha(fg, 1.0 - morph));
+            glyphs::draw(ui, c, 22.5 * s, glyphs::PLAY, theme::with_alpha(fg, 1.0 - morph));
         }
         if morph > 0.0 {
-            glyphs::draw(ui, c, 22.5, glyphs::PAUSE, theme::with_alpha(fg, morph));
+            glyphs::draw(ui, c, 22.5 * s, glyphs::PAUSE, theme::with_alpha(fg, morph));
         }
     }
     if r_play.clicked() && enabled {
@@ -905,8 +906,8 @@ pub fn player_bar(app: &mut App, ui: &mut Ui, now: f64, _frosted: bool) {
 
     // Next
     let r_next = tbtn(ui, x_next, "next", &t!("next"));
-    let h = if r_next.hovered() { 1.0 } else { 0.0 };
-    glyphs::draw(ui, r_next.rect.center(), 19.5, glyphs::NEXT, ink(h));
+    let (h, s) = widgets::paint_icon_touch(ui, &r_next, r_next.rect, light_bar);
+    glyphs::draw(ui, r_next.rect.center(), 19.5 * s, glyphs::NEXT, ink(h));
     if r_next.clicked() && enabled {
         app.next();
     }
@@ -919,8 +920,8 @@ pub fn player_bar(app: &mut App, ui: &mut Ui, now: f64, _frosted: bool) {
             Repeat::One => (glyphs::REPEAT_ONE, true),
         };
         let r_rep = tbtn(ui, x_rep, "repeat", &t!("repeat"));
-        let h = if r_rep.hovered() { 1.0 } else { 0.0 };
-        glyphs::draw(ui, r_rep.rect.center(), 17.0, glyph, if on { accent } else { ink(h) });
+        let (h, s) = widgets::paint_icon_touch(ui, &r_rep, r_rep.rect, light_bar);
+        glyphs::draw(ui, r_rep.rect.center(), 17.0 * s, glyph, if on { accent } else { ink(h) });
         if r_rep.clicked() {
             app.queue.repeat = match app.queue.repeat {
                 Repeat::Off => Repeat::All,
@@ -1131,9 +1132,10 @@ pub fn player_bar(app: &mut App, ui: &mut Ui, now: f64, _frosted: bool) {
     let vol = app.audio.volume();
     let vol_resp = ui.interact(r_vol, ui.scope_id().with(("bar-r", "vol")), Sense::click());
     let vol_resp = named(vol_resp, "Volume").on_hover_cursor(egui::CursorIcon::PointingHand);
-    let vol_h = if vol_resp.hovered() || v_reveal > 0.5 { 1.0 } else { 0.0 };
+    let (vol_hover, vol_scale) = widgets::paint_icon_touch(ui, &vol_resp, r_vol, light_bar);
+    let vol_h = vol_hover.max(if v_reveal > 0.5 { 1.0 } else { 0.0 });
     let step = glyphs::volume_step(vol);
-    glyphs::draw(ui, r_vol.center(), 17.5, glyphs::VOLUME[step], ink(vol_h));
+    glyphs::draw(ui, r_vol.center(), 17.5 * vol_scale, glyphs::VOLUME[step], ink(vol_h));
     if vol_resp.hovered() {
         let scroll = ui.input(|i| i.smooth_scroll_delta.y);
         if scroll != 0.0 {
@@ -1158,11 +1160,11 @@ pub fn player_bar(app: &mut App, ui: &mut Ui, now: f64, _frosted: bool) {
         // Star / Like
         let star_resp = ui.interact(r_star, ui.scope_id().with(("bar-r", "like")), Sense::click());
         let star_resp = named(star_resp, &like_label).on_hover_cursor(egui::CursorIcon::PointingHand);
-        let star_h = if star_resp.hovered() { 1.0 } else { 0.0 };
+        let (star_h, star_s) = widgets::paint_icon_touch(ui, &star_resp, r_star, light_bar);
         let pop = heard.as_ref().map_or(0.0, |t| theme::anim_bool(&ctx, ("liked", &t.id), liked, 0.3));
         let dim = if heard.is_some() { 1.0 } else { 0.4 };
         let tint = theme::lerp_color(r_ink(star_h), accent, pop).gamma_multiply(dim);
-        let size = 17.5 * (1.0 + 0.25 * (pop * std::f32::consts::PI).sin());
+        let size = 17.5 * star_s * (1.0 + 0.25 * (pop * std::f32::consts::PI).sin());
         glyphs::draw(ui, r_star.center(), size, glyphs::STAR, tint);
         if pop > 0.0 {
             glyphs::draw(ui, r_star.center(), size, glyphs::STAR_FILLED, theme::with_alpha(tint, tint.a() as f32 / 255.0 * pop));
@@ -1177,8 +1179,8 @@ pub fn player_bar(app: &mut App, ui: &mut Ui, now: f64, _frosted: bool) {
         if r_alpha > 0.5 {
             let q_resp = ui.interact(r_q, ui.scope_id().with(("bar-r", "queue")), Sense::click());
             let q_resp = named(q_resp, &t!("up_next")).on_hover_cursor(egui::CursorIcon::PointingHand);
-            let q_h = if q_resp.hovered() { 1.0 } else { 0.0 };
-            glyphs::draw(ui, r_q.center(), 17.5, glyphs::QUEUE, if queue_open { accent } else { r_ink(q_h) });
+            let (q_h, q_s) = widgets::paint_icon_touch(ui, &q_resp, r_q, light_bar);
+            glyphs::draw(ui, r_q.center(), 17.5 * q_s, glyphs::QUEUE, if queue_open { accent } else { r_ink(q_h) });
             if q_resp.clicked() {
                 if app.np_open {
                     app.np_tab = if queue_open { NpTab::Art } else { NpTab::UpNext };
@@ -1200,8 +1202,8 @@ pub fn player_bar(app: &mut App, ui: &mut Ui, now: f64, _frosted: bool) {
         if r_alpha > 0.5 {
             let lyr_resp = ui.interact(r_lyr, ui.scope_id().with(("bar-r", "lyrics")), Sense::click());
             let lyr_resp = named(lyr_resp, &lyrics_label).on_hover_cursor(egui::CursorIcon::PointingHand);
-            let lyr_h = if lyr_resp.hovered() { 1.0 } else { 0.0 };
-            glyphs::draw(ui, r_lyr.center(), 17.5, if lyrics_on { glyphs::LYRICS } else { glyphs::LYRICS_OFF }, if lyrics_on { accent } else { r_ink(lyr_h) });
+            let (lyr_h, lyr_s) = widgets::paint_icon_touch(ui, &lyr_resp, r_lyr, light_bar);
+            glyphs::draw(ui, r_lyr.center(), 17.5 * lyr_s, if lyrics_on { glyphs::LYRICS } else { glyphs::LYRICS_OFF }, if lyrics_on { accent } else { r_ink(lyr_h) });
             if lyr_resp.clicked() {
                 app.toggle_lyrics();
             }

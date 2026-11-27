@@ -735,13 +735,17 @@ fn sleeve(app: &mut App, ui: &mut Ui, x0: f32, w: f32, info_y: f32, track: &crat
     let like_label = if liked { t!("remove_from_favourites") } else { t!("add_to_favourites") };
     let sr = named(sr, &like_label);
     let sr = if interactive { sr.on_hover_cursor(egui::CursorIcon::PointingHand) } else { sr };
-    let sh = theme::anim_bool(ui.ctx(), sr.id.with("h"), interactive && sr.hovered(), 0.1);
+    let (sh, ss) = if interactive {
+        widgets::paint_icon_touch(ui, &sr, star, bg_light)
+    } else {
+        (0.0, 1.0)
+    };
     let pop = theme::anim_bool(ui.ctx(), ("liked", &heard.id), liked, 0.3);
     let base_star = if bg_light { Color32::BLACK } else { Color32::WHITE };
     let dim = 0.92 + 0.08 * sh;
     let tint = theme::lerp_color(theme::with_alpha(base_star, dim), app.accent_color(), pop);
     // It swells a quarter on the way, as the mini player's does.
-    let size = 19.0 * (1.0 + 0.25 * (pop * std::f32::consts::PI).sin());
+    let size = 19.0 * ss * (1.0 + 0.25 * (pop * std::f32::consts::PI).sin());
     if !bg_light {
         super::glyphs::draw(ui, star.center() + vec2(0.0, 1.2), size, super::glyphs::STAR, Color32::from_black_alpha(90));
     }
@@ -880,13 +884,12 @@ fn sleeve(app: &mut App, ui: &mut Ui, x0: f32, w: f32, info_y: f32, track: &crat
         let resp = ui.interact(r, ui.scope_id().with(("np-t", key)), if live { Sense::click() } else { Sense::hover() });
         let resp = named(resp, name);
         let resp = if live { resp.on_hover_cursor(egui::CursorIcon::PointingHand) } else { resp };
-        let h = theme::anim_bool(ui.ctx(), resp.id.with("h"), live && resp.hovered(), 0.1);
-        let p = theme::anim_bool(ui.ctx(), resp.id.with("p"), live && resp.is_pointer_button_down_on(), 0.1);
-        if h > 0.0 {
-            let halo = if bg_light { Color32::from_black_alpha((0.1 * h * 255.0) as u8) } else { Color32::from_white_alpha((0.1 * h * 255.0) as u8) };
-            ui.painter().circle_filled(pos2(xs[i], ty), sizes[i] / 2.0 * (1.0 - 0.1 * p), halo);
-        }
-        (resp, h, p)
+        let (h, p_scale) = if live {
+            widgets::paint_icon_touch(ui, &resp, r, bg_light)
+        } else {
+            (0.0, 1.0)
+        };
+        (resp, h, 1.0 - p_scale)
     };
     let draw_np_glyph = |ui: &mut Ui, center: egui::Pos2, size: f32, glyph: &'static [u8], tint: Color32| {
         if !bg_light {
@@ -1234,7 +1237,9 @@ pub(crate) fn options_menu(
     let resp = ui.interact(rect, ui.scope_id().with("np-options"), Sense::click());
     let resp = named(resp, &t!("options")).on_hover_cursor(egui::CursorIcon::PointingHand);
     let open = egui::Popup::is_id_open(ui.ctx(), egui::Popup::default_response_id(&resp));
-    let h = theme::anim_bool(ui.ctx(), resp.id.with("h"), resp.hovered() || open, 0.12);
+    let light_bg = if tint.is_some() { theme::light() } else { app.bg_is_light() };
+    let (touch_h, touch_s) = widgets::paint_icon_touch(ui, &resp, rect, light_bg);
+    let h = touch_h.max(if open { 1.0 } else { 0.0 });
 
     let dot_col = if let Some(tint_fn) = tint {
         tint_fn(h)
@@ -1245,11 +1250,11 @@ pub(crate) fn options_menu(
     };
     if !app.bg_is_light() {
         for dx in [-5.0, 0.0, 5.0] {
-            ui.painter().circle_filled(rect.center() + vec2(dx, 1.2), 1.8, Color32::from_black_alpha(85));
+            ui.painter().circle_filled(rect.center() + vec2(dx * touch_s, 1.2), 1.8 * touch_s, Color32::from_black_alpha(85));
         }
     }
     for dx in [-5.0, 0.0, 5.0] {
-        ui.painter().circle_filled(rect.center() + vec2(dx, 0.0), 1.8, dot_col);
+        ui.painter().circle_filled(rect.center() + vec2(dx * touch_s, 0.0), 1.8 * touch_s, dot_col);
     }
     widgets::popup_menu(&resp, Some(egui::PopupCloseBehavior::CloseOnClickOutside), |ui| {
         ui.set_width(240.0);
