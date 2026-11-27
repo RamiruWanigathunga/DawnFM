@@ -1110,12 +1110,12 @@ fn visuals() -> egui::Visuals {
     // The built-in look's menus are shaped like the system's with frosted glass corners.
     v.menu_corner_radius = egui::CornerRadius::same(10);
     v.window_stroke = if light() {
-        egui::Stroke::new(1.0, Color32::from_black_alpha(35))
+        egui::Stroke::new(1.0, Color32::from_black_alpha(18))
     } else {
         egui::Stroke::new(1.0, glass(0.14))
     };
     v.popup_shadow = if light() {
-        egui::epaint::Shadow { offset: [0, 6], blur: 24, spread: 1, color: Color32::from_black_alpha(45) }
+        egui::epaint::Shadow { offset: [0, 4], blur: 18, spread: 0, color: Color32::from_black_alpha(18) }
     } else {
         egui::epaint::Shadow { offset: [0, 8], blur: 30, spread: 1, color: Color32::from_black_alpha(160) }
     };

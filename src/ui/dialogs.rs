@@ -233,28 +233,93 @@ fn text_field_styled(ui: &mut Ui, label: &str, text: &mut String, multiline: boo
 
 /// Private / Unlisted / Public as one segmented control; nothing picked keeps the current setting.
 fn privacy_picker(ui: &mut Ui, privacy: &mut Option<String>) {
-    use egui::{Sense, vec2};
-    let (track, _) = ui.allocate_exact_size(vec2(ui.available_width(), 38.0), Sense::hover());
+    use egui::{Sense, pos2, vec2};
+    let (track, track_resp) = ui.allocate_exact_size(vec2(ui.available_width(), 38.0), Sense::click_and_drag());
+    let track_resp = track_resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+    let light = theme::light();
     if crate::renderer::active() == crate::renderer::Renderer::OpenGl {
-        crate::glass::paint(ui, ui.scope_id().with("privacy-track-glass"), track, crate::glass::control(10.0, theme::light(), 0.0, 1.0));
+        crate::glass::paint(ui, ui.scope_id().with("privacy-track-glass"), track, crate::glass::control(crate::glass::Corner::Capsule, light, 0.0, 1.0));
     } else {
-        ui.painter().rect_filled(track, 10.0, theme::glass(0.08));
+        ui.painter().rect_filled(track, 19.0, theme::glass(0.08));
     }
     let options = [("PRIVATE", "Private"), ("UNLISTED", "Unlisted"), ("PUBLIC", "Public")];
     let w = (track.width() - 6.0) / options.len() as f32;
-    for (i, (value, label)) in options.into_iter().enumerate() {
-        let r = egui::Rect::from_min_size(track.min + vec2(3.0 + w * i as f32, 3.0), vec2(w, track.height() - 6.0));
-        let resp = widgets::named(ui.interact(r, ui.scope_id().with(("privacy", value)), Sense::click()), label).on_hover_cursor(egui::CursorIcon::PointingHand);
-        let on = privacy.as_deref() == Some(value);
-        let s = theme::anim_bool(ui.ctx(), resp.id.with("s"), on, 0.15);
-        let h = theme::anim_bool(ui.ctx(), resp.id.with("h"), resp.hovered(), 0.12);
-        let fill = theme::lerp_color(theme::glass(0.06 * h), theme::text(), s);
-        if fill.a() > 0 { ui.painter().rect_filled(r, 8.0, fill); }
-        let color = theme::lerp_color(theme::with_alpha(theme::text(), 0.7 + 0.3 * h), theme::on_text(), s);
-        ui.painter().text(r.center(), egui::Align2::CENTER_CENTER, label, theme::semibold(13.0), color);
-        if resp.clicked() {
-            *privacy = if on { None } else { Some(value.to_owned()) };
+    let cells: Vec<egui::Rect> = (0..options.len())
+        .map(|i| egui::Rect::from_min_size(track.min + vec2(3.0 + w * i as f32, 3.0), vec2(w, track.height() - 6.0)))
+        .collect();
+    let sel_idx = privacy.as_deref().and_then(|v| options.iter().position(|(k, _)| *k == v));
+
+    let seg_id = ui.scope_id().with("privacy-seg");
+    let ox = track.min.x;
+    let first = cells[0].center().x - ox;
+    let last = cells[options.len() - 1].center().x - ox;
+    let mut d = crate::glass::load_thumb(ui.ctx(), seg_id);
+    let dragged = crate::glass::drag_target(ui.ctx(), seg_id, &track_resp, ox, d.pos.value, first, last, 8.0);
+    let held = track_resp.is_pointer_button_down_on() || track_resp.dragged();
+    let nearest = |x: f32| {
+        (0..options.len())
+            .min_by(|a, b| (cells[*a].center().x - ox - x).abs().total_cmp(&(cells[*b].center().x - ox - x).abs()))
+            .unwrap_or(0)
+    };
+    let pointer = ui.input(|i| i.pointer.interact_pos());
+    let origin = ui.input(|i| i.pointer.press_origin());
+    if track_resp.drag_stopped() || (track_resp.clicked() && dragged.is_none()) {
+        let p = pointer.map_or(d.pos.value + ox, |p| p.x);
+        let moved = origin.is_some_and(|o| (p - o.x).abs() > 4.0);
+        let picked = if moved {
+            nearest(d.pos.value)
+        } else {
+            cells.iter().position(|c| p >= c.min.x && p < c.max.x).unwrap_or(nearest(p - ox))
+        };
+        if !moved && sel_idx == Some(picked) {
+            *privacy = None;
+        } else {
+            *privacy = Some(options[picked].0.to_owned());
         }
+    }
+
+    let sel_idx = privacy.as_deref().and_then(|v| options.iter().position(|(k, _)| *k == v));
+    if let Some(sel) = sel_idx {
+        let target = dragged.unwrap_or(cells[sel].center().x - ox);
+        let rest = vec2(w, track.height() - 4.0);
+        let lifted = vec2(w * 1.06 + 4.0, track.height() * 1.28);
+        if track_resp.clicked() && d.lift.value < 0.3 {
+            d.lift.value = 0.31;
+        }
+        let follow = if dragged.is_some() && !track_resp.clicked() {
+            crate::glass::Tuning::new(0.13, 0.9)
+        } else {
+            crate::glass::Tuning::new(0.36, 0.80)
+        };
+        let f = d.step(ui.ctx(), target, follow, held, rest, lifted);
+        crate::glass::store_thumb(ui.ctx(), seg_id, d);
+
+        let thumb = egui::Rect::from_center_size(pos2(ox + d.pos.value, track.center().y), f.size);
+        let knob = if light { Color32::WHITE } else { Color32::from_gray(96) };
+        if crate::renderer::active() == crate::renderer::Renderer::OpenGl {
+            let mut style = crate::glass::thumb_glass(thumb, &f, knob, light, 1.0);
+            style.material.blur = 0.0;
+            style.material.refraction *= 0.72;
+            style.material.depth *= 0.55;
+            style.material.dispersion *= 0.08;
+            style.material.dark_edge *= 0.14;
+            style.material.inner_glow *= 1.8;
+            style.material.shadow *= 0.45;
+            style.material.saturation = 1.0;
+            crate::glass::paint(ui, seg_id.with("thumb"), thumb, style);
+        } else {
+            ui.painter().rect_filled(thumb, thumb.height() * 0.5, knob);
+        }
+    }
+
+    for (i, (_, label)) in options.into_iter().enumerate() {
+        let r = cells[i];
+        let on = sel_idx == Some(i);
+        let h = crate::glass::spring_bool(ui.ctx(), ui.scope_id().with(("privacy-h", i)), track_resp.hovered() && pointer.is_some_and(|p| r.contains(p)), crate::glass::Tuning::SNAP);
+        let s = crate::glass::spring_bool(ui.ctx(), ui.scope_id().with(("privacy-s", i)), on, crate::glass::Tuning::SNAP);
+        let fg_on = if light { Color32::from_gray(18) } else { Color32::WHITE };
+        let color = theme::lerp_color(theme::with_alpha(theme::text(), 0.70 + 0.30 * h), fg_on, s);
+        ui.painter().text(r.center(), egui::Align2::CENTER_CENTER, label, theme::semibold(13.0), color);
     }
     if privacy.is_none() {
         ui.add_space(8.0);

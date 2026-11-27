@@ -2046,7 +2046,7 @@ impl eframe::App for App {
             self.scroll_panes.push(side.response.rect);
             let section = ui.available_rect_before_wrap();
             const DRAWER_W: f32 = 340.0;
-            let q = theme::anim_bool(&ctx, "queue-drawer", self.queue_open && !self.np_open, 0.25);
+            let q = crate::glass::spring_bool(&ctx, egui::Id::unique("queue-drawer"), self.queue_open && !self.np_open, crate::glass::Tuning::SMOOTH).clamp(0.0, 1.0);
             if q > 0.01 {
                 let drawer_fill = self.lyrics_panel_fill(&ctx);
                 let r = egui::Panel::right("queue").resizable(false)
@@ -2055,14 +2055,14 @@ impl eframe::App for App {
                     .show_separator_line(false)
                     .show(ui, |ui| {
                         let tint = theme::with_alpha(drawer_fill, if light { 0.22 } else { 0.30 });
-                        let style = crate::glass::Style::thick(crate::glass::Corner::Circular(0.0), Some(tint), if light { 0.08 } else { 0.90 }, 1.0);
+                        let style = crate::glass::Style::thick(crate::glass::Corner::Circular(0.0), Some(tint), if light { 0.05 } else { 0.90 }, 1.0);
                         crate::glass::paint(ui, egui::Id::unique("queue-liquid-glass"), ui.max_rect(), style);
                         egui::Frame::NONE.inner_margin(egui::Margin::symmetric(14, 16)).show(ui, |ui| shell::queue_drawer(self, ui));
                     });
                 self.scroll_panes.push(r.response.rect);
             }
             // Lyrics beside the pages; Up next takes the place when it's open.
-            let l = theme::anim_bool(&ctx, "lyrics-drawer", self.lyrics_drawer && !self.queue_open && !self.np_open, 0.25);
+            let l = crate::glass::spring_bool(&ctx, egui::Id::unique("lyrics-drawer"), self.lyrics_drawer && !self.queue_open && !self.np_open, crate::glass::Tuning::SMOOTH).clamp(0.0, 1.0);
             if l > 0.01 {
                 let drawer_fill = self.lyrics_panel_fill(&ctx);
                 let r = egui::Panel::right("lyrics-drawer").resizable(false)
@@ -2071,7 +2071,7 @@ impl eframe::App for App {
                     .show_separator_line(false)
                     .show(ui, |ui| {
                         let tint = theme::with_alpha(drawer_fill, if light { 0.22 } else { 0.30 });
-                        let style = crate::glass::Style::thick(crate::glass::Corner::Circular(0.0), Some(tint), if light { 0.08 } else { 0.90 }, 1.0);
+                        let style = crate::glass::Style::thick(crate::glass::Corner::Circular(0.0), Some(tint), if light { 0.05 } else { 0.90 }, 1.0);
                         crate::glass::paint(ui, egui::Id::unique("lyrics-drawer-liquid-glass"), ui.max_rect(), style);
                         egui::Frame::NONE
                             .inner_margin(egui::Margin { left: 20, right: 16, top: 16, bottom: 16 })

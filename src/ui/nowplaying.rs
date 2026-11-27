@@ -1086,27 +1086,30 @@ fn synced(app: &mut App, ui: &mut Ui, rect: Rect, id: &str, lyrics: &Lyrics, now
         let w = g.size().x + 24.0;
         let size = vec2(w, h);
         let y = rect.top() + 10.0 + egui::lerp(-28.0..=0.0, theme::ease_out(shown));
-        let r = Rect::from_min_size(pos2(rect.center().x - size.x / 2.0, y), size);
-        let resp = ui.interact(r, ui.scope_id().with("lyr-resume-btn"), if out.user_scrolling { Sense::click() } else { Sense::hover() });
+        let rest_r = Rect::from_min_size(pos2(rect.center().x - size.x / 2.0, y), size);
+        let resp = ui.interact(rest_r, ui.scope_id().with("lyr-resume-btn"), if out.user_scrolling { Sense::click() } else { Sense::hover() });
         let resp = named(resp, &resume_label).on_hover_cursor(egui::CursorIcon::PointingHand);
-        let hover = theme::anim_bool(ui.ctx(), "lyr-resume-h", resp.hovered() && out.user_scrolling, 0.2);
-        let clip = rect.expand2(vec2(0.0, 4.0));
+        let press = crate::glass::press(ui, &resp, rest_r, if out.user_scrolling { 1.0 } else { 0.0 });
+        let r = press.rect;
+        let hover = press.hover;
+        let clip = rect.expand2(vec2(0.0, 12.0));
         let (tint, fg) = if bg_light {
             (Color32::from_white_alpha(64), Color32::from_rgb(0x18, 0x14, 0x1c))
         } else {
             let fg = theme::lerp_color(Color32::from_white_alpha((225.0 * shown) as u8), Color32::WHITE, hover);
             (Color32::from_rgba_unmultiplied(24, 24, 28, (48.0 + 24.0 * hover) as u8), fg)
         };
-        ui.scope_builder(egui::UiBuilder::new().max_rect(r), |ui| {
+        ui.scope_builder(egui::UiBuilder::new().max_rect(r.expand(6.0)), |ui| {
             ui.set_clip_rect(clip);
-            let style = crate::glass::Style::clear(crate::glass::Corner::Capsule, Some(tint), if bg_light { 0.10 } else { 0.88 }, shown);
+            let mut style = crate::glass::Style::clear(crate::glass::Corner::Capsule, Some(tint), if bg_light { 0.06 } else { 0.88 }, shown);
+            press.apply(&mut style);
             crate::glass::paint(ui, egui::Id::unique("lyr-resume-liquid-glass"), r, style);
         });
         let p = ui.painter().with_clip_rect(clip);
         let at = r.center() - g.size() / 2.0;
         p.galley_with_override_text_color(at, g, fg);
 
-        if shown < 1.0 || (hover > 0.0 && hover < 1.0) {
+        if shown < 1.0 {
             super::animate(ui.ctx());
         }
         if resp.clicked() {
@@ -1519,11 +1522,8 @@ fn switch_row(ui: &mut Ui, label: &str, on: &mut bool) {
         Color32::from_rgb(235, 235, 235)
     };
     ui.painter().text(pos2(rect.left() + 10.0, rect.center().y), egui::Align2::LEFT_CENTER, label, theme::regular(13.0), fg);
-    let t = theme::anim_bool(ui.ctx(), resp.id.with("t"), *on, 0.16);
-    let track = Rect::from_center_size(pos2(rect.right() - 24.0, rect.center().y), vec2(30.0, 16.0));
-    ui.painter().rect_filled(track, 8.0, theme::lerp_color(theme::glass(0.16 + 0.06 * h), accent, t));
-    let knob = pos2(egui::lerp(track.left() + 8.0..=track.right() - 8.0, t), track.center().y);
-    ui.painter().circle_filled(knob, 6.5, Color32::WHITE);
+    let track = Rect::from_center_size(pos2(rect.right() - 26.0, rect.center().y), vec2(38.0, 19.0));
+    crate::glass::liquid_toggle(ui, track, on, accent, 0.72, resp.id.with("switch"), resp.clicked());
 }
 
 /// A small icon button (24 × 24).

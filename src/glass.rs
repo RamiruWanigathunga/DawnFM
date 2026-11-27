@@ -98,20 +98,20 @@ impl Material {
         corner_dispersion: 0.0,
         blur: 4.2,
         magnify: 1.0,
-        light_range: (0.58, 1.0),
-        dark_range: (0.08, 0.58),
+        light_range: (0.72, 1.0),
+        dark_range: (0.08, 0.56),
         saturation: 1.45,
-        rim: 0.72,
+        rim: 0.76,
         rim_width: 0.85,
         rim_base: 0.34,
-        dark_edge: 0.22,
+        dark_edge: 0.16,
         light_spill: 0.18,
         inner_glow: 0.16,
-        inner_shadow: 0.05,
-        shadow: 0.18,
-        shadow_radius: 16.0,
-        shadow_y: 6.0,
-        shadow_tint: 0.35,
+        inner_shadow: 0.04,
+        shadow: 0.14,
+        shadow_radius: 15.0,
+        shadow_y: 5.5,
+        shadow_tint: 0.40,
         tint_follow: 1.0,
     };
 
@@ -126,9 +126,9 @@ impl Material {
         light_range: (0.12, 1.0),
         dark_range: (0.04, 0.92),
         saturation: 1.25,
-        rim: 0.82,
+        rim: 0.85,
         inner_glow: 0.14,
-        inner_shadow: 0.07,
+        inner_shadow: 0.06,
         ..Self::REGULAR
     };
 
@@ -140,16 +140,87 @@ impl Material {
         outer_depth: 5.0,
         dispersion: 0.10,
         blur: 10.5,
-        light_range: (0.66, 1.0),
+        light_range: (0.78, 1.0),
         dark_range: (0.08, 0.48),
         saturation: 1.55,
-        shadow: 0.24,
-        shadow_radius: 26.0,
-        shadow_y: 10.0,
+        shadow: 0.22,
+        shadow_radius: 24.0,
+        shadow_y: 9.0,
         light_spill: 0.24,
         inner_glow: 0.11,
         ..Self::REGULAR
     };
+
+    /// Clear refractive lens a switch, slider, or segmented thumb morphs into while lifted.
+    pub const LENS: Self = Self {
+        refraction: 20.0,
+        depth: 9.4,
+        outer_refraction: 6.0,
+        outer_depth: 1.6,
+        dispersion: 0.17,
+        blur: 0.0,
+        light_range: (0.15, 1.0),
+        dark_range: (0.06, 1.0),
+        saturation: 1.06,
+        rim: 1.0,
+        rim_width: 0.75,
+        rim_base: 0.06,
+        dark_edge: 0.92,
+        light_spill: 0.0,
+        inner_glow: 0.20,
+        inner_shadow: 0.09,
+        shadow: 0.17,
+        shadow_radius: 9.0,
+        shadow_y: 5.0,
+        shadow_tint: 0.95,
+        ..Self::REGULAR
+    };
+
+    pub fn scaled(mut self, k: f32) -> Self {
+        self.refraction *= k;
+        self.depth *= k;
+        self.outer_refraction *= k;
+        self.outer_depth *= k;
+        self.pinch *= k;
+        self.pinch_width *= k;
+        self.rim_width *= k.max(1.0).sqrt();
+        self.shadow_radius *= k;
+        self.shadow_y *= k;
+        self
+    }
+
+    pub fn lerp(&self, o: &Self, t: f32) -> Self {
+        let l = |a: f32, b: f32| lerp(a, b, t);
+        let l2 = |a: (f32, f32), b: (f32, f32)| (l(a.0, b.0), l(a.1, b.1));
+        Self {
+            refraction: l(self.refraction, o.refraction),
+            depth: l(self.depth, o.depth),
+            outer_refraction: l(self.outer_refraction, o.outer_refraction),
+            outer_depth: l(self.outer_depth, o.outer_depth),
+            pinch: l(self.pinch, o.pinch),
+            pinch_width: l(self.pinch_width, o.pinch_width),
+            sideways: l(self.sideways, o.sideways),
+            dispersion: l(self.dispersion, o.dispersion),
+            corner_dispersion: l(self.corner_dispersion, o.corner_dispersion),
+            blur: l(self.blur, o.blur),
+            magnify: l(self.magnify, o.magnify),
+            light_range: l2(self.light_range, o.light_range),
+            dark_range: l2(self.dark_range, o.dark_range),
+            saturation: l(self.saturation, o.saturation),
+            rim: l(self.rim, o.rim),
+            rim_width: l(self.rim_width, o.rim_width),
+            rim_base: l(self.rim_base, o.rim_base),
+            dark_edge: l(self.dark_edge, o.dark_edge),
+            light_spill: l(self.light_spill, o.light_spill),
+            inner_glow: l(self.inner_glow, o.inner_glow),
+            inner_shadow: l(self.inner_shadow, o.inner_shadow),
+            shadow: l(self.shadow, o.shadow),
+            shadow_radius: l(self.shadow_radius, o.shadow_radius),
+            shadow_y: l(self.shadow_y, o.shadow_y),
+            shadow_tint: l(self.shadow_tint, o.shadow_tint),
+            tint_follow: l(self.tint_follow, o.tint_follow),
+        }
+    }
 }
 
 /// Resolved per-draw styling passed into [`paint`].
@@ -162,19 +233,23 @@ pub struct Style {
     pub darkness: f32,
     /// `0.0` = hidden, `1.0` = full glass presence.
     pub alpha: f32,
+    /// Specular highlight rotation in radians while pressed/pulled.
+    pub light_bend: f32,
+    /// Subtle face brightness lift while pressed.
+    pub brightness: f32,
 }
 
 impl Style {
     pub fn regular(corner: impl Into<Corner>, tint: Option<Color32>, darkness: f32, alpha: f32) -> Self {
-        Self { corner: corner.into(), material: Material::REGULAR, tint, darkness, alpha }
+        Self { corner: corner.into(), material: Material::REGULAR, tint, darkness, alpha, light_bend: 0.0, brightness: 0.0 }
     }
 
     pub fn clear(corner: impl Into<Corner>, tint: Option<Color32>, darkness: f32, alpha: f32) -> Self {
-        Self { corner: corner.into(), material: Material::CLEAR, tint, darkness, alpha }
+        Self { corner: corner.into(), material: Material::CLEAR, tint, darkness, alpha, light_bend: 0.0, brightness: 0.0 }
     }
 
     pub fn thick(corner: impl Into<Corner>, tint: Option<Color32>, darkness: f32, alpha: f32) -> Self {
-        Self { corner: corner.into(), material: Material::THICK, tint, darkness, alpha }
+        Self { corner: corner.into(), material: Material::THICK, tint, darkness, alpha, light_bend: 0.0, brightness: 0.0 }
     }
 }
 
@@ -182,21 +257,21 @@ impl Style {
 pub fn control(corner: impl Into<Corner>, light: bool, hover: f32, alpha: f32) -> Style {
     let h = hover.clamp(0.0, 1.0);
     let tint = if light {
-        Color32::from_white_alpha((44.0 + 28.0 * h) as u8)
+        Color32::from_white_alpha((34.0 + 30.0 * h) as u8)
     } else {
         Color32::from_rgba_unmultiplied(34, 34, 40, (44.0 + 28.0 * h) as u8)
     };
-    Style::regular(corner, Some(tint), if light { 0.08 } else { 0.90 }, alpha)
+    Style::regular(corner, Some(tint), if light { 0.05 } else { 0.90 }, alpha)
 }
 
 /// Liquid Glass preset for floating surfaces (menus, modals, drag previews, floating bars).
 pub fn panel(corner: impl Into<Corner>, light: bool, alpha: f32) -> Style {
     let tint = if light {
-        Color32::from_rgba_unmultiplied(245, 245, 248, 128)
+        Color32::from_rgba_unmultiplied(255, 255, 255, 118)
     } else {
         Color32::from_rgba_unmultiplied(26, 26, 32, 132)
     };
-    Style::thick(corner, Some(tint), if light { 0.08 } else { 0.90 }, alpha)
+    Style::thick(corner, Some(tint), if light { 0.05 } else { 0.90 }, alpha)
 }
 
 /// Paint real Liquid Glass at `rect` into `ui`'s painter.
@@ -264,8 +339,14 @@ pub fn shape(ui: &egui::Ui, id: egui::Id, rect: Rect, style: Style) -> egui::Sha
     let max_depth_pt = min_half_pt * 0.98;
     let k = (max_depth_pt / m.depth.max(0.1)).min(1.0);
     let d = style.darkness.clamp(0.0, 1.0);
-    let face_lo = lerp(m.light_range.0, m.dark_range.0, d);
-    let face_hi = lerp(m.light_range.1, m.dark_range.1, d);
+    let face_lo = (lerp(m.light_range.0, m.dark_range.0, d) + style.brightness).clamp(0.0, 1.2);
+    let face_hi = (lerp(m.light_range.1, m.dark_range.1, d) + style.brightness).clamp(0.0, 1.3);
+    let shadow_op = m.shadow * lerp(0.28, 1.0, d);
+    let shadow_tint = lerp(0.75, m.shadow_tint, d);
+    let dark_edge = (m.dark_edge * lerp(0.22, 1.0, d)).min(0.9);
+    let inner_shadow = m.inner_shadow * lerp(0.30, 1.0, d);
+    let (bs, bc) = style.light_bend.sin_cos();
+    let light_dir = [-0.45 * bc - (-0.893) * bs, -0.45 * bs + (-0.893) * bc];
     let tint = style.tint.map_or([0.0; 4], |c| {
         let [r, g, b, a] = c.to_srgba_unmultiplied();
         [
@@ -390,7 +471,7 @@ pub fn shape(ui: &egui::Ui, id: egui::Id, rect: Rect, style: Style) -> egui::Sha
             gl.uniform_2_f32(u.radius.as_ref(), rad_pt.x * ppp, rad_pt.y * ppp);
             gl.uniform_1_f32(u.power.as_ref(), power);
             gl.uniform_1_f32(u.ppp.as_ref(), ppp);
-            gl.uniform_2_f32(u.light.as_ref(), -0.45, -0.893);
+            gl.uniform_2_f32(u.light.as_ref(), light_dir[0], light_dir[1]);
 
             gl.uniform_4_f32(u.tint.as_ref(), tint[0], tint[1], tint[2], tint[3]);
             gl.uniform_1_f32(u.tint_follow.as_ref(), m.tint_follow);
@@ -424,21 +505,21 @@ pub fn shape(ui: &egui::Ui, id: egui::Id, rect: Rect, style: Style) -> egui::Sha
                 (m.rim * lerp(1.0, 0.72, d)).min(1.0),
                 m.rim_width * ppp.max(1.0),
                 m.rim_base,
-                m.dark_edge.min(0.9),
+                dark_edge,
             );
             gl.uniform_4_f32(
                 u.glow.as_ref(),
                 m.light_spill * presence,
                 m.inner_glow * lerp(1.0, 0.6, d),
-                m.inner_shadow,
+                inner_shadow,
                 0.0,
             );
             gl.uniform_4_f32(
                 u.shadow.as_ref(),
-                m.shadow * presence,
+                shadow_op * presence,
                 m.shadow_radius * ppp,
                 m.shadow_y * ppp,
-                m.shadow_tint,
+                shadow_tint,
             );
             gl.draw_arrays(glow::TRIANGLES, 0, 3);
 
@@ -1023,6 +1104,374 @@ void main() {
   FRAG = out_c;
 }
 "#;
+
+fn glass_dt(ctx: &egui::Context) -> f32 {
+    ctx.input(|i| i.stable_dt).clamp(1.0 / 240.0, 0.05)
+}
+
+/// How an analytical damped spring moves (SwiftUI convention).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Tuning {
+    pub response: f32,
+    pub damping: f32,
+}
+
+impl Tuning {
+    pub const fn new(response: f32, damping: f32) -> Self {
+        Self { response, damping }
+    }
+    /// Fast without overshoot (colors, opacity, hover).
+    pub const SNAP: Self = Self::new(0.20, 1.0);
+    /// Smooth position and panel motion.
+    pub const SMOOTH: Self = Self::new(0.36, 0.86);
+    /// Lifts, presses, and stretches.
+    pub const PRESS: Self = Self::new(0.34, 0.64);
+    /// Clear liquid wobble for popups and droplets.
+    pub const BOUNCY: Self = Self::new(0.46, 0.68);
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Spring {
+    pub value: f32,
+    pub velocity: f32,
+    started: bool,
+}
+
+impl Spring {
+    pub fn new(value: f32) -> Self {
+        Self { value, velocity: 0.0, started: true }
+    }
+
+    pub fn step(&mut self, target: f32, tuning: Tuning, dt: f32) -> bool {
+        if !self.started {
+            *self = Self::new(target);
+            return false;
+        }
+        let w = std::f32::consts::TAU / tuning.response.max(0.01);
+        let z = tuning.damping.clamp(0.05, 1.0);
+        let x0 = self.value - target;
+        let v0 = self.velocity;
+        let (x, v) = if z > 0.999 {
+            let c = v0 + w * x0;
+            let e = (-w * dt).exp();
+            ((x0 + c * dt) * e, (v0 - w * c * dt) * e)
+        } else {
+            let wd = w * (1.0 - z * z).sqrt();
+            let e = (-z * w * dt).exp();
+            let (s, c) = (wd * dt).sin_cos();
+            let b = (v0 + z * w * x0) / wd;
+            (e * (x0 * c + b * s), e * (v0 * c - (z * w * b + wd * x0) * s))
+        };
+        self.value = target + x;
+        self.velocity = v;
+        let scale = 1.0 + target.abs() * 0.02;
+        if x.abs() < 0.0008 * scale && v.abs() < 0.01 * scale {
+            self.value = target;
+            self.velocity = 0.0;
+            return false;
+        }
+        true
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Spring2d {
+    pub x: Spring,
+    pub y: Spring,
+}
+
+impl Spring2d {
+    pub fn value(&self) -> Vec2 {
+        vec2(self.x.value, self.y.value)
+    }
+
+    pub fn step(&mut self, target: Vec2, tuning: Tuning, dt: f32) -> bool {
+        self.x.step(target.x, tuning, dt) | self.y.step(target.y, tuning, dt)
+    }
+}
+
+pub fn rubber_band(distance: f32, limit: f32) -> f32 {
+    let a = distance.abs() * 0.55;
+    distance.signum() * (1.0 - 1.0 / (a / limit.max(0.01) + 1.0)) * limit
+}
+
+/// Fluid damped-spring animation toward `target`. Requests repaints while settling.
+pub fn spring(ctx: &egui::Context, id: egui::Id, target: f32, tuning: Tuning) -> f32 {
+    let dt = glass_dt(ctx);
+    let mut s = ctx.data(|d| d.get_temp::<Spring>(id)).unwrap_or_default();
+    if s.step(target, tuning, dt) {
+        ctx.request_repaint();
+    }
+    ctx.data_mut(|d| d.insert_temp(id, s));
+    s.value
+}
+
+pub fn spring_bool(ctx: &egui::Context, id: egui::Id, on: bool, tuning: Tuning) -> f32 {
+    spring(ctx, id, on as u8 as f32, tuning)
+}
+
+#[derive(Clone, Copy, Default)]
+struct PressState {
+    press: Spring,
+    pull: Spring2d,
+    hover: Spring,
+    origin: Option<egui::Pos2>,
+}
+
+/// Fluid press swell, elastic pull toward the pointer, and optical light-bend rotation.
+#[derive(Clone, Copy, Debug)]
+pub struct PressEffect {
+    pub rect: Rect,
+    pub scale: f32,
+    pub amount: f32,
+    pub hover: f32,
+    pub bend: f32,
+}
+
+impl PressEffect {
+    pub fn apply(&self, style: &mut Style) {
+        let p = self.amount.max(0.0);
+        style.brightness += 0.05 * p;
+        style.light_bend += self.bend;
+        style.material.refraction *= 1.0 + 0.28 * p;
+        style.material.shadow *= 1.0 + 0.30 * p;
+    }
+}
+
+pub fn press(ui: &egui::Ui, resp: &egui::Response, rest: Rect, strength: f32) -> PressEffect {
+    let ctx = ui.ctx();
+    let id = resp.id.with("press-fx");
+    let mut s = ctx.data(|d| d.get_temp::<PressState>(id)).unwrap_or_default();
+    let dt = glass_dt(ctx);
+    let held = resp.is_pointer_button_down_on() && strength > 0.0;
+    let pointer = ctx.input(|i| i.pointer.interact_pos());
+    if held {
+        if s.origin.is_none() {
+            s.origin = ctx.input(|i| i.pointer.press_origin()).or(pointer);
+        }
+    } else {
+        s.origin = None;
+    }
+    let mut pull = Vec2::ZERO;
+    if held
+        && let (Some(p), Some(o)) = (pointer, s.origin)
+    {
+        let d = p - o;
+        let lim = (rest.height() * 0.42).clamp(8.0, 18.0);
+        pull = vec2(rubber_band(d.x, lim), rubber_band(d.y, lim));
+    }
+    let inside = held && resp.hovered();
+    let mut moving = s.press.step(
+        if held { if inside { 1.0 } else { 0.55 } } else { 0.0 },
+        if held { Tuning::new(0.24, 0.78) } else { Tuning::new(0.40, 0.80) },
+        dt,
+    );
+    moving |= s.pull.step(pull, Tuning::new(if held { 0.16 } else { 0.42 }, 0.62), dt);
+    moving |= s.hover.step((resp.hovered() && strength > 0.0) as u8 as f32, Tuning::SNAP, dt);
+    if moving {
+        ctx.request_repaint();
+    }
+    ctx.data_mut(|d| d.insert_temp(id, s));
+
+    let size = rest.size();
+    let grow = (size.y * 0.16).min(7.0) * s.press.value * strength;
+    let p = s.pull.value() * strength;
+    let stretch = vec2(p.x.abs() * 0.55 - p.y.abs() * 0.22, p.y.abs() * 0.55 - p.x.abs() * 0.22);
+    let rect = Rect::from_center_size(
+        rest.center() + p * 0.5,
+        (size + Vec2::splat(grow) + stretch).max(Vec2::splat(4.0)),
+    );
+    PressEffect {
+        rect: if moving || held { rect } else { rest },
+        scale: 1.0 + grow.max(0.0) / size.y.max(1.0) * 0.45,
+        amount: s.press.value,
+        hover: s.hover.value,
+        bend: p.x * 0.018,
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Thumb {
+    pub pos: Spring,
+    pub lift: Spring,
+    chase: Spring,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct ThumbFrame {
+    pub size: Vec2,
+    pub lift: f32,
+    pub bend: f32,
+}
+
+impl Thumb {
+    pub fn step(&mut self, ctx: &egui::Context, target: f32, follow: Tuning, raised: bool, rest: Vec2, lifted: Vec2) -> ThumbFrame {
+        let dt = glass_dt(ctx);
+        let k = (rest.y / 24.0).clamp(1.0, 3.0);
+        let at = 2.4 * k;
+        let mut moving = self.pos.step(target, follow, dt);
+        let far = (self.pos.value - target).abs() > rest.x * 0.18;
+        let up = raised || (far && self.lift.value > 0.3);
+        let lt = if up { Tuning::new(0.27, 0.72) } else { Tuning::new(0.36, 0.76) };
+        moving |= self.lift.step(up as u8 as f32, lt, dt);
+        moving |= self.chase.step(self.pos.velocity, Tuning::new(0.628, 0.5), dt);
+        if moving {
+            ctx.request_repaint();
+        }
+        let lift = self.lift.value.max(0.0);
+        let u = self.chase.velocity / 1000.0;
+        let s = 0.159 * (u / at).tanh();
+        let base = lerp_vec2(rest, lifted, lift);
+        let w = 1.0 + s * (0.2 + 0.8 * lift.min(1.0));
+        ThumbFrame {
+            size: vec2(base.x * w, base.y / w),
+            lift,
+            bend: (self.pos.velocity / 1800.0).clamp(-0.35, 0.35),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Default)]
+struct Grab {
+    off: f32,
+    on: bool,
+    was_held: bool,
+}
+
+pub fn load_thumb(ctx: &egui::Context, id: egui::Id) -> Thumb {
+    ctx.data(|d| d.get_temp::<Thumb>(id.with("droplet"))).unwrap_or_default()
+}
+
+pub fn store_thumb(ctx: &egui::Context, id: egui::Id, t: Thumb) {
+    ctx.data_mut(|d| d.insert_temp(id.with("droplet"), t));
+}
+
+pub fn drag_target(ctx: &egui::Context, id: egui::Id, r: &egui::Response, ox: f32, pos: f32, lo: f32, hi: f32, limit: f32) -> Option<f32> {
+    let mut g = ctx.data(|d| d.get_temp::<Grab>(id.with("grab"))).unwrap_or_default();
+    let held = r.is_pointer_button_down_on() || r.dragged();
+    let pointer = ctx.input(|i| i.pointer.interact_pos());
+    let mut out = None;
+    if held && let Some(p) = pointer {
+        if !g.was_held {
+            g.off = if (p.x - ox - pos).abs() < limit * 2.5 { p.x - ox - pos } else { 0.0 };
+            g.on = true;
+        }
+        if g.on {
+            let x = p.x - ox - g.off;
+            out = Some(x.clamp(lo, hi) + rubber_band(x - x.clamp(lo, hi), limit));
+        }
+    } else {
+        g.on = false;
+    }
+    g.was_held = held;
+    ctx.data_mut(|d| d.insert_temp(id.with("grab"), g));
+    out
+}
+
+pub fn thumb_glass(_rect: Rect, f: &ThumbFrame, knob: Color32, light: bool, scale: f32) -> Style {
+    let lens = Material::LENS.scaled(scale);
+    let mut rest = lens;
+    rest.refraction = 0.0;
+    rest.outer_refraction = 0.0;
+    rest.dispersion = 0.0;
+    rest.blur = 9.0;
+    rest.inner_glow = 0.0;
+    rest.inner_shadow = 0.0;
+    rest.dark_edge = 0.0;
+    rest.rim = 1.0;
+    rest.rim_base = 0.3;
+    rest.rim_width = 0.6 * scale.max(1.0).sqrt();
+    rest.light_spill = 0.0;
+    rest.shadow = 0.14;
+    rest.shadow_radius = 8.0 * scale;
+    rest.shadow_y = 2.0 * scale;
+    rest.shadow_tint = 0.0;
+    let t = f.lift.clamp(0.0, 1.0);
+    let mut m = rest.lerp(&lens, t);
+    let [r, g, b, _] = knob.to_srgba_unmultiplied();
+    let ka = ((1.0 - t * 1.35).max(0.0).powf(1.2) * 255.0) as u8;
+    m.tint_follow = 0.0;
+    m.blur = lerp(9.0, lens.blur, (t * 1.1).min(1.0));
+    Style {
+        corner: Corner::Capsule,
+        material: m,
+        tint: Some(Color32::from_rgba_unmultiplied(r, g, b, ka)),
+        darkness: if light { 0.05 } else { 0.90 },
+        alpha: 1.0,
+        light_bend: f.bend,
+        brightness: 0.0,
+    }
+}
+
+/// Interactive macOS 26/27 Liquid Glass switch: click or drag across `track`.
+/// When `row_toggled` is true (e.g. a clickable row flipped `on`), the droplet
+/// still performs its refractive lens lift across the track without double-toggling.
+pub fn liquid_toggle(
+    ui: &mut egui::Ui,
+    track: Rect,
+    on: &mut bool,
+    accent: Color32,
+    scale: f32,
+    id: egui::Id,
+    row_toggled: bool,
+) -> egui::Response {
+    let light = crate::theme::light();
+    let fade = if ui.is_enabled() { 1.0 } else { 0.4 };
+    let sense = if row_toggled || !ui.is_enabled() { egui::Sense::hover() } else { egui::Sense::click_and_drag() };
+    let mut resp = ui.interact(track, id, sense);
+    if ui.is_enabled() {
+        resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+    }
+
+    let k = scale;
+    let rest = vec2(track.height() * 1.36, track.height() - 4.0 * k);
+    let lifted = vec2(rest.x * 1.44, rest.y * 1.50);
+    let pad = 2.0 * k;
+    let ox = track.min.x;
+    let x0 = pad + rest.x * 0.5;
+    let x1 = track.width() - pad - rest.x * 0.5;
+    let mut d = load_thumb(ui.ctx(), id);
+    let before = *on;
+    let dragged = drag_target(ui.ctx(), id, &resp, ox, d.pos.value, x0, x1, 5.0 * k);
+    let mid = (x0 + x1) * 0.5;
+    let pointer = ui.ctx().input(|i| i.pointer.interact_pos());
+    let origin = ui.ctx().input(|i| i.pointer.press_origin());
+    let moved = pointer.is_some_and(|p| origin.is_some_and(|o| (p.x - o.x).abs() > 4.0));
+    if resp.drag_stopped() {
+        *on = if moved { d.pos.value > mid } else { !before };
+        resp.mark_changed();
+    } else if resp.clicked() && !row_toggled {
+        *on = !before;
+        resp.mark_changed();
+    }
+
+    let toggled = before != *on || row_toggled;
+    let home = if *on { x1 } else { x0 };
+    let target = dragged.filter(|_| moved).unwrap_or(home);
+    if toggled && d.lift.value < 0.3 {
+        d.lift.value = 0.31;
+    }
+    let follow = if dragged.is_some() && moved { Tuning::new(0.14, 0.9) } else { Tuning::new(0.32, 0.80) };
+    let held = resp.is_pointer_button_down_on() || resp.dragged();
+    let f = d.step(ui.ctx(), target, follow, held, rest, lifted);
+    store_thumb(ui.ctx(), id, d);
+
+    let t = ((d.pos.value - x0) / (x1 - x0).max(1.0)).clamp(0.0, 1.0);
+    let off = if light { Color32::from_black_alpha(38) } else { Color32::from_white_alpha(52) };
+    let track_col = crate::theme::with_alpha(crate::theme::lerp_color(off, accent, t), fade);
+    ui.painter().rect_filled(track, track.height() * 0.5, track_col);
+
+    let center = egui::pos2(ox + d.pos.value, track.center().y);
+    let thumb = Rect::from_center_size(center, f.size);
+    if crate::renderer::active() == crate::renderer::Renderer::OpenGl && ui.is_enabled() {
+        let style = thumb_glass(thumb, &f, Color32::WHITE, light, k);
+        paint(ui, id.with("droplet-glass"), thumb, style);
+    } else {
+        ui.painter().rect_filled(thumb.translate(vec2(0.0, 1.0)), thumb.height() * 0.5, Color32::from_black_alpha((26.0 * fade) as u8));
+        ui.painter().rect_filled(thumb, thumb.height() * 0.5, Color32::from_white_alpha((245.0 * fade) as u8));
+    }
+    resp
+}
 
 #[cfg(test)]
 mod tests {

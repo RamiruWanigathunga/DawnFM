@@ -256,25 +256,28 @@ pub fn pill(ui: &mut Ui, label: &str, glyph: Option<char>, primary: bool) -> Res
         }
     };
 
-    let r = rect.shrink(if resp.is_pointer_button_down_on() { 1.0 } else { 0.0 });
-    let radius = r.height() / 2.0;
+    let r = rect;
+    let press = crate::glass::press(ui, &resp, r, 1.0);
+    let draw_r = press.rect;
+    let radius = draw_r.height() / 2.0;
 
     // Liquid Glass capsule fill (no border)
     if !primary && crate::renderer::active() == crate::renderer::Renderer::OpenGl {
-        let style = crate::glass::control(crate::glass::Corner::Capsule, light, h, 1.0);
-        crate::glass::paint(ui, resp.id.with("pill-blur"), r, style);
+        let mut style = crate::glass::control(crate::glass::Corner::Capsule, light, press.hover, 1.0);
+        press.apply(&mut style);
+        crate::glass::paint(ui, resp.id.with("pill-blur"), draw_r, style);
     } else {
-        let shadow_alpha = if light { (25.0 + 10.0 * h) as u8 } else { (42.0 + 14.0 * h) as u8 };
-        ui.painter().rect_filled(r.translate(vec2(0.0, 1.5)), radius, Color32::from_black_alpha(shadow_alpha));
-        ui.painter().rect_filled(r, radius, fill);
+        let shadow_alpha = if light { (10.0 + 5.0 * press.hover) as u8 } else { (42.0 + 14.0 * press.hover) as u8 };
+        ui.painter().rect_filled(draw_r.translate(vec2(0.0, 1.5)), radius, Color32::from_black_alpha(shadow_alpha));
+        ui.painter().rect_filled(draw_r, radius, fill);
     }
 
-    let mut x = r.left() + 18.0;
+    let mut x = draw_r.left() + 18.0;
     if let Some(g) = glyph {
-        icon_at(ui, pos2(x + 8.0, r.center().y), g, 17.0, icon_col);
+        icon_at(ui, pos2(x + 8.0, draw_r.center().y), g, 17.0 * press.scale, icon_col);
         x += icon_w;
     }
-    ui.painter().galley(pos2(x, r.center().y - text.size().y / 2.0), text, fg);
+    ui.painter().galley(pos2(x, draw_r.center().y - text.size().y / 2.0), text, fg);
     resp
 }
 
@@ -284,7 +287,8 @@ pub fn pill_destructive(ui: &mut Ui, label: &str, glyph: Option<char>) -> Respon
     let icon_w = if glyph.is_some() { 24.0 } else { 0.0 };
     let (rect, resp) = ui.allocate_exact_size(vec2(text.size().x + icon_w + 36.0, 38.0), Sense::click());
     let resp = named(resp, label).on_hover_cursor(egui::CursorIcon::PointingHand);
-    let h = theme::anim_bool(ui.ctx(), resp.id.with("h"), resp.hovered(), 0.15);
+    let press = crate::glass::press(ui, &resp, rect, 1.0);
+    let h = press.hover;
     let light = theme::light();
 
     let (fill, fg) = if light {
@@ -301,28 +305,29 @@ pub fn pill_destructive(ui: &mut Ui, label: &str, glyph: Option<char>) -> Respon
         (bg, text_c)
     };
 
-    let r = rect.shrink(if resp.is_pointer_button_down_on() { 1.0 } else { 0.0 });
+    let r = press.rect;
     let radius = r.height() / 2.0;
 
     if crate::renderer::active() == crate::renderer::Renderer::OpenGl {
         let rest = crate::glass::control(crate::glass::Corner::Capsule, light, 0.0, 1.0);
         let tint = theme::lerp_color(rest.tint.unwrap_or_default(), Color32::from_rgba_unmultiplied(0xD8, 0x24, 0x3B, 232), h);
-        let style = crate::glass::Style {
+        let mut style = crate::glass::Style {
             tint: Some(tint),
             darkness: if light { rest.darkness + 0.35 * h } else { rest.darkness },
             ..rest
         };
+        press.apply(&mut style);
         crate::glass::paint(ui, resp.id.with("pill-destr-glass"), r, style);
     } else {
         // Soft drop shadow
-        let shadow_alpha = if light { (25.0 + 10.0 * h) as u8 } else { (42.0 + 14.0 * h) as u8 };
+        let shadow_alpha = if light { (10.0 + 5.0 * h) as u8 } else { (42.0 + 14.0 * h) as u8 };
         ui.painter().rect_filled(r.translate(vec2(0.0, 1.5)), radius, Color32::from_black_alpha(shadow_alpha));
         ui.painter().rect_filled(r, radius, fill);
     }
 
     let mut x = r.left() + 18.0;
     if let Some(g) = glyph {
-        icon_at(ui, pos2(x + 8.0, r.center().y), g, 17.0, fg);
+        icon_at(ui, pos2(x + 8.0, r.center().y), g, 17.0 * press.scale, fg);
         x += icon_w;
     }
     ui.painter().galley(pos2(x, r.center().y - text.size().y / 2.0), text, fg);
@@ -334,9 +339,11 @@ pub fn chip(ui: &mut Ui, label: &str, selected: bool) -> Response {
     let text = ui.painter().layout_no_wrap(label.to_owned(), theme::semibold(13.5), Color32::PLACEHOLDER);
     let (rect, resp) = ui.allocate_exact_size(vec2(text.size().x + 28.0, 34.0), Sense::click());
     let resp = named(resp, label).on_hover_cursor(egui::CursorIcon::PointingHand);
-    let h = if resp.hovered() { 1.0 } else { 0.0 };
-    let s = theme::anim_bool(ui.ctx(), resp.id.with("s"), selected, 0.2);
-    let radius = rect.height() / 2.0;
+    let press = crate::glass::press(ui, &resp, rect, 0.9);
+    let h = press.hover;
+    let s = crate::glass::spring_bool(ui.ctx(), resp.id.with("s"), selected, crate::glass::Tuning::SMOOTH).clamp(0.0, 1.0);
+    let draw_r = press.rect;
+    let radius = draw_r.height() / 2.0;
     let light = theme::light();
     let accent = ui.ctx().data(|d| d.get_temp::<Color32>(egui::Id::unique("accent"))).unwrap_or(theme::BLUE);
 
@@ -356,33 +363,30 @@ pub fn chip(ui: &mut Ui, label: &str, selected: bool) -> Response {
 
     if crate::renderer::active() == crate::renderer::Renderer::OpenGl {
         if s < 0.99 {
-            crate::glass::paint(
-                ui,
-                resp.id.with("chip-glass"),
-                rect,
-                crate::glass::control(crate::glass::Corner::Capsule, light, h, 1.0 - s),
-            );
+            let mut style = crate::glass::control(crate::glass::Corner::Capsule, light, h, 1.0 - s);
+            press.apply(&mut style);
+            crate::glass::paint(ui, resp.id.with("chip-glass"), draw_r, style);
         }
         if s > 0.01 {
             ui.painter().rect_filled(
-                rect.translate(vec2(0.0, 1.2)),
+                draw_r.translate(vec2(0.0, 1.2)),
                 radius,
-                theme::with_alpha(accent, if light { 0.18 * s } else { 0.25 * s }),
+                theme::with_alpha(accent, if light { 0.10 * s } else { 0.25 * s }),
             );
-            ui.painter().rect_filled(rect, radius, theme::with_alpha(on_fill, s));
+            ui.painter().rect_filled(draw_r, radius, theme::with_alpha(on_fill, s));
         }
     } else {
         // Soft drop shadow (subtle accent glow when selected)
-        let shadow_alpha = if light { 20 } else { 38 };
+        let shadow_alpha = if light { 10 } else { 38 };
         let shadow_color = if s > 0.01 {
-            theme::lerp_color(Color32::from_black_alpha(shadow_alpha), theme::with_alpha(accent, if light { 0.18 } else { 0.25 }), s)
+            theme::lerp_color(Color32::from_black_alpha(shadow_alpha), theme::with_alpha(accent, if light { 0.10 } else { 0.25 }), s)
         } else {
             Color32::from_black_alpha(shadow_alpha)
         };
-        ui.painter().rect_filled(rect.translate(vec2(0.0, 1.2)), radius, shadow_color);
-        ui.painter().rect_filled(rect, radius, fill);
+        ui.painter().rect_filled(draw_r.translate(vec2(0.0, 1.2)), radius, shadow_color);
+        ui.painter().rect_filled(draw_r, radius, fill);
     }
-    ui.painter().galley(rect.center() - text.size() / 2.0, text, fg);
+    ui.painter().galley(draw_r.center() - text.size() / 2.0, text, fg);
     resp
 }
 
@@ -714,7 +718,7 @@ pub fn card(ui: &mut Ui, c: &Card, width: f32, liked: bool, acts: &mut Vec<Actio
     let resp = named(resp, &c.title).on_hover_cursor(egui::CursorIcon::PointingHand);
     // contains_pointer, not hovered: the play button on top takes the hover, and the
     // card must stay "hovered" while the pointer is on it or the button would vanish.
-    let h = theme::anim_bool(ui.ctx(), resp.id.with("h"), resp.contains_pointer(), 0.10);
+    let h = crate::glass::spring_bool(ui.ctx(), resp.id.with("h"), resp.contains_pointer(), crate::glass::Tuning::SMOOTH).clamp(0.0, 1.0);
     let img = Rect::from_min_size(rect.min, Vec2::splat(width));
     let radius = if c.round { width / 2.0 } else { theme::card_radius().min(width / 2.0) };
     paint_cover(ui, img, &c.thumbs, radius, 1.0 + 0.06 * h * theme::hover_k());
@@ -729,28 +733,32 @@ pub fn card(ui: &mut Ui, c: &Card, width: f32, liked: bool, acts: &mut Vec<Actio
         let p = ui.interact(prect, resp.id.with("play"), Sense::click());
         let playing = active == Some(true);
         let p = named(p, &format!("{} {}", if playing { "Pause" } else { "Play" }, c.title)).on_hover_cursor(egui::CursorIcon::PointingHand);
-        let ph = theme::anim_bool(ui.ctx(), p.id.with("ph"), p.hovered(), 0.15);
+        let press = crate::glass::press(ui, &p, prect, 1.0);
+        let ph = press.hover;
         let r = 18.0 + 1.5 * ph;
-        let button_rect = Rect::from_center_size(center, Vec2::splat(r * 2.0));
+        let base_rect = Rect::from_center_size(center, Vec2::splat(r * 2.0));
+        let button_rect = Rect::from_center_size(press.rect.center(), press.rect.size() + Vec2::splat(3.0 * ph));
         let light = theme::light();
         if crate::renderer::active() == crate::renderer::Renderer::OpenGl {
             let tint = if light {
-                Color32::from_white_alpha((48.0 + 28.0 * ph) as u8)
+                Color32::from_white_alpha((44.0 + 28.0 * ph) as u8)
             } else {
                 Color32::from_rgba_unmultiplied(26, 28, 34, (44.0 + 28.0 * ph) as u8)
             };
-            let style = crate::glass::Style::clear(crate::glass::Corner::Capsule, Some(tint), if light { 0.10 } else { 0.88 }, h);
+            let mut style = crate::glass::Style::clear(crate::glass::Corner::Capsule, Some(tint), if light { 0.06 } else { 0.88 }, h);
+            press.apply(&mut style);
             crate::glass::paint(ui, resp.id.with("card-hover-play-blur"), button_rect, style);
         } else {
-            ui.painter().circle_filled(center + vec2(0.0, 1.5), r, Color32::from_black_alpha((36.0 * h) as u8));
-            ui.painter().circle_filled(center, r, theme::shade((0.62 + 0.10 * ph) * h));
+            let _ = base_rect;
+            ui.painter().circle_filled(press.rect.center() + vec2(0.0, 1.5), r, Color32::from_black_alpha((if light { 16.0 } else { 36.0 } * h) as u8));
+            ui.painter().circle_filled(press.rect.center(), r, theme::shade((0.62 + 0.10 * ph) * h));
         }
         let glyph_col = if light {
             theme::with_alpha(Color32::from_rgb(0x18, 0x14, 0x1c), h)
         } else {
             theme::with_alpha(Color32::WHITE, h)
         };
-        play_pause_glyph(ui, center, 8.5, glyph_col, playing);
+        play_pause_glyph(ui, press.rect.center(), 8.5 * press.scale, glyph_col, playing);
         play_hit = p.clicked();
     }
     let tcolor = theme::text();

@@ -467,29 +467,26 @@ pub fn circle_action(ui: &mut Ui, glyph: CircleGlyph, name: &str, active: bool) 
     let (rect, resp) = ui.allocate_exact_size(Vec2::splat(38.0), Sense::click());
     let resp = named(resp, name).on_hover_text(name).on_hover_cursor(egui::CursorIcon::PointingHand);
     let open = egui::Popup::is_id_open(ui.ctx(), egui::Popup::default_response_id(&resp));
-    let h = theme::anim_bool(ui.ctx(), resp.id.with("h"), resp.hovered() || open, 0.15);
-    let press = if resp.is_pointer_button_down_on() { 18.0 } else { 19.0 };
+    let press = crate::glass::press(ui, &resp, rect, 1.0);
+    let h = if open { 1.0 } else { press.hover };
+    let draw_r = press.rect;
     let light = theme::light();
 
     // Liquid Glass fill (with soft fallback when not on OpenGL)
     if crate::renderer::active() == crate::renderer::Renderer::OpenGl {
-        let tint = if light {
-            Color32::from_white_alpha((44.0 + 28.0 * h) as u8)
-        } else {
-            Color32::from_rgba_unmultiplied(34, 34, 40, (44.0 + 28.0 * h) as u8)
-        };
-        let cap = Rect::from_center_size(rect.center(), Vec2::splat(press * 2.0));
-        let style = crate::glass::Style::regular(crate::glass::Corner::Capsule, Some(tint), if light { 0.08 } else { 0.90 }, 1.0);
-        crate::glass::paint(ui, resp.id.with("blur"), cap, style);
+        let mut style = crate::glass::control(crate::glass::Corner::Capsule, light, h, 1.0);
+        press.apply(&mut style);
+        crate::glass::paint(ui, resp.id.with("blur"), draw_r, style);
     } else {
-        let shadow_alpha = if light { (25.0 + 10.0 * h) as u8 } else { (42.0 + 14.0 * h) as u8 };
-        ui.painter().circle_filled(rect.center() + vec2(0.0, 1.5), press, Color32::from_black_alpha(shadow_alpha));
+        let shadow_alpha = if light { (10.0 + 5.0 * h) as u8 } else { (42.0 + 14.0 * h) as u8 };
+        let r = draw_r.height() * 0.5;
+        ui.painter().circle_filled(draw_r.center() + vec2(0.0, 1.5), r, Color32::from_black_alpha(shadow_alpha));
         let fill = if light {
             theme::lerp_color(Color32::from_black_alpha(15), Color32::from_black_alpha(28), h)
         } else {
             theme::glass(0.12 + 0.08 * h)
         };
-        ui.painter().circle_filled(rect.center(), press, fill);
+        ui.painter().circle_filled(draw_r.center(), r, fill);
     }
 
     let color = if theme::light() {
@@ -497,18 +494,18 @@ pub fn circle_action(ui: &mut Ui, glyph: CircleGlyph, name: &str, active: bool) 
     } else {
         theme::lerp_color(Color32::from_white_alpha(225), Color32::WHITE, h.max(active as u8 as f32))
     };
+    let c = draw_r.center();
     match glyph {
-        CircleGlyph::Char(g) => widgets::icon_at(ui, rect.center(), g, 16.0, color),
+        CircleGlyph::Char(g) => widgets::icon_at(ui, c, g, 16.0 * press.scale, color),
         CircleGlyph::Plus => {
-            let c = rect.center();
-            let half = 5.0;
+            let half = 5.0 * press.scale;
             let stroke = egui::Stroke::new(1.8, color);
             ui.painter().line_segment([pos2(c.x - half, c.y), pos2(c.x + half, c.y)], stroke);
             ui.painter().line_segment([pos2(c.x, c.y - half), pos2(c.x, c.y + half)], stroke);
         }
         CircleGlyph::More => {
             for i in -1..=1 {
-                ui.painter().circle_filled(rect.center() + vec2(i as f32 * 5.2, 0.0), 1.8, color);
+                ui.painter().circle_filled(c + vec2(i as f32 * 5.2 * press.scale, 0.0), 1.8 * press.scale, color);
             }
         }
     }
@@ -590,20 +587,7 @@ pub fn share_more_pill(
     menu: impl FnOnce(&mut Ui, &mut Vec<Action>, &Target),
 ) {
     let light = theme::light();
-    if crate::renderer::active() == crate::renderer::Renderer::OpenGl {
-        let tint = if light {
-            Color32::from_white_alpha(46)
-        } else {
-            Color32::from_rgba_unmultiplied(34, 34, 40, 44)
-        };
-        let style = crate::glass::Style::regular(crate::glass::Corner::Capsule, Some(tint), if light { 0.08 } else { 0.90 }, 1.0);
-        crate::glass::paint(ui, ui.scope_id().with((id_salt, "pill-blur")), pill_rect, style);
-    } else {
-        let pill_shadow = if light { 18 } else { 35 };
-        ui.painter().rect_filled(pill_rect.translate(vec2(0.0, 1.0)), 17.0, Color32::from_black_alpha(pill_shadow));
-        let pill_fill = if light { Color32::from_black_alpha(15) } else { theme::glass(0.12) };
-        ui.painter().rect_filled(pill_rect, 17.0, pill_fill);
-    }
+    let glass_slot = ui.painter().add(egui::Shape::Noop);
 
     let mid_x = pill_rect.min.x + 35.0;
     let share_rect = Rect::from_min_max(pill_rect.min, pos2(mid_x, pill_rect.max.y));
@@ -617,24 +601,46 @@ pub fn share_more_pill(
         .on_hover_text("More");
     let more_open = egui::Popup::is_id_open(ui.ctx(), egui::Popup::default_response_id(&more_resp));
 
+    let press_share = crate::glass::press(ui, &share_resp, pill_rect, 0.75);
+    let press_more = crate::glass::press(ui, &more_resp, pill_rect, 0.75);
+    let draw_pill = if press_more.amount.abs() > press_share.amount.abs() { press_more.rect } else { press_share.rect };
+    let h = press_share.hover.max(press_more.hover).max(more_open as u8 as f32);
+
+    if crate::renderer::active() == crate::renderer::Renderer::OpenGl {
+        let mut style = crate::glass::control(crate::glass::Corner::Capsule, light, h * 0.6, 1.0);
+        if press_more.amount.abs() > press_share.amount.abs() {
+            press_more.apply(&mut style);
+        } else {
+            press_share.apply(&mut style);
+        }
+        crate::glass::paint_at(ui, glass_slot, ui.scope_id().with((id_salt, "pill-blur")), draw_pill, style);
+    } else {
+        let pill_shadow = if light { 10 } else { 35 };
+        let pill_fill = if light { Color32::from_black_alpha(15) } else { theme::glass(0.12) };
+        ui.painter().set(glass_slot, egui::Shape::Vec(vec![
+            egui::Shape::rect_filled(draw_pill.translate(vec2(0.0, 1.0)), 17.0, Color32::from_black_alpha(pill_shadow)),
+            egui::Shape::rect_filled(draw_pill, 17.0, pill_fill),
+        ]));
+    }
+
     if share_resp.hovered() {
-        ui.painter().rect_filled(share_rect, egui::CornerRadius { nw: 17, ne: 0, sw: 17, se: 0 }, if light { Color32::from_black_alpha(22) } else { theme::glass(0.10) });
+        ui.painter().rect_filled(share_rect, egui::CornerRadius { nw: 17, ne: 0, sw: 17, se: 0 }, if light { Color32::from_black_alpha(18) } else { theme::glass(0.10) });
     }
     if more_resp.hovered() || more_open {
-        ui.painter().rect_filled(more_rect, egui::CornerRadius { nw: 0, ne: 17, sw: 0, se: 17 }, if light { Color32::from_black_alpha(22) } else { theme::glass(0.10) });
+        ui.painter().rect_filled(more_rect, egui::CornerRadius { nw: 0, ne: 17, sw: 0, se: 17 }, if light { Color32::from_black_alpha(18) } else { theme::glass(0.10) });
     }
 
     // Divider between Share and More
-    ui.painter().line_segment([pos2(mid_x, pill_rect.min.y + 7.0), pos2(mid_x, pill_rect.max.y - 7.0)], egui::Stroke::new(1.0, if light { Color32::from_black_alpha(20) } else { theme::glass(0.10) }));
+    ui.painter().line_segment([pos2(mid_x, draw_pill.min.y + 7.0), pos2(mid_x, draw_pill.max.y - 7.0)], egui::Stroke::new(1.0, if light { Color32::from_black_alpha(16) } else { theme::glass(0.10) }));
 
     // Share icon
     let share_fg = if light { Color32::from_rgb(0x18, 0x14, 0x1c) } else if share_resp.hovered() { Color32::WHITE } else { theme::lerp_color(theme::text_dim(), theme::text(), 0.5) };
-    widgets::icon_at(ui, share_rect.center(), icon::SHARE, 15.0, share_fg);
+    widgets::icon_at(ui, share_rect.center(), icon::SHARE, 15.0 * press_share.scale, share_fg);
 
     // More dots
     let more_fg = if light { Color32::from_rgb(0x18, 0x14, 0x1c) } else if more_resp.hovered() || more_open { Color32::WHITE } else { theme::lerp_color(theme::text_dim(), theme::text(), 0.5) };
     for i in -1..=1 {
-        ui.painter().circle_filled(more_rect.center() + vec2(i as f32 * 4.5, 0.0), 1.6, more_fg);
+        ui.painter().circle_filled(more_rect.center() + vec2(i as f32 * 4.5 * press_more.scale, 0.0), 1.6 * press_more.scale, more_fg);
     }
 
     if share_resp.clicked() {
@@ -884,7 +890,12 @@ fn selection_bar(app: &mut App, ctx: &egui::Context, page: &Page, area: Rect) {
             let fallback = egui::Frame::new()
                 .fill(theme::menu_fill())
                 .corner_radius(14)
-                .shadow(egui::epaint::Shadow { offset: [0, 8], blur: 24, spread: 0, color: theme::shade(0.45) });
+                .shadow(egui::epaint::Shadow {
+                    offset: [0, if theme::light() { 4 } else { 8 }],
+                    blur: if theme::light() { 16 } else { 24 },
+                    spread: 0,
+                    color: theme::shade(if theme::light() { 0.14 } else { 0.45 }),
+                });
             crate::glass::surface(
                 ui,
                 egui::Id::unique("selection-bar-glass"),
@@ -1361,7 +1372,7 @@ pub fn collection(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
             let (img, _) = ui.allocate_exact_size(Vec2::splat(side), Sense::hover());
             let radius = theme::card_radius() + 2.0;
             // Light mode needs a far softer shadow: the dark one reads as a grey halo.
-            let (blur, alpha) = if theme::light() { (26.0, 0.14) } else { (40.0, 0.5) };
+            let (blur, alpha) = if theme::light() { (18.0, 0.06) } else { (40.0, 0.5) };
             widgets::soft_shadow(ui, img, radius, blur, alpha);
             paint_cover(ui, img, &c.thumbs, radius, 1.0);
             if let Some(s) = &sprite {
@@ -1864,18 +1875,22 @@ pub fn artist(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
     let share_resp = named(ui.interact(share_rect, ui.scope_id().with(("artist", "share")), Sense::click()), "Share")
         .on_hover_cursor(egui::CursorIcon::PointingHand)
         .on_hover_text("Share");
-    let sh = theme::anim_bool(ui.ctx(), share_resp.id.with("h"), share_resp.hovered(), 0.15);
+    let press_share = crate::glass::press(ui, &share_resp, share_rect, 1.0);
+    let sh = press_share.hover;
+    let draw_share = press_share.rect;
     if crate::renderer::active() == crate::renderer::Renderer::OpenGl {
         let tint = if light_hero {
             Color32::from_white_alpha((44.0 + 28.0 * sh) as u8)
         } else {
             Color32::from_rgba_unmultiplied(26, 28, 34, (44.0 + 28.0 * sh) as u8)
         };
-        let style = crate::glass::Style::clear(crate::glass::Corner::Capsule, Some(tint), if light_hero { 0.10 } else { 0.88 }, 1.0);
-        crate::glass::paint(ui, share_resp.id.with("glass"), share_rect, style);
+        let mut style = crate::glass::Style::clear(crate::glass::Corner::Capsule, Some(tint), if light_hero { 0.06 } else { 0.88 }, 1.0);
+        press_share.apply(&mut style);
+        crate::glass::paint(ui, share_resp.id.with("glass"), draw_share, style);
     } else {
-        let share_shadow = if light_hero { 18 } else { 35 };
-        ui.painter().circle_filled(share_rect.center() + vec2(0.0, 1.0), 17.0, Color32::from_black_alpha(share_shadow));
+        let share_shadow = if light_hero { 10 } else { 35 };
+        let r = draw_share.height() * 0.5;
+        ui.painter().circle_filled(draw_share.center() + vec2(0.0, 1.0), r, Color32::from_black_alpha(share_shadow));
         let share_fill = if light_hero {
             if share_resp.hovered() { Color32::from_black_alpha(26) } else { Color32::from_black_alpha(15) }
         } else if share_resp.hovered() {
@@ -1883,7 +1898,7 @@ pub fn artist(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
         } else {
             theme::glass(0.12)
         };
-        ui.painter().circle_filled(share_rect.center(), 17.0, share_fill);
+        ui.painter().circle_filled(draw_share.center(), r, share_fill);
     }
     let share_fg = if light_hero {
         Color32::from_rgb(0x18, 0x14, 0x1c)
@@ -1892,7 +1907,7 @@ pub fn artist(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
     } else {
         theme::lerp_color(theme::text_dim(), theme::text(), 0.5)
     };
-    widgets::icon_at(ui, share_rect.center(), icon::SHARE, 15.0, share_fg);
+    widgets::icon_at(ui, draw_share.center(), icon::SHARE, 15.0 * press_share.scale, share_fg);
     if share_resp.clicked() {
         acts.push(Action::Share(artist_target.clone()));
     }
@@ -1924,7 +1939,7 @@ pub fn artist(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
         )
     };
     // Soft drop shadow
-    ui.painter().circle_filled(play_center + vec2(0.0, 1.5), 24.0, Color32::from_black_alpha(if light { 25 } else { 45 }));
+    ui.painter().circle_filled(play_center + vec2(0.0, 1.5), 24.0, Color32::from_black_alpha(if light { 12 } else { 45 }));
     ui.painter().circle_filled(play_center, 24.0, play_bg);
     widgets::play_pause_glyph(ui, play_center, 8.5, glyph_col, playing);
     if play_resp.clicked() {
@@ -1952,25 +1967,29 @@ pub fn artist(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
         let w = galley.size().x + check_w + 32.0;
         let pill = Rect::from_min_size(pos2(play_center.x + 24.0 + gap, btn_y - 17.0), vec2(w, 34.0));
         let resp = named(ui.interact(pill, ui.scope_id().with("hero_sub"), Sense::click()), base_label).on_hover_cursor(egui::CursorIcon::PointingHand);
-        let h = resp.hovered() as u8 as f32;
+        let press = crate::glass::press(ui, &resp, pill, 1.0);
+        let h = press.hover;
+        let draw_pill = press.rect;
         if crate::renderer::active() == crate::renderer::Renderer::OpenGl {
-            crate::glass::paint(ui, resp.id.with("glass"), pill, crate::glass::control(crate::glass::Corner::Capsule, light, h, 1.0));
+            let mut style = crate::glass::control(crate::glass::Corner::Capsule, light, h, 1.0);
+            press.apply(&mut style);
+            crate::glass::paint(ui, resp.id.with("glass"), draw_pill, style);
         } else {
             // Soft drop shadow
-            ui.painter().rect_filled(pill.translate(vec2(0.0, 1.5)), 17.0, Color32::from_black_alpha(if light { 25 } else { 42 }));
+            ui.painter().rect_filled(draw_pill.translate(vec2(0.0, 1.5)), 17.0, Color32::from_black_alpha(if light { 12 } else { 42 }));
             let fill = if light {
                 theme::lerp_color(Color32::from_black_alpha(15), Color32::from_black_alpha(28), h)
             } else {
                 theme::glass(0.14 + 0.09 * h)
             };
-            ui.painter().rect_filled(pill, 17.0, fill);
+            ui.painter().rect_filled(draw_pill, 17.0, fill);
         }
-        let mut x = pill.left() + 16.0;
+        let mut x = draw_pill.left() + 16.0;
         if sub.subscribed {
-            widgets::icon_at(ui, pos2(x + 4.0, btn_y), icon::CHECK, 14.0, theme::text());
+            widgets::icon_at(ui, pos2(x + 4.0, draw_pill.center().y), icon::CHECK, 14.0 * press.scale, theme::text());
             x += check_w;
         }
-        ui.painter().galley(pos2(x, btn_y - galley.size().y / 2.0), galley, theme::text());
+        ui.painter().galley(pos2(x, draw_pill.center().y - galley.size().y / 2.0), galley, theme::text());
         if resp.clicked() {
             acts.push(Action::SetSubscribed(!sub.subscribed));
         }
@@ -3271,27 +3290,13 @@ pub(super) fn divider(ui: &mut Ui) {
     ui.painter().rect_filled(rect, 0.0, theme::glass(0.07));
 }
 
-/// Monochrome high-contrast on/off switch.
+/// macOS 26/27 Liquid Glass switch (click or drag across the track).
 pub(super) fn toggle(ui: &mut Ui, on: &mut bool, name: &str) -> egui::Response {
-    let (rect, mut resp) = ui.allocate_exact_size(vec2(46.0, 22.0), Sense::click());
-    if resp.clicked() {
-        *on = !*on;
-        resp.mark_changed();
-    }
+    let (track, _) = ui.allocate_exact_size(vec2(52.0, 26.0), Sense::hover());
+    let accent = app_accent(ui);
+    let resp = crate::glass::liquid_toggle(ui, track, on, accent, 1.0, ui.scope_id().with(("toggle", name)), false);
     let value = *on;
     resp.widget_info(|| egui::WidgetInfo::selected(egui::Role::CheckBox, ui.is_enabled(), value, name));
-    let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
-    let t = theme::anim_bool(ui.ctx(), resp.id.with("t"), value, 0.16);
-    let h = if resp.hovered() { 1.0 } else { 0.0 };
-    let fade = if ui.is_enabled() { 1.0 } else { 0.4 };
-    let off = theme::glass(0.16 + 0.06 * h);
-    let on_track = if theme::light() { Color32::from_rgb(0x22, 0x22, 0x28) } else { Color32::from_rgb(0xf2, 0xf2, 0xf6) };
-    ui.painter().rect_filled(rect, 11.0, theme::with_alpha(theme::lerp_color(off, on_track, t), fade));
-    let knob = pos2(egui::lerp(rect.left() + 11.0..=rect.right() - 11.0, t), rect.center().y);
-    ui.painter().circle_filled(knob + vec2(0.0, 1.0), 8.0, theme::shade(0.25 * fade));
-    let on_knob = if theme::light() { Color32::WHITE } else { Color32::from_rgb(0x18, 0x18, 0x1e) };
-    let knob_col = theme::lerp_color(Color32::WHITE, on_knob, t);
-    ui.painter().circle_filled(knob, 8.0, theme::with_alpha(knob_col, fade));
     resp
 }
 
