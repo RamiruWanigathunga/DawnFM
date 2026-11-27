@@ -16,6 +16,31 @@ pub struct Art {
     pub accent: Color32,
     /// Most used colour across the artwork, managed so it is neither too dark nor too white.
     pub dominant: Color32,
+    /// Mean relative luminance (`0.0..=1.0`) of the blurred backdrop (`rgba`).
+    pub luma: f32,
+    /// Mean relative luminance of the right half of the blurred backdrop (under lyrics).
+    pub right_luma: f32,
+}
+
+fn pixel_luma(p: &[f32; 3]) -> f32 {
+    (0.299 * p[0] + 0.587 * p[1] + 0.114 * p[2]) / 255.0
+}
+
+fn backdrop_lumas(px: &[[f32; 3]], n: usize) -> (f32, f32) {
+    let mut all_sum = 0.0f32;
+    let mut right_sum = 0.0f32;
+    let mut right_count = 0u32;
+    for (idx, p) in px.iter().enumerate() {
+        let l = pixel_luma(p);
+        all_sum += l;
+        if idx % n >= n / 2 {
+            right_sum += l;
+            right_count += 1;
+        }
+    }
+    let all = all_sum / px.len().max(1) as f32;
+    let right = if right_count > 0 { right_sum / right_count as f32 } else { all };
+    (all, right)
 }
 
 pub fn process(bytes: &[u8]) -> anyhow::Result<Art> {
@@ -30,8 +55,9 @@ pub fn process(bytes: &[u8]) -> anyhow::Result<Art> {
     for _ in 0..4 {
         px = box_blur(&px, SIZE as usize, 8);
     }
+    let (luma, right_luma) = backdrop_lumas(&px, SIZE as usize);
     let rgba = px.iter().flat_map(|p| [p[0] as u8, p[1] as u8, p[2] as u8, 255]).collect();
-    Ok(Art { rgba, accent, dominant })
+    Ok(Art { rgba, accent, dominant, luma, right_luma })
 }
 
 fn box_blur(src: &[[f32; 3]], n: usize, r: usize) -> Vec<[f32; 3]> {
@@ -206,5 +232,34 @@ pub fn idle() -> Art {
             rgba.extend_from_slice(&[r as u8, g as u8, b as u8, 255]);
         }
     }
-    Art { rgba, accent: Color32::from_rgb(0xff, 0x4e, 0x6a), dominant: Color32::from_rgb(0x18, 0x14, 0x1c) }
+    Art {
+        rgba,
+        accent: Color32::from_rgb(0xff, 0x4e, 0x6a),
+        dominant: Color32::from_rgb(0x18, 0x14, 0x1c),
+        luma: 0.12,
+        right_luma: 0.12,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn backdrop_lumas_distinguish_bright_white_and_dark_covers() {
+        let n = SIZE as usize;
+        let white_with_center_stripe: Vec<[f32; 3]> = (0..n * n)
+            .map(|i| {
+                let y = i / n;
+                if (24..40).contains(&y) { [220.0, 80.0, 90.0] } else { [255.0, 255.0, 255.0] }
+            })
+            .collect();
+        let (luma, right_luma) = backdrop_lumas(&white_with_center_stripe, n);
+        assert!(luma > 0.75, "expected bright cover luma > 0.75, got {luma}");
+        assert!(right_luma > 0.75, "expected bright cover right_luma > 0.75, got {right_luma}");
+
+        let dark = vec![[20.0, 18.0, 24.0]; n * n];
+        let (dl, dr) = backdrop_lumas(&dark, n);
+        assert!(dl < 0.2 && dr < 0.2);
+    }
 }

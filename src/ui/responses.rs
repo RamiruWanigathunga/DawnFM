@@ -374,6 +374,7 @@ impl App {
                 self.art_colors.insert(key.clone(), art.dominant);
                 self.art_accents.insert(key.clone(), art.accent);
                 self.art_blurs.insert(key.clone(), art.rgba.clone());
+                self.art_lumas.insert(key.clone(), (art.luma, art.right_luma));
                 self.art_blur_tex.remove(&key);
                 self.art_loaded_at.insert(key.clone(), now);
                 if self.mix_hold().is_none() && self.current_id() == Some(key.as_str()) {

@@ -424,6 +424,8 @@ pub struct App {
     pub art_accents: std::collections::HashMap<String, egui::Color32>,
     /// Pre-blurred 64x64 RGBA album/artist artwork bytes cached by key.
     pub art_blurs: std::collections::HashMap<String, Vec<u8>>,
+    /// Mean luminance `(overall, right_half)` of the blurred artwork backdrop by key.
+    pub art_lumas: std::collections::HashMap<String, (f32, f32)>,
     /// Uploaded blurred artwork textures for album ambient backdrops.
     art_blur_tex: std::collections::HashMap<String, egui::TextureHandle>,
     /// Timestamp when each artwork key finished loading (for smooth fade-in).
@@ -822,6 +824,7 @@ impl App {
             art_colors: Default::default(),
             art_accents: Default::default(),
             art_blurs: Default::default(),
+            art_lumas: Default::default(),
             art_blur_tex: Default::default(),
             art_loaded_at: Default::default(),
             art_waiting: Default::default(),
@@ -1741,11 +1744,30 @@ impl App {
     }
 
     pub fn bg_is_light(&self) -> bool {
-        if !theme::light() {
-            return false;
+        use crate::preset::{BgMode, Layout};
+        let luma = |c: Color32| (0.299 * c.r() as f32 + 0.587 * c.g() as f32 + 0.114 * c.b() as f32) / 255.0;
+        let look = self.look();
+        let b = &look.background;
+        match b.mode {
+            BgMode::Kawarp | BgMode::CoverStatic | BgMode::CoverFullbleed if self.bg.is_some() => {
+                let key = self.art_key.as_deref().or_else(|| self.current_id());
+                let (all, right) = key
+                    .and_then(|k| self.art_lumas.get(k).copied())
+                    .unwrap_or_else(|| {
+                        let dl = luma(self.dominant);
+                        (dl, dl)
+                    });
+                let base = if b.mode == BgMode::CoverFullbleed && look.cover.layout == Layout::LyricsOnly {
+                    right
+                } else {
+                    all
+                };
+                // Shader multiplies by u_dim (`np_dim`) and ~0.92 vignette across the lyrics area.
+                base * b.np_dim * 0.92 > 0.52
+            }
+            BgMode::Solid => luma(look.solid()) > 0.52,
+            _ => theme::light() && luma(self.dominant) > 0.52,
         }
-        let d = self.dominant;
-        (0.299 * d.r() as f32 + 0.587 * d.g() as f32 + 0.114 * d.b() as f32) / 255.0 > 0.52
     }
 
     /// Whether pages draw light: only the ytm-rs theme has a light mode, and it follows

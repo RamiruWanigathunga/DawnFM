@@ -643,7 +643,7 @@ pub fn strip(app: &mut App, ui: &mut Ui, now: f64) {
             let disc = (0.17 * pop + 0.10 * lh).min(0.30);
             if disc > 0.0 {
                 if crate::renderer::active() == crate::renderer::Renderer::OpenGl {
-                    let light = app.bg_is_light();
+                    let light = theme::light();
                     let style = crate::glass::Style::clear(crate::glass::Corner::Capsule, None, if light { 0.10 } else { 0.88 }, (disc * 3.0).clamp(0.0, 1.0));
                     crate::glass::paint(ui, egui::Id::unique("mini-like-glass"), Rect::from_center_size(lpos, Vec2::splat(32.0)), style);
                 } else {
@@ -684,7 +684,7 @@ pub fn strip(app: &mut App, ui: &mut Ui, now: f64) {
     let vh = theme::anim_bool(&ctx, vresp.id.with("h"), vresp.hovered(), 0.15);
     if vh > 0.0 {
         if crate::renderer::active() == crate::renderer::Renderer::OpenGl {
-            let light = app.bg_is_light();
+            let light = theme::light();
             let style = crate::glass::Style::clear(crate::glass::Corner::Capsule, None, if light { 0.10 } else { 0.88 }, vh);
             crate::glass::paint(ui, egui::Id::unique("mini-vol-glass"), Rect::from_center_size(vpos, Vec2::splat(32.0)), style);
         } else {

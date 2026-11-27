@@ -215,12 +215,14 @@ fn body(app: &mut App, ui: &mut Ui, now: f64) {
             let mut cui = ui.new_child(egui::UiBuilder::new().max_rect(art));
             cui.multiply_opacity(1.0 - art_vis);
             widgets::paint_cover_fade(&cui, egui::Id::unique("np-art-fade"), art, &track.thumbs, (side * ppp) as u32, fade_from, tint);
-            // A soft shade under the sleeve, so the song's white text stays legible on
-            // any cover: dark at the bottom left, gone toward the top and the lyrics.
+            // A soft shade under the sleeve, so the controls stay legible on any cover:
+            // dark scrim on dark/mid covers behind white text; soft light scrim on light covers behind black text.
+            let bg_light_cover = app.bg_is_light();
             let scrim = Rect::from_min_max(pos2(art.left(), area.bottom() - 280.0), pos2((lyrics_left + 24.0).min(art.right()), area.bottom()));
             let mut shade = egui::Mesh::default();
             let white = egui::epaint::WHITE_UV;
-            shade.vertices.push(egui::epaint::Vertex { pos: scrim.left_bottom(), uv: white, color: Color32::from_black_alpha(130) });
+            let scrim_col = if bg_light_cover { Color32::from_white_alpha(150) } else { Color32::from_black_alpha(130) };
+            shade.vertices.push(egui::epaint::Vertex { pos: scrim.left_bottom(), uv: white, color: scrim_col });
             shade.vertices.push(egui::epaint::Vertex { pos: scrim.right_bottom(), uv: white, color: Color32::TRANSPARENT });
             shade.vertices.push(egui::epaint::Vertex { pos: scrim.left_top(), uv: white, color: Color32::TRANSPARENT });
             shade.vertices.push(egui::epaint::Vertex { pos: scrim.right_top(), uv: white, color: Color32::TRANSPARENT });
@@ -282,7 +284,7 @@ fn body(app: &mut App, ui: &mut Ui, now: f64) {
             rui.set_clip_rect(content.intersect(ui.clip_rect()));
             rui.multiply_opacity(panel_vis * vis);
             match tab {
-                NpTab::Lyrics => lyrics_panel(app, &mut rui, r, now, centered),
+                NpTab::Lyrics => lyrics_panel(app, &mut rui, r, now, centered, app.bg_is_light()),
                 _ => super::shell::queue_list(app, &mut rui, "np"),
             }
         }
@@ -913,15 +915,16 @@ pub(super) fn lyrics_drawer(app: &mut App, ui: &mut Ui, now: f64) {
         return;
     }
     ui.set_clip_rect(rect);
-    if !lyrics_wait(app, ui, rect, now) {
-        lyrics_panel(app, ui, rect, now, false);
+    let bg_light = theme::light();
+    if !lyrics_wait(app, ui, rect, now, bg_light) {
+        lyrics_panel(app, ui, rect, now, false, bg_light);
     }
 }
 
 /// A song whose lyrics nobody asked for (restored, or picked up from another device)
 /// or whose answer never came: ask immediately, then stop spinning after timeout.
 /// False when there are lyrics for the song to draw.
-fn lyrics_wait(app: &mut App, ui: &mut Ui, rect: Rect, now: f64) -> bool {
+fn lyrics_wait(app: &mut App, ui: &mut Ui, rect: Rect, now: f64, bg_light: bool) -> bool {
     let Some(shown) = app.shown().cloned() else { return false };
     if app.lyrics.as_ref().is_some_and(|(id, _)| *id == shown.id) {
         return false;
@@ -934,19 +937,21 @@ fn lyrics_wait(app: &mut App, ui: &mut Ui, rect: Rect, now: f64) -> bool {
     }
     ui.ctx().data_mut(|d| d.insert_temp(key, (shown.id.clone(), since, asked)));
     ui.add_space(rect.height() * 0.35);
+    let msg_col = if bg_light { Color32::from_black_alpha(160) } else { Color32::from_white_alpha(160) };
     ui.vertical_centered(|ui| {
         if now - since < 20.0 {
             ui.spinner();
             ui.ctx().request_repaint_after(std::time::Duration::from_millis(100));
         } else {
-            ui.label(egui::RichText::new(t!("no_lyrics_yet")).font(theme::semibold(16.0)).color(theme::text_dim()));
+            ui.label(egui::RichText::new(t!("no_lyrics_yet")).font(theme::semibold(16.0)).color(msg_col));
         }
     });
     true
 }
 
-fn lyrics_panel(app: &mut App, ui: &mut Ui, rect: Rect, now: f64, centered: bool) {
+fn lyrics_panel(app: &mut App, ui: &mut Ui, rect: Rect, now: f64, centered: bool, bg_light: bool) {
     let Some(shown) = app.shown().cloned() else { return };
+    let msg_col = if bg_light { Color32::from_black_alpha(160) } else { Color32::from_white_alpha(160) };
     if !app.lyrics.as_ref().is_some_and(|(id, _)| *id == shown.id) {
         let key = egui::Id::unique("lyrics-panel-wait");
         let (since, mut asked) = ui.ctx().data(|d| d.get_temp::<(String, f64, bool)>(key)).filter(|(id, ..)| *id == shown.id).map_or((now, false), |(_, t, a)| (t, a));
@@ -961,7 +966,7 @@ fn lyrics_panel(app: &mut App, ui: &mut Ui, rect: Rect, now: f64, centered: bool
                 ui.spinner();
                 ui.ctx().request_repaint_after(std::time::Duration::from_millis(100));
             } else {
-                ui.label(egui::RichText::new(t!("no_lyrics_yet")).font(theme::semibold(16.0)).color(theme::text_dim()));
+                ui.label(egui::RichText::new(t!("no_lyrics_yet")).font(theme::semibold(16.0)).color(msg_col));
             }
         });
         return;
@@ -972,14 +977,14 @@ fn lyrics_panel(app: &mut App, ui: &mut Ui, rect: Rect, now: f64, centered: bool
     if let Some(lyrics) = app.lyric_prefs.choose(&id, &set).and_then(|p| set.get(p)) {
         let panel = Rect::from_min_max(rect.min, pos2(rect.right(), rect.bottom() - 4.0));
         if lyrics.sync == Sync::None {
-            plain_lyrics(app, ui, panel, lyrics);
+            plain_lyrics(app, ui, panel, lyrics, bg_light);
         } else {
-            synced(app, ui, panel, &id, lyrics, now, centered);
+            synced(app, ui, panel, &id, lyrics, now, centered, bg_light);
         }
     } else {
         ui.add_space(rect.height() * 0.4);
         ui.vertical_centered(|ui| {
-            ui.label(egui::RichText::new(t!("no_lyrics_found")).font(theme::semibold(20.0)).color(theme::text_dim()));
+            ui.label(egui::RichText::new(t!("no_lyrics_found")).font(theme::semibold(20.0)).color(msg_col));
         });
     }
     app.lyrics = Some((id, set));
@@ -1027,7 +1032,7 @@ fn decorations<'a>(
     (roman, trans)
 }
 
-fn synced(app: &mut App, ui: &mut Ui, rect: Rect, id: &str, lyrics: &Lyrics, now: f64, narrow: bool) {
+fn synced(app: &mut App, ui: &mut Ui, rect: Rect, id: &str, lyrics: &Lyrics, now: f64, narrow: bool, bg_light: bool) {
     let style = &app.look().lyrics;
     let accent = app.accent_color();
     let centered = narrow || style.align == crate::preset::Align::Center;
@@ -1059,7 +1064,6 @@ fn synced(app: &mut App, ui: &mut Ui, rect: Rect, id: &str, lyrics: &Lyrics, now
         h.finish()
     };
     let scale = app.lyric_prefs.text_scale;
-    let bg_light = app.bg_is_light();
     let frame = karaoke::Frame { lyrics, key, roman, trans, t, playing, now, rect, style, accent, centered, scale, bg_light };
     // The view lives in `app`; the frame borrows `app` for decorations, so swap it out.
     let mut view = std::mem::take(&mut app.lyric_view);
@@ -1118,9 +1122,8 @@ fn synced(app: &mut App, ui: &mut Ui, rect: Rect, id: &str, lyrics: &Lyrics, now
     }
 }
 
-fn plain_lyrics(app: &mut App, ui: &mut Ui, rect: Rect, lyrics: &Lyrics) {
+fn plain_lyrics(app: &mut App, ui: &mut Ui, rect: Rect, lyrics: &Lyrics, bg_light: bool) {
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect));
-    let bg_light = app.bg_is_light();
     let default_text = if bg_light { Color32::BLACK } else { Color32::WHITE };
     let faint_text = if bg_light { Color32::from_black_alpha(210) } else { Color32::from_white_alpha(210) };
     egui::ScrollArea::vertical().id_salt("plain-lyrics").auto_shrink(false).show(&mut child, |ui| {
@@ -1385,7 +1388,8 @@ pub(super) fn audio_badge(app: &App, ui: &mut Ui, at: egui::Pos2, small: bool) -
     // Lossless and Atmos wear the song's colour; anything lossy stays quiet.
     let (ink, mark) = if info.lossless() || info.atmos {
         let accent = app.accent_color();
-        (theme::lerp_color(accent, Color32::WHITE, 0.10 + 0.30 * hover), theme::with_alpha(accent, 0.85 + 0.15 * hover))
+        let toward = if app.bg_is_light() { Color32::BLACK } else { Color32::WHITE };
+        (theme::lerp_color(accent, toward, 0.10 + 0.30 * hover), theme::with_alpha(accent, 0.85 + 0.15 * hover))
     } else {
         let base = if app.bg_is_light() { Color32::BLACK } else { Color32::WHITE };
         (theme::with_alpha(base, 0.88 + 0.12 * hover), theme::with_alpha(base, 0.88))
