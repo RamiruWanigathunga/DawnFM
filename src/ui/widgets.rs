@@ -414,11 +414,19 @@ fn show_glass_popup(popup: egui::Popup<'_>, add_contents: impl FnOnce(&mut Ui)) 
                 egui::Margin::symmetric(6, 6),
                 crate::glass::panel(12.0, light, 1.0),
                 egui::Frame::NONE,
-                add_contents,
+                |ui| {
+                    // Zero out item_spacing so rows are flush — each row already
+                    // has the right height; gaps between them leave unlit slivers.
+                    ui.spacing_mut().item_spacing.y = 0.0;
+                    add_contents(ui);
+                },
             );
         });
     } else {
-        popup.show(add_contents);
+        popup.show(|ui| {
+            ui.spacing_mut().item_spacing.y = 0.0;
+            add_contents(ui);
+        });
     }
 }
 
@@ -846,10 +854,10 @@ pub fn menu_separator(ui: &mut Ui) {
     ui.add_space(3.0);
 }
 
-/// A menu's row, with macOS menu measures: 21 points tall, 13-point text,
+/// A menu's row, with macOS menu measures: 26 points tall, 13-point text,
 /// and theme accent selection filling the row under the pointer with white text.
 fn menu_row(ui: &mut Ui, label: &str, draw: Option<impl FnOnce(&Ui, Pos2, Color32)>) -> bool {
-    let (rect, response) = ui.allocate_exact_size(vec2(ui.available_width(), 21.0), Sense::click());
+    let (rect, response) = ui.allocate_exact_size(vec2(ui.available_width(), 26.0), Sense::click());
     let response = named(response, label);
     let over = response.hovered();
     if over {
