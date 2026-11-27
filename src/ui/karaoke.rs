@@ -224,7 +224,7 @@ impl Cfg {
             None => (glow, glow),
         };
         let pad = css.as_ref().and_then(|c| c.padding_inline).map_or((0.0, 0.0), |p| (p[0] * rem / 10.0, p[1] * rem / 10.0));
-        let light = theme::light() || bg_light;
+        let light = bg_light;
         let base = if light { Color32::from_rgb(0x22, 0x1e, 0x26) } else { Color32::WHITE };
         let active = if light && (s.sung_color == "white" || s.sung_color.is_empty()) {
             Color32::from_rgb(0x11, 0x0e, 0x14)
@@ -236,13 +236,16 @@ impl Cfg {
         } else {
             crate::preset::paint(&s.glow_color, accent)
         };
+        let inactive_alpha = if light { s.active_alpha.max(0.45) } else { s.active_alpha };
+        let upcoming_alpha = if light { s.inactive_alpha.max(0.42) } else { s.inactive_alpha };
+        let min_alpha = if light { s.min_alpha.max(0.26) } else { s.min_alpha };
         Self {
             font: theme::effective_font(&s.font),
             weight,
             size,
             active,
             base,
-            inactive_alpha: s.active_alpha,
+            inactive_alpha,
             glow: glow_color,
             glow_rem: if css.is_some() { 0.8 } else { 0.8 * (1.0 + glow) },
             scale: 0.95,
@@ -254,9 +257,9 @@ impl Cfg {
             wave_crest: crest,
             wave_settle: settle,
             emphasis: wave[3],
-            upcoming_alpha: s.inactive_alpha,
+            upcoming_alpha,
             falloff: s.falloff,
-            min_alpha: s.min_alpha,
+            min_alpha,
             past_alpha: s.past_alpha,
             blur: s.blur,
             blur_scope: s.blur_scope,

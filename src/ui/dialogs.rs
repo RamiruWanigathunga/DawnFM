@@ -34,68 +34,75 @@ impl App {
             Dialog::Collaborate { .. } => t!("collaborate"),
         };
         // The same modal card as "Delete playlist?" and the update dialog.
-        let modal = egui::Modal::new(egui::Id::unique("playlist-dialog")).frame(notes::surface()).backdrop_color(theme::shade(0.55)).show(ctx, |ui| {
+        let modal = egui::Modal::new(egui::Id::unique("playlist-dialog")).frame(notes::surface_frame()).backdrop_color(theme::shade(0.55)).show(ctx, |ui| {
             ui.set_width(440.0_f32.min(ctx.content_rect().width() - 48.0));
-            egui::Frame::new().inner_margin(egui::Margin { left: 26, right: 26, top: 24, bottom: 22 }).show(ui, |ui| {
-                ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
-                ui.label(egui::RichText::new(&*heading).font(theme::bold(22.0)).color(theme::text()));
-                ui.add_space(18.0);
-                match &mut dialog {
-                    Dialog::PickPlaylist(tracks) => {
-                        if dialog_row(ui, None, Some(theme::icon::LIST_PLUS), &t!("new_playlist")) {
-                            self.actions.push(Action::NewPlaylist(tracks.clone()));
-                            done = true;
-                        }
-                        ui.add_space(6.0);
-                        pages::divider(ui);
-                        ui.add_space(6.0);
-                        let cards = self.library.as_ref().map(|l| l.playlists.clone()).unwrap_or_default();
-                        egui::ScrollArea::vertical().max_height(340.0).auto_shrink([false, true]).show(ui, |ui| {
-                            for card in cards {
-                                if let Target::Playlist(id) = card.target {
-                                    if !id.starts_with("PL") { continue; }
-                                    if dialog_row(ui, Some(&card.thumbs), None, &card.title) {
-                                        let video_ids = tracks.iter().map(|t| t.id.clone()).collect();
-                                        self.backend.request(Req::AddToPlaylist { playlist_id: id, video_ids });
-                                        done = true;
+            crate::glass::surface(
+                ui,
+                egui::Id::unique("playlist-dialog-glass"),
+                egui::Margin { left: 26, right: 26, top: 24, bottom: 22 },
+                crate::glass::panel(16.0, theme::light(), 1.0),
+                egui::Frame::NONE,
+                |ui| {
+                    ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
+                    ui.label(egui::RichText::new(&*heading).font(theme::bold(22.0)).color(theme::text()));
+                    ui.add_space(18.0);
+                    match &mut dialog {
+                        Dialog::PickPlaylist(tracks) => {
+                            if dialog_row(ui, None, Some(theme::icon::LIST_PLUS), &t!("new_playlist")) {
+                                self.actions.push(Action::NewPlaylist(tracks.clone()));
+                                done = true;
+                            }
+                            ui.add_space(6.0);
+                            pages::divider(ui);
+                            ui.add_space(6.0);
+                            let cards = self.library.as_ref().map(|l| l.playlists.clone()).unwrap_or_default();
+                            egui::ScrollArea::vertical().max_height(340.0).auto_shrink([false, true]).show(ui, |ui| {
+                                for card in cards {
+                                    if let Target::Playlist(id) = card.target {
+                                        if !id.starts_with("PL") { continue; }
+                                        if dialog_row(ui, Some(&card.thumbs), None, &card.title) {
+                                            let video_ids = tracks.iter().map(|t| t.id.clone()).collect();
+                                            self.backend.request(Req::AddToPlaylist { playlist_id: id, video_ids });
+                                            done = true;
+                                        }
                                     }
                                 }
+                            });
+                        }
+                        Dialog::NewPlaylist { title, tracks } => {
+                            let name = text_field(ui, &t!("name"), title, false, &t!("my_playlist"));
+                            if ui.memory(|m| m.focused().is_none()) { name.request_focus(); }
+                            ui.add_space(8.0);
+                            ui.label(egui::RichText::new(t!("private_only_you")).font(theme::regular(12.5)).color(theme::text_faint()));
+                            ui.add_space(24.0);
+                            let enter = name.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                            let (ok, cancel) = dialog_buttons(ui, &t!("create"), !title.trim().is_empty(), accent);
+                            if (ok || enter) && !title.trim().is_empty() {
+                                self.backend.request(Req::CreatePlaylist { title: title.trim().to_owned(), video_ids: tracks.iter().map(|t| t.id.clone()).collect() });
+                                done = true;
                             }
-                        });
-                    }
-                    Dialog::NewPlaylist { title, tracks } => {
-                        let name = text_field(ui, &t!("name"), title, false, &t!("my_playlist"));
-                        if ui.memory(|m| m.focused().is_none()) { name.request_focus(); }
-                        ui.add_space(8.0);
-                        ui.label(egui::RichText::new(t!("private_only_you")).font(theme::regular(12.5)).color(theme::text_faint()));
-                        ui.add_space(24.0);
-                        let enter = name.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-                        let (ok, cancel) = dialog_buttons(ui, &t!("create"), !title.trim().is_empty(), accent);
-                        if (ok || enter) && !title.trim().is_empty() {
-                            self.backend.request(Req::CreatePlaylist { title: title.trim().to_owned(), video_ids: tracks.iter().map(|t| t.id.clone()).collect() });
-                            done = true;
+                            done |= cancel;
                         }
-                        done |= cancel;
-                    }
-                    Dialog::EditPlaylist { id, title, description, privacy } => {
-                        text_field(ui, &t!("name"), title, false, &t!("playlist_name"));
-                        ui.add_space(16.0);
-                        text_field(ui, &t!("description"), description, true, &t!("add_optional_description"));
-                        ui.add_space(16.0);
-                        field_label(ui, "Visibility");
-                        privacy_picker(ui, privacy);
-                        ui.add_space(26.0);
-                        let (ok, cancel) = dialog_buttons(ui, &t!("save"), !title.trim().is_empty(), accent);
-                        if ok {
-                            self.backend.request(Req::EditPlaylist { id: id.clone(), title: title.trim().to_owned(), description: description.clone(), privacy: privacy.clone() });
-                            done = true;
+                        Dialog::EditPlaylist { id, title, description, privacy } => {
+                            text_field(ui, &t!("name"), title, false, &t!("playlist_name"));
+                            ui.add_space(16.0);
+                            text_field(ui, &t!("description"), description, true, &t!("add_optional_description"));
+                            ui.add_space(16.0);
+                            field_label(ui, "Visibility");
+                            privacy_picker(ui, privacy);
+                            ui.add_space(26.0);
+                            let (ok, cancel) = dialog_buttons(ui, &t!("save"), !title.trim().is_empty(), accent);
+                            if ok {
+                                self.backend.request(Req::EditPlaylist { id: id.clone(), title: title.trim().to_owned(), description: description.clone(), privacy: privacy.clone() });
+                                done = true;
+                            }
+                            done |= cancel;
                         }
-                        done |= cancel;
+                        Dialog::Collaborate { info, busy, confirm_off, .. } => done = self.collaborate_dialog(ui, info, busy, confirm_off, accent),
+                        Dialog::ConfirmDelete { .. } => unreachable!("drawn by confirm_delete"),
                     }
-                    Dialog::Collaborate { info, busy, confirm_off, .. } => done = self.collaborate_dialog(ui, info, busy, confirm_off, accent),
-                    Dialog::ConfirmDelete { .. } => unreachable!("drawn by confirm_delete"),
-                }
-            });
+                },
+            );
         });
         let dismissed = modal.should_close() || ctx.input(|i| i.key_pressed(egui::Key::Escape));
         if !done && !dismissed { self.dialog = Some(dialog); }
@@ -210,33 +217,109 @@ fn text_field_styled(ui: &mut Ui, label: &str, text: &mut String, multiline: boo
         edit.hint_text(egui::RichText::new(hint).color(theme::text_faint())).font(theme::regular(14.0)).frame(egui::Frame::NONE).desired_width(inner.width()),
     );
     let focus = theme::anim_bool(ui.ctx(), resp.id.with("focus"), resp.has_focus(), 0.15);
-    ui.painter().set(bg, egui::Shape::Vec(vec![
-        egui::Shape::rect_filled(rect, 10.0, theme::glass(0.08 + 0.03 * focus)),
-        egui::Shape::rect_stroke(rect, 10.0, egui::Stroke::new(1.0, theme::glass(0.06 + 0.18 * focus)), egui::StrokeKind::Inside),
-    ]));
+    if crate::renderer::active() == crate::renderer::Renderer::OpenGl {
+        crate::glass::paint_at(ui, bg, resp.id.with("glass"), rect, crate::glass::control(10.0, theme::light(), focus * 0.65, 1.0));
+        if focus > 0.01 {
+            ui.painter().rect_stroke(rect, 10.0, egui::Stroke::new(1.5, theme::glass(0.24 * focus)), egui::StrokeKind::Inside);
+        }
+    } else {
+        ui.painter().set(bg, egui::Shape::Vec(vec![
+            egui::Shape::rect_filled(rect, 10.0, theme::glass(0.08 + 0.03 * focus)),
+            egui::Shape::rect_stroke(rect, 10.0, egui::Stroke::new(1.0, theme::glass(0.06 + 0.18 * focus)), egui::StrokeKind::Inside),
+        ]));
+    }
     resp
 }
 
 /// Private / Unlisted / Public as one segmented control; nothing picked keeps the current setting.
 fn privacy_picker(ui: &mut Ui, privacy: &mut Option<String>) {
-    use egui::{Sense, vec2};
-    let (track, _) = ui.allocate_exact_size(vec2(ui.available_width(), 38.0), Sense::hover());
-    ui.painter().rect_filled(track, 10.0, theme::glass(0.08));
+    use egui::{Sense, pos2, vec2};
+    let (track, track_resp) = ui.allocate_exact_size(vec2(ui.available_width(), 38.0), Sense::click_and_drag());
+    let track_resp = track_resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+    let light = theme::light();
+    if crate::renderer::active() == crate::renderer::Renderer::OpenGl {
+        crate::glass::paint(ui, ui.scope_id().with("privacy-track-glass"), track, crate::glass::control(crate::glass::Corner::Capsule, light, 0.0, 1.0));
+    } else {
+        ui.painter().rect_filled(track, 19.0, theme::glass(0.08));
+    }
     let options = [("PRIVATE", "Private"), ("UNLISTED", "Unlisted"), ("PUBLIC", "Public")];
     let w = (track.width() - 6.0) / options.len() as f32;
-    for (i, (value, label)) in options.into_iter().enumerate() {
-        let r = egui::Rect::from_min_size(track.min + vec2(3.0 + w * i as f32, 3.0), vec2(w, track.height() - 6.0));
-        let resp = widgets::named(ui.interact(r, ui.scope_id().with(("privacy", value)), Sense::click()), label).on_hover_cursor(egui::CursorIcon::PointingHand);
-        let on = privacy.as_deref() == Some(value);
-        let s = theme::anim_bool(ui.ctx(), resp.id.with("s"), on, 0.15);
-        let h = theme::anim_bool(ui.ctx(), resp.id.with("h"), resp.hovered(), 0.12);
-        let fill = theme::lerp_color(theme::glass(0.06 * h), theme::text(), s);
-        if fill.a() > 0 { ui.painter().rect_filled(r, 8.0, fill); }
-        let color = theme::lerp_color(theme::with_alpha(theme::text(), 0.7 + 0.3 * h), theme::on_text(), s);
-        ui.painter().text(r.center(), egui::Align2::CENTER_CENTER, label, theme::semibold(13.0), color);
-        if resp.clicked() {
-            *privacy = if on { None } else { Some(value.to_owned()) };
+    let cells: Vec<egui::Rect> = (0..options.len())
+        .map(|i| egui::Rect::from_min_size(track.min + vec2(3.0 + w * i as f32, 3.0), vec2(w, track.height() - 6.0)))
+        .collect();
+    let sel_idx = privacy.as_deref().and_then(|v| options.iter().position(|(k, _)| *k == v));
+
+    let seg_id = ui.scope_id().with("privacy-seg");
+    let ox = track.min.x;
+    let first = cells[0].center().x - ox;
+    let last = cells[options.len() - 1].center().x - ox;
+    let mut d = crate::glass::load_thumb(ui.ctx(), seg_id);
+    let dragged = crate::glass::drag_target(ui.ctx(), seg_id, &track_resp, ox, d.pos.value, first, last, 8.0);
+    let held = track_resp.is_pointer_button_down_on() || track_resp.dragged();
+    let nearest = |x: f32| {
+        (0..options.len())
+            .min_by(|a, b| (cells[*a].center().x - ox - x).abs().total_cmp(&(cells[*b].center().x - ox - x).abs()))
+            .unwrap_or(0)
+    };
+    let pointer = ui.input(|i| i.pointer.interact_pos());
+    let origin = ui.input(|i| i.pointer.press_origin());
+    if track_resp.drag_stopped() || (track_resp.clicked() && dragged.is_none()) {
+        let p = pointer.map_or(d.pos.value + ox, |p| p.x);
+        let moved = origin.is_some_and(|o| (p - o.x).abs() > 4.0);
+        let picked = if moved {
+            nearest(d.pos.value)
+        } else {
+            cells.iter().position(|c| p >= c.min.x && p < c.max.x).unwrap_or(nearest(p - ox))
+        };
+        if !moved && sel_idx == Some(picked) {
+            *privacy = None;
+        } else {
+            *privacy = Some(options[picked].0.to_owned());
         }
+    }
+
+    let sel_idx = privacy.as_deref().and_then(|v| options.iter().position(|(k, _)| *k == v));
+    if let Some(sel) = sel_idx {
+        let target = dragged.unwrap_or(cells[sel].center().x - ox);
+        let rest = vec2(w, track.height() - 4.0);
+        let lifted = vec2(w * 1.06 + 4.0, track.height() * 1.28);
+        if track_resp.clicked() && d.lift.value < 0.3 {
+            d.lift.value = 0.31;
+        }
+        let follow = if dragged.is_some() && !track_resp.clicked() {
+            crate::glass::Tuning::new(0.13, 0.9)
+        } else {
+            crate::glass::Tuning::new(0.36, 0.80)
+        };
+        let f = d.step(ui.ctx(), target, follow, held, rest, lifted);
+        crate::glass::store_thumb(ui.ctx(), seg_id, d);
+
+        let thumb = egui::Rect::from_center_size(pos2(ox + d.pos.value, track.center().y), f.size);
+        let knob = if light { Color32::WHITE } else { Color32::from_gray(96) };
+        if crate::renderer::active() == crate::renderer::Renderer::OpenGl {
+            let mut style = crate::glass::thumb_glass(thumb, &f, knob, light, 1.0);
+            style.material.blur = 0.0;
+            style.material.refraction *= 0.72;
+            style.material.depth *= 0.55;
+            style.material.dispersion *= 0.08;
+            style.material.dark_edge *= 0.14;
+            style.material.inner_glow *= 1.8;
+            style.material.shadow *= 0.45;
+            style.material.saturation = 1.0;
+            crate::glass::paint(ui, seg_id.with("thumb"), thumb, style);
+        } else {
+            ui.painter().rect_filled(thumb, thumb.height() * 0.5, knob);
+        }
+    }
+
+    for (i, (_, label)) in options.into_iter().enumerate() {
+        let r = cells[i];
+        let on = sel_idx == Some(i);
+        let h = crate::glass::spring_bool(ui.ctx(), ui.scope_id().with(("privacy-h", i)), track_resp.hovered() && pointer.is_some_and(|p| r.contains(p)), crate::glass::Tuning::SNAP);
+        let s = crate::glass::spring_bool(ui.ctx(), ui.scope_id().with(("privacy-s", i)), on, crate::glass::Tuning::SNAP);
+        let fg_on = if light { Color32::from_gray(18) } else { Color32::WHITE };
+        let color = theme::lerp_color(theme::with_alpha(theme::text(), 0.70 + 0.30 * h), fg_on, s);
+        ui.painter().text(r.center(), egui::Align2::CENTER_CENTER, label, theme::semibold(13.0), color);
     }
     if privacy.is_none() {
         ui.add_space(8.0);
@@ -294,33 +377,40 @@ fn dialog_row(ui: &mut Ui, thumbs: Option<&[crate::model::Thumb]>, glyph: Option
 /// "Delete playlist?" as a modal card: Some(true) delete, Some(false) cancel, None still open.
 fn confirm_delete(ctx: &egui::Context, title: &str, _accent: Color32) -> Option<bool> {
     let mut answer = None;
-    let modal = egui::Modal::new(egui::Id::unique("confirm-delete")).frame(notes::surface()).backdrop_color(theme::shade(0.55)).show(ctx, |ui| {
+    let modal = egui::Modal::new(egui::Id::unique("confirm-delete")).frame(notes::surface_frame()).backdrop_color(theme::shade(0.55)).show(ctx, |ui| {
         ui.set_width(400.0_f32.min(ctx.content_rect().width() - 48.0));
-        egui::Frame::new().inner_margin(egui::Margin { left: 26, right: 26, top: 24, bottom: 22 }).show(ui, |ui| {
-            ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
-            ui.label(egui::RichText::new(t!("delete_playlist_confirm")).font(theme::bold(22.0)).color(theme::text()));
-            ui.add_space(10.0);
-            let body = format!("\u{201c}{title}\u{201d} will be removed from your YouTube Music library. This can't be undone.");
-            ui.add(egui::Label::new(egui::RichText::new(body).font(theme::regular(14.0)).color(theme::text_dim())).wrap());
-            ui.add_space(22.0);
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                ui.spacing_mut().item_spacing.x = 10.0;
-                // Destructive action in red, white text.
-                let label = t!("delete");
-                let g = ui.painter().layout_no_wrap(label.to_string(), theme::semibold(14.0), Color32::WHITE);
-                let (rect, resp) = ui.allocate_exact_size(egui::vec2(g.size().x + 40.0, 38.0), egui::Sense::click());
-                let resp = widgets::named(resp, &t!("delete_playlist")).on_hover_cursor(egui::CursorIcon::PointingHand);
-                let h = theme::anim_bool(ui.ctx(), resp.id.with("h"), resp.hovered(), 0.15);
-                ui.painter().rect_filled(rect, 19.0, theme::lerp_color(Color32::from_rgb(214, 40, 57), Color32::from_rgb(236, 56, 72), h));
-                ui.painter().galley(rect.center() - g.size() / 2.0, g, Color32::WHITE);
-                if resp.clicked() {
-                    answer = Some(true);
-                }
-                if widgets::pill(ui, &t!("cancel"), None, false).clicked() {
-                    answer = Some(false);
-                }
-            });
-        });
+        crate::glass::surface(
+            ui,
+            egui::Id::unique("confirm-delete-glass"),
+            egui::Margin { left: 26, right: 26, top: 24, bottom: 22 },
+            crate::glass::panel(16.0, theme::light(), 1.0),
+            egui::Frame::NONE,
+            |ui| {
+                ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
+                ui.label(egui::RichText::new(t!("delete_playlist_confirm")).font(theme::bold(22.0)).color(theme::text()));
+                ui.add_space(10.0);
+                let body = format!("\u{201c}{title}\u{201d} will be removed from your YouTube Music library. This can't be undone.");
+                ui.add(egui::Label::new(egui::RichText::new(body).font(theme::regular(14.0)).color(theme::text_dim())).wrap());
+                ui.add_space(22.0);
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.spacing_mut().item_spacing.x = 10.0;
+                    // Destructive action in red, white text.
+                    let label = t!("delete");
+                    let g = ui.painter().layout_no_wrap(label.to_string(), theme::semibold(14.0), Color32::WHITE);
+                    let (rect, resp) = ui.allocate_exact_size(egui::vec2(g.size().x + 40.0, 38.0), egui::Sense::click());
+                    let resp = widgets::named(resp, &t!("delete_playlist")).on_hover_cursor(egui::CursorIcon::PointingHand);
+                    let h = theme::anim_bool(ui.ctx(), resp.id.with("h"), resp.hovered(), 0.15);
+                    ui.painter().rect_filled(rect, 19.0, theme::lerp_color(Color32::from_rgb(214, 40, 57), Color32::from_rgb(236, 56, 72), h));
+                    ui.painter().galley(rect.center() - g.size() / 2.0, g, Color32::WHITE);
+                    if resp.clicked() {
+                        answer = Some(true);
+                    }
+                    if widgets::pill(ui, &t!("cancel"), None, false).clicked() {
+                        answer = Some(false);
+                    }
+                });
+            },
+        );
     });
     if answer.is_none() && (modal.should_close() || ctx.input(|i| i.key_pressed(egui::Key::Escape))) {
         answer = Some(false);

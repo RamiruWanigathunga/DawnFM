@@ -129,12 +129,25 @@ impl App {
                 self.backend.request(Req::Suggest { query: q, round: self.suggest_round });
             }
         }
+        if self.live_search_due.is_some_and(|d| now >= d) {
+            self.live_search_due = None;
+            if matches!(self.page, Page::Search(_)) {
+                let q = self.search_text.trim().to_owned();
+                if self.page != Page::Search(q.clone()) {
+                    self.page = Page::Search(q.clone());
+                    self.search_synced = q.clone();
+                    if !q.is_empty() && self.search.as_ref().is_none_or(|s| s.query != q) {
+                        self.backend.request(self.search_req(q));
+                    }
+                }
+            }
+        }
     }
 
     /// A search's results are on screen: the first result clicked becomes what
     /// "Recently Searched" remembers, not the words that were typed.
     pub(super) fn expect_search_click(&mut self, query: &str) {
-        if matches!(&self.page, Page::Search(q) if q == query) || self.search_drop.as_deref() == Some(query) {
+        if matches!(&self.page, Page::Search(q) if q == query) {
             self.search_pending = true;
         }
     }
@@ -174,7 +187,7 @@ impl App {
 
     /// Record the thing the search's first click opened, once.
     pub(super) fn remember_search_click(&mut self, a: &Action) {
-        if !self.search_pending || !(matches!(self.page, Page::Search(_)) || self.search_drop.is_some()) {
+        if !self.search_pending || !matches!(self.page, Page::Search(_)) {
             return;
         }
         let Some(entry) = self.search_click_entry(a) else { return };
@@ -353,17 +366,8 @@ impl App {
             }
             Resp::Lyrics { video_id, lyrics } => {
                 if self.shown().is_some_and(|t| t.id == video_id) {
-                    let available = self.lyric_prefs.available(&lyrics);
                     let shown = self.lyric_prefs.choose(&video_id, &lyrics);
-                    let missing: Vec<&str> = self.lyric_prefs.order.iter().filter(|(p, on)| *on && !available.contains(p)).map(|(p, _)| p.key()).collect();
-                    log::info!(
-                        "lyrics: showing {} ({}/{}); available: {}; no lyrics from: {}",
-                        shown.map_or("nothing", |p| p.key()),
-                        shown.and_then(|p| available.iter().position(|x| *x == p)).map_or(0, |i| i + 1),
-                        available.len(),
-                        available.iter().map(|p| p.key()).collect::<Vec<_>>().join(", "),
-                        missing.join(", ")
-                    );
+                    log::info!("lyrics: {}", shown.map_or("none", |p| p.key()));
                     self.lyrics = Some((video_id, lyrics));
                 }
             }
@@ -383,6 +387,7 @@ impl App {
                 self.art_colors.insert(key.clone(), art.dominant);
                 self.art_accents.insert(key.clone(), art.accent);
                 self.art_blurs.insert(key.clone(), art.rgba.clone());
+                self.art_lumas.insert(key.clone(), (art.luma, art.right_luma));
                 self.art_blur_tex.remove(&key);
                 self.art_loaded_at.insert(key.clone(), now);
                 if self.mix_hold().is_none() && self.current_id() == Some(key.as_str()) {
@@ -689,6 +694,7 @@ impl App {
             picks_loading: false,
             picks_expanded: false,
         });
+        self.home_backdrop_key = None;
         self.home_loading = false;
         if self.page == Page::Home {
             self.loading = false;

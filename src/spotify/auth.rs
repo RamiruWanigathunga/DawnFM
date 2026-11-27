@@ -92,12 +92,14 @@ pub struct SpotifyAuth {
     client_token: RwLock<Option<CachedClientToken>>,
     access_token: RwLock<Option<CachedAccessToken>>,
     stored: RwLock<Option<StoredSession>>,
+    saved_user: std::sync::RwLock<Option<String>>,
     refresh_lock: Mutex<()>,
 }
 
 impl SpotifyAuth {
     pub fn new(data_dir: PathBuf) -> Self {
         let loaded = load_stored(&data_dir);
+        let saved_user = loaded.as_ref().map(|s| s.username.clone());
         let device_id = loaded
             .as_ref()
             .map(|s| s.device_id.clone())
@@ -109,8 +111,20 @@ impl SpotifyAuth {
             client_token: RwLock::new(None),
             access_token: RwLock::new(None),
             stored: RwLock::new(loaded),
+            saved_user: std::sync::RwLock::new(saved_user),
             refresh_lock: Mutex::new(()),
         }
+    }
+
+    /// Cached Spotify username loaded from disk/vault on startup (non-blocking).
+    pub fn saved_username(&self) -> Option<String> {
+        use crate::sync::RwLockExt;
+        self.saved_user.read_unpoisoned().clone()
+    }
+
+    fn set_saved_username(&self, name: Option<String>) {
+        use crate::sync::RwLockExt;
+        *self.saved_user.write_unpoisoned() = name;
     }
 
     pub async fn signed_in_username(&self) -> Option<String> {
@@ -141,6 +155,7 @@ impl SpotifyAuth {
         *self.client_token.write().await = None;
         *self.access_token.write().await = None;
         *self.stored.write().await = None;
+        self.set_saved_username(None);
         let _ = vault::delete(VAULT_KEY, &self.data_dir);
     }
 
@@ -432,6 +447,7 @@ impl SpotifyAuth {
         if let Ok(bytes) = serde_json::to_vec(&saved) {
             let _ = vault::set(VAULT_KEY, &self.data_dir, &bytes);
         }
+        self.set_saved_username(Some(saved.username.clone()));
         *self.stored.write().await = Some(saved);
         cached
     }
@@ -458,6 +474,10 @@ impl SpotifyAuth {
             };
             if let Ok(bytes) = serde_json::to_vec(&saved) {
                 let _ = vault::set(VAULT_KEY, &self.data_dir, &bytes);
+            }
+            {
+                use crate::sync::RwLockExt;
+                *self.saved_user.write_unpoisoned() = Some(saved.username.clone());
             }
             *self.stored.write().await = Some(saved);
         }

@@ -102,6 +102,35 @@ pub fn text_at(ui: &Ui, pos: Pos2, text: &str, font: egui::FontId, color: Color3
     rect
 }
 
+/// Small Apple Music-style `[E]` explicit advisory badge centered at `center`.
+pub fn explicit_badge(ui: &Ui, center: Pos2, size: f32, ink: Color32) {
+    let r = Rect::from_center_size(center, Vec2::splat(size));
+    let radius = (size * 0.22).clamp(2.0, 3.5);
+    let bright_ink = (ink.r() as u16 + ink.g() as u16 + ink.b() as u16) > 380;
+    let bg = theme::with_alpha(ink, if bright_ink { 0.56 } else { 0.52 });
+    let fg = if bright_ink { Color32::from_rgb(0x16, 0x16, 0x18) } else { Color32::WHITE };
+    ui.painter().rect_filled(r, radius, bg);
+    ui.painter().text(r.center(), Align2::CENTER_CENTER, "E", theme::bold((size * 0.74).max(8.0)), fg);
+}
+
+/// Draws a single-line song title with an inline `[E]` badge when `explicit` is true.
+pub fn title_with_explicit(ui: &Ui, pos: Pos2, title: &str, font: egui::FontId, color: Color32, width: f32, explicit: bool) -> Vec2 {
+    if !explicit {
+        let g = galley(ui, title, font, color, width);
+        let size = g.size();
+        ui.painter().galley(pos, g, color);
+        return size;
+    }
+    let badge = (font.size * 0.86).clamp(11.0, 14.0);
+    let gap = 5.0;
+    let reserve = badge + gap;
+    let g = galley(ui, title, font, color, (width - reserve).max(20.0));
+    let tsize = g.size();
+    ui.painter().galley(pos, g, color);
+    explicit_badge(ui, pos2(pos.x + tsize.x + gap + badge * 0.5, pos.y + tsize.y * 0.5), badge, color);
+    vec2((tsize.x + reserve).min(width), tsize.y)
+}
+
 /// Single-line text whose artist names are links: underlined on hover, and a click
 /// opens the artist's page. Names without a channel id stay plain text.
 #[allow(clippy::too_many_arguments)]
@@ -210,17 +239,74 @@ pub fn heart(ui: &Ui, center: Pos2, size: f32, fill: f32, outline: Color32, fill
 }
 
 /// Circular icon button with an animated hover halo.
+/// Draws a circular hover/press under-shadow and expanding click touch ripple behind an
+/// icon button; returns `(hover, icon_scale)`.
+pub fn paint_icon_touch(ui: &Ui, resp: &Response, rect: Rect, light_bg: bool) -> (f32, f32) {
+    let now = ui.input(|i| i.time);
+    let hover = theme::anim_bool(ui.ctx(), resp.id.with("th"), resp.hovered(), 0.14);
+    let held = resp.is_pointer_button_down_on();
+    let hold = theme::anim_bool(ui.ctx(), resp.id.with("tp"), held, 0.10);
+    let click_key = resp.id.with("tc");
+    if resp.clicked() || (held && hold < 0.05) {
+        ui.ctx().data_mut(|d| d.insert_temp(click_key, now));
+    }
+    let pulse_t = ui
+        .ctx()
+        .data(|d| d.get_temp::<f64>(click_key))
+        .map_or(1.0_f32, |t0| ((now - t0) / 0.34).clamp(0.0, 1.0) as f32);
+    if pulse_t < 1.0 {
+        ui.ctx().request_repaint();
+    }
+
+    let base_r = rect.width().min(rect.height()) * 0.5;
+    let tint = |alpha: f32| {
+        let a = (alpha.clamp(0.0, 1.0) * 255.0).round() as u8;
+        if light_bg { Color32::from_black_alpha(a) } else { Color32::from_white_alpha(a) }
+    };
+
+    let under_a = (hover * 0.08 + hold * 0.14).clamp(0.0, 0.24);
+    if under_a > 0.004 {
+        let under_r = base_r * (0.86 + 0.14 * hover.max(hold));
+        ui.painter().circle_filled(rect.center(), under_r, tint(under_a));
+    }
+
+    if pulse_t < 1.0 {
+        let ease = 1.0 - (1.0 - pulse_t).powi(3);
+        let ripple_r = base_r * (0.35 + 0.80 * ease);
+        let ripple_a = (1.0 - pulse_t).powf(0.85) * 0.24;
+        if ripple_a > 0.004 {
+            ui.painter().circle_filled(rect.center(), ripple_r, tint(ripple_a));
+        }
+    }
+
+    let scale = 1.0 - 0.10 * hold + if pulse_t < 1.0 { 0.06 * (pulse_t * std::f32::consts::PI).sin() } else { 0.0 };
+    (hover, scale)
+}
+
+/// Paint an interactive capsule Liquid Glass backdrop when `vis > 0.01` (with frosted fallback).
+pub fn paint_glass_hover(ui: &Ui, id: egui::Id, press: &crate::glass::PressEffect, vis: f32) {
+    if vis <= 0.01 {
+        return;
+    }
+    let draw_r = press.rect;
+    if crate::renderer::active() == crate::renderer::Renderer::OpenGl {
+        let mut style = crate::glass::control(crate::glass::Corner::Capsule, theme::light(), press.hover * 0.7, vis);
+        press.apply(&mut style);
+        crate::glass::paint(ui, id.with("glass"), draw_r, style);
+    } else {
+        ui.painter().rect_filled(draw_r, draw_r.height() * 0.5, theme::glass(0.12 * vis));
+    }
+}
+
 pub fn icon_button(ui: &mut Ui, glyph: char, size: f32, name: &str, active: bool) -> Response {
     let d = size + 16.0;
     let (rect, resp) = ui.allocate_exact_size(Vec2::splat(d), Sense::click());
     let resp = named(resp, name).on_hover_text(name).on_hover_cursor(egui::CursorIcon::PointingHand);
-    let h = if resp.hovered() { 1.0 } else { 0.0 };
-    if h > 0.0 {
-        ui.painter().circle_filled(rect.center(), d / 2.0, theme::glass(0.10 * h));
-    }
-    let color = if active { theme::text() } else { theme::lerp_color(theme::text_dim(), theme::text(), h) };
-    let press = if resp.is_pointer_button_down_on() { 0.9 } else { 1.0 };
-    icon_at(ui, rect.center(), glyph, size * press, color);
+    let press = crate::glass::press(ui, &resp, rect, 0.75);
+    let vis = press.hover.max(if active { 1.0 } else { 0.0 });
+    paint_glass_hover(ui, resp.id, &press, vis);
+    let color = if active { theme::text() } else { theme::lerp_color(theme::text_dim(), theme::text(), press.hover) };
+    icon_at(ui, press.rect.center(), glyph, size * press.scale, color);
     resp
 }
 
@@ -233,61 +319,50 @@ pub fn pill(ui: &mut Ui, label: &str, glyph: Option<char>, primary: bool) -> Res
     let resp = named(resp, label).on_hover_cursor(egui::CursorIcon::PointingHand);
     let h = theme::anim_bool(ui.ctx(), resp.id.with("h"), resp.hovered(), 0.15);
     let light = theme::light();
-    let (fill, stroke_color, fg, icon_col) = if light {
+    let (fill, fg, icon_col) = if light {
         if primary {
             let bg = theme::lerp_color(Color32::from_rgb(0x28, 0x24, 0x2c), Color32::from_rgb(0x18, 0x14, 0x1c), h);
-            let stroke = Color32::TRANSPARENT;
             let text_c = Color32::WHITE;
-            let ic = text_c;
-            (bg, stroke, text_c, ic)
+            (bg, text_c, text_c)
         } else {
             let bg = theme::lerp_color(Color32::from_black_alpha(15), Color32::from_black_alpha(28), h);
-            let stroke = Color32::from_black_alpha((25.0 + 18.0 * h) as u8);
             let text_c = theme::text();
-            (bg, stroke, text_c, text_c)
+            (bg, text_c, text_c)
         }
     } else {
         if primary {
             let bg = theme::lerp_color(Color32::from_white_alpha(240), Color32::WHITE, h);
-            let stroke = Color32::TRANSPARENT;
             let text_c = Color32::from_rgb(0x18, 0x14, 0x1c);
-            let ic = text_c;
-            (bg, stroke, text_c, ic)
+            (bg, text_c, text_c)
         } else {
             let bg = theme::glass(0.12 + 0.08 * h);
-            let stroke = theme::glass(0.15 + 0.10 * h);
-            let text_c = theme::lerp_color(theme::text_dim(), theme::text(), h);
-            let ic = theme::lerp_color(Color32::from_white_alpha(225), Color32::WHITE, h);
-            (bg, stroke, text_c, ic)
+            let text_c = theme::lerp_color(Color32::from_white_alpha(232), Color32::WHITE, h);
+            (bg, text_c, text_c)
         }
     };
 
-    let r = rect.shrink(if resp.is_pointer_button_down_on() { 1.0 } else { 0.0 });
-    let radius = r.height() / 2.0;
+    let r = rect;
+    let press = crate::glass::press(ui, &resp, r, 1.0);
+    let draw_r = press.rect;
+    let radius = draw_r.height() / 2.0;
 
-    // Soft drop shadow matching resume autoscroll button
-    let shadow_alpha = if light { (25.0 + 10.0 * h) as u8 } else { (42.0 + 14.0 * h) as u8 };
-    ui.painter().rect_filled(r.translate(vec2(0.0, 1.5)), radius, Color32::from_black_alpha(shadow_alpha));
-
-    // Frosted capsule fill and subtle inside stroke
+    // Liquid Glass capsule fill (no border)
     if !primary && crate::renderer::active() == crate::renderer::Renderer::OpenGl {
-        let (tint, tint_alpha, sat, sheen) = if light {
-            (Color32::WHITE, 0.52 + 0.12 * h, 1.15, 0.18)
-        } else {
-            (Color32::from_rgb(0x22, 0x22, 0x28), 0.48 + 0.12 * h, 1.25, 0.12)
-        };
-        super::shell::paint_live_backdrop_blur(ui, resp.id.with("pill-blur"), r, radius, tint, tint_alpha, sat, sheen, 1.0);
+        let mut style = crate::glass::control(crate::glass::Corner::Capsule, light, press.hover, 1.0);
+        press.apply(&mut style);
+        crate::glass::paint(ui, resp.id.with("pill-blur"), draw_r, style);
     } else {
-        ui.painter().rect_filled(r, radius, fill);
+        let shadow_alpha = if light { (25.0 + 10.0 * press.hover) as u8 } else { (42.0 + 14.0 * press.hover) as u8 };
+        ui.painter().rect_filled(draw_r.translate(vec2(0.0, 1.5)), radius, Color32::from_black_alpha(shadow_alpha));
+        ui.painter().rect_filled(draw_r, radius, fill);
     }
-    ui.painter().rect_stroke(r, radius, egui::Stroke::new(1.0, stroke_color), egui::StrokeKind::Inside);
 
-    let mut x = r.left() + 18.0;
+    let mut x = draw_r.left() + 18.0;
     if let Some(g) = glyph {
-        icon_at(ui, pos2(x + 8.0, r.center().y), g, 17.0, icon_col);
+        icon_at(ui, pos2(x + 8.0, draw_r.center().y), g, 17.0 * press.scale, icon_col);
         x += icon_w;
     }
-    ui.painter().galley(pos2(x, r.center().y - text.size().y / 2.0), text, fg);
+    ui.painter().galley(pos2(x, draw_r.center().y - text.size().y / 2.0), text, fg);
     resp
 }
 
@@ -297,38 +372,47 @@ pub fn pill_destructive(ui: &mut Ui, label: &str, glyph: Option<char>) -> Respon
     let icon_w = if glyph.is_some() { 24.0 } else { 0.0 };
     let (rect, resp) = ui.allocate_exact_size(vec2(text.size().x + icon_w + 36.0, 38.0), Sense::click());
     let resp = named(resp, label).on_hover_cursor(egui::CursorIcon::PointingHand);
-    let h = theme::anim_bool(ui.ctx(), resp.id.with("h"), resp.hovered(), 0.15);
+    let press = crate::glass::press(ui, &resp, rect, 1.0);
+    let h = press.hover;
     let light = theme::light();
 
-    let (fill, stroke_color, fg) = if light {
+    let (fill, fg) = if light {
         let base_bg = Color32::from_black_alpha(15);
         let hover_bg = Color32::from_rgb(0xD8, 0x24, 0x3B);
         let bg = theme::lerp_color(base_bg, hover_bg, h);
-        let stroke = theme::lerp_color(Color32::from_black_alpha(25), hover_bg, h);
         let text_c = theme::lerp_color(theme::text(), Color32::WHITE, h);
-        (bg, stroke, text_c)
+        (bg, text_c)
     } else {
         let base_bg = theme::glass(0.12);
         let hover_bg = Color32::from_rgb(0xD8, 0x24, 0x3B);
         let bg = theme::lerp_color(base_bg, hover_bg, h);
-        let stroke = theme::lerp_color(theme::glass(0.16), hover_bg, h);
         let text_c = theme::lerp_color(Color32::from_white_alpha(225), Color32::WHITE, h);
-        (bg, stroke, text_c)
+        (bg, text_c)
     };
 
-    let r = rect.shrink(if resp.is_pointer_button_down_on() { 1.0 } else { 0.0 });
+    let r = press.rect;
     let radius = r.height() / 2.0;
 
-    // Soft drop shadow
-    let shadow_alpha = if light { (25.0 + 10.0 * h) as u8 } else { (42.0 + 14.0 * h) as u8 };
-    ui.painter().rect_filled(r.translate(vec2(0.0, 1.5)), radius, Color32::from_black_alpha(shadow_alpha));
-
-    ui.painter().rect_filled(r, radius, fill);
-    ui.painter().rect_stroke(r, radius, egui::Stroke::new(1.0, stroke_color), egui::StrokeKind::Inside);
+    if crate::renderer::active() == crate::renderer::Renderer::OpenGl {
+        let rest = crate::glass::control(crate::glass::Corner::Capsule, light, 0.0, 1.0);
+        let tint = theme::lerp_color(rest.tint.unwrap_or_default(), Color32::from_rgba_unmultiplied(0xD8, 0x24, 0x3B, 232), h);
+        let mut style = crate::glass::Style {
+            tint: Some(tint),
+            darkness: if light { rest.darkness + 0.35 * h } else { rest.darkness },
+            ..rest
+        };
+        press.apply(&mut style);
+        crate::glass::paint(ui, resp.id.with("pill-destr-glass"), r, style);
+    } else {
+        // Soft drop shadow
+        let shadow_alpha = if light { (25.0 + 10.0 * h) as u8 } else { (42.0 + 14.0 * h) as u8 };
+        ui.painter().rect_filled(r.translate(vec2(0.0, 1.5)), radius, Color32::from_black_alpha(shadow_alpha));
+        ui.painter().rect_filled(r, radius, fill);
+    }
 
     let mut x = r.left() + 18.0;
     if let Some(g) = glyph {
-        icon_at(ui, pos2(x + 8.0, r.center().y), g, 17.0, fg);
+        icon_at(ui, pos2(x + 8.0, r.center().y), g, 17.0 * press.scale, fg);
         x += icon_w;
     }
     ui.painter().galley(pos2(x, r.center().y - text.size().y / 2.0), text, fg);
@@ -340,43 +424,142 @@ pub fn chip(ui: &mut Ui, label: &str, selected: bool) -> Response {
     let text = ui.painter().layout_no_wrap(label.to_owned(), theme::semibold(13.5), Color32::PLACEHOLDER);
     let (rect, resp) = ui.allocate_exact_size(vec2(text.size().x + 28.0, 34.0), Sense::click());
     let resp = named(resp, label).on_hover_cursor(egui::CursorIcon::PointingHand);
-    let h = if resp.hovered() { 1.0 } else { 0.0 };
-    let s = theme::anim_bool(ui.ctx(), resp.id.with("s"), selected, 0.2);
-    let radius = rect.height() / 2.0;
+    let press = crate::glass::press(ui, &resp, rect, 0.9);
+    let h = press.hover;
+    let s = crate::glass::spring_bool(ui.ctx(), resp.id.with("s"), selected, crate::glass::Tuning::SMOOTH).clamp(0.0, 1.0);
+    let draw_r = press.rect;
+    let radius = draw_r.height() / 2.0;
     let light = theme::light();
     let accent = ui.ctx().data(|d| d.get_temp::<Color32>(egui::Id::unique("accent"))).unwrap_or(theme::BLUE);
 
-    // Soft drop shadow (subtle accent glow when selected)
-    let shadow_alpha = if light { 20 } else { 38 };
-    let shadow_color = if s > 0.01 {
-        theme::lerp_color(Color32::from_black_alpha(shadow_alpha), theme::with_alpha(accent, if light { 0.18 } else { 0.25 }), s)
-    } else {
-        Color32::from_black_alpha(shadow_alpha)
-    };
-    ui.painter().rect_filled(rect.translate(vec2(0.0, 1.2)), radius, shadow_color);
-
-    let (fill, stroke_color, fg) = if light {
+    let (fill, on_fill, fg) = if light {
         let off_fill = theme::lerp_color(Color32::from_black_alpha(12), Color32::from_black_alpha(22), h);
         let on_fill = if h > 0.0 { theme::lerp_color(accent, Color32::BLACK, 0.08) } else { accent };
         let fill = theme::lerp_color(off_fill, on_fill, s);
-        let stroke = theme::lerp_color(Color32::from_black_alpha(((25.0 + 15.0 * h) * (1.0 - s)) as u8), Color32::TRANSPARENT, s);
         let text_c = theme::lerp_color(theme::text(), Color32::WHITE, s);
-        (fill, stroke, text_c)
+        (fill, on_fill, text_c)
     } else {
         let off_fill = theme::glass(0.11 + 0.08 * h);
         let on_fill = if h > 0.0 { theme::lerp_color(accent, Color32::WHITE, 0.12) } else { accent };
         let fill = theme::lerp_color(off_fill, on_fill, s);
-        let stroke = theme::lerp_color(theme::glass(0.15 + 0.10 * h), Color32::TRANSPARENT, s);
-        let text_c = theme::lerp_color(Color32::from_white_alpha(215), Color32::WHITE, s.max(h * 0.5));
-        (fill, stroke, text_c)
+        let text_c = theme::lerp_color(Color32::from_white_alpha(232), Color32::WHITE, s.max(h * 0.5));
+        (fill, on_fill, text_c)
     };
 
-    ui.painter().rect_filled(rect, radius, fill);
-    if stroke_color.a() > 0 {
-        ui.painter().rect_stroke(rect, radius, egui::Stroke::new(1.0, stroke_color), egui::StrokeKind::Inside);
+    if crate::renderer::active() == crate::renderer::Renderer::OpenGl {
+        if s < 0.99 {
+            let mut style = crate::glass::control(crate::glass::Corner::Capsule, light, h, 1.0 - s);
+            press.apply(&mut style);
+            crate::glass::paint(ui, resp.id.with("chip-glass"), draw_r, style);
+        }
+        if s > 0.01 {
+            ui.painter().rect_filled(
+                draw_r.translate(vec2(0.0, 1.2)),
+                radius,
+                theme::with_alpha(accent, if light { 0.18 * s } else { 0.25 * s }),
+            );
+            ui.painter().rect_filled(draw_r, radius, theme::with_alpha(on_fill, s));
+        }
+    } else {
+        // Soft drop shadow (subtle accent glow when selected)
+        let shadow_alpha = if light { 20 } else { 38 };
+        let shadow_color = if s > 0.01 {
+            theme::lerp_color(Color32::from_black_alpha(shadow_alpha), theme::with_alpha(accent, if light { 0.18 } else { 0.25 }), s)
+        } else {
+            Color32::from_black_alpha(shadow_alpha)
+        };
+        ui.painter().rect_filled(draw_r.translate(vec2(0.0, 1.2)), radius, shadow_color);
+        ui.painter().rect_filled(draw_r, radius, fill);
     }
-    ui.painter().galley(rect.center() - text.size() / 2.0, text, fg);
+    ui.painter().galley(draw_r.center() - text.size() / 2.0, text, fg);
     resp
+}
+
+/// Show a menu popup anchored to `anchor` with Liquid Glass on OpenGL.
+pub fn popup_menu(anchor: &Response, close: Option<egui::PopupCloseBehavior>, add_contents: impl FnOnce(&mut Ui)) {
+    let mut p = egui::Popup::menu(anchor);
+    if let Some(c) = close {
+        p = p.close_behavior(c);
+    }
+    show_glass_popup(p, add_contents);
+}
+
+/// Show a right-click context menu anchored to `anchor` with Liquid Glass on OpenGL.
+pub fn context_menu(anchor: &Response, add_contents: impl FnOnce(&mut Ui)) {
+    show_glass_popup(egui::Popup::context_menu(anchor), add_contents);
+}
+
+fn show_glass_popup(popup: egui::Popup<'_>, add_contents: impl FnOnce(&mut Ui)) {
+    if crate::renderer::active() == crate::renderer::Renderer::OpenGl {
+        let light = theme::light();
+        popup.frame(egui::Frame::NONE).show(|ui| {
+            crate::glass::surface(
+                ui,
+                ui.scope_id().with("popup-glass"),
+                egui::Margin::symmetric(6, 6),
+                crate::glass::panel(12.0, light, 1.0),
+                egui::Frame::NONE,
+                |ui| {
+                    // Zero out item_spacing so rows are flush — each row already
+                    // has the right height; gaps between them leave unlit slivers.
+                    ui.spacing_mut().item_spacing.y = 0.0;
+                    add_contents(ui);
+                },
+            );
+        });
+    } else {
+        popup.show(|ui| {
+            ui.spacing_mut().item_spacing.y = 0.0;
+            add_contents(ui);
+        });
+    }
+}
+
+/// Fluid spring-animated circular indicator inside a multi-button pill (`rest_pill` -> `draw_pill`).
+/// Glides smoothly with droplet stretch when `target_cx` moves horizontally across buttons,
+/// and scales smoothly in/out when `shown` toggles.
+#[allow(clippy::too_many_arguments)]
+pub fn capsule_indicator(
+    ui: &egui::Ui,
+    id: egui::Id,
+    rest_pill: Rect,
+    draw_pill: Rect,
+    target_cx: f32,
+    shown: bool,
+    held: bool,
+    rest_d: f32,
+    held_d: f32,
+    fill: impl FnOnce(f32) -> Color32,
+    rim: Option<impl FnOnce(f32) -> Color32>,
+) -> f32 {
+    let vis = crate::glass::spring_bool(ui.ctx(), id.with("vis"), shown, crate::glass::Tuning::SNAP).clamp(0.0, 1.0);
+    let last_dx_id = id.with("last-dx");
+    let dx = if shown {
+        let dx = target_cx - rest_pill.min.x;
+        ui.ctx().data_mut(|d| d.insert_temp(last_dx_id, dx));
+        dx
+    } else {
+        ui.ctx().data(|d| d.get_temp::<f32>(last_dx_id)).unwrap_or(target_cx - rest_pill.min.x)
+    };
+    let mut thumb = crate::glass::load_thumb(ui.ctx(), id);
+    if shown && vis <= 0.02 {
+        thumb.pos.value = dx;
+        thumb.pos.velocity = 0.0;
+    }
+    let frame = thumb.step(ui.ctx(), dx, crate::glass::Tuning::SMOOTH, held, Vec2::splat(rest_d), Vec2::splat(held_d));
+    crate::glass::store_thumb(ui.ctx(), id, thumb);
+
+    if vis > 0.01 {
+        let scale = 0.76 + 0.24 * vis;
+        let center = pos2(draw_pill.center().x + (thumb.pos.value - rest_pill.width() * 0.5), draw_pill.center().y);
+        let circle = Rect::from_center_size(center, frame.size * scale);
+        let r = circle.height() * 0.5;
+        ui.painter().rect_filled(circle, r, fill(vis));
+        if let Some(rim_fn) = rim {
+            ui.painter().rect_stroke(circle, r, egui::Stroke::new(0.8, rim_fn(vis)), egui::StrokeKind::Inside);
+        }
+    }
+    vis
 }
 
 /// The size to fetch an image at for `px` pixels: rounded up to a few fixed steps, so
@@ -526,6 +709,7 @@ pub fn paint_cover_fade(ui: &Ui, site: egui::Id, rect: Rect, thumbs: &[Thumb], p
 /// One image into `rect`, its right edge fading from `fade_from` of the width to nothing.
 fn fade_mesh(ui: &Ui, url: &str, rect: Rect, uv: Rect, tint: Color32, fade_from: f32) {
     let Ok(egui::load::TexturePoll::Ready { texture }) = egui::Image::new(url).load_for_size(ui.ctx(), rect.size()) else { return };
+    let uv = cover_uv(uv, texture.size, rect.size());
     let fade_from = fade_from.clamp(0.0, 0.999);
     // Strips along the width, each side's alpha set per vertex: the fade is smooth,
     // not a handful of steps.
@@ -574,6 +758,7 @@ pub fn paint_disc(ui: &Ui, site: egui::Id, center: Pos2, r: f32, thumbs: &[Thumb
 /// One disc, if its texture is ready; false while it downloads (the loader wakes the UI).
 fn disc_at(ui: &Ui, center: Pos2, r: f32, url: &str, uv: Rect, angle: f32, tint: Color32) -> bool {
     let Ok(egui::load::TexturePoll::Ready { texture }) = egui::Image::new(url).load_for_size(ui.ctx(), Vec2::splat(r * 2.0)) else { return false };
+    let uv = cover_uv(uv, texture.size, Vec2::splat(r * 2.0));
     let (uc, uh) = (uv.center(), uv.width() / 2.0);
     let mut mesh = egui::Mesh::with_texture(texture.id);
     mesh.colored_vertex(center, tint);
@@ -675,7 +860,7 @@ pub fn card(ui: &mut Ui, c: &Card, width: f32, liked: bool, acts: &mut Vec<Actio
     let resp = named(resp, &c.title).on_hover_cursor(egui::CursorIcon::PointingHand);
     // contains_pointer, not hovered: the play button on top takes the hover, and the
     // card must stay "hovered" while the pointer is on it or the button would vanish.
-    let h = theme::anim_bool(ui.ctx(), resp.id.with("h"), resp.contains_pointer(), 0.10);
+    let h = crate::glass::spring_bool(ui.ctx(), resp.id.with("h"), resp.contains_pointer(), crate::glass::Tuning::SMOOTH).clamp(0.0, 1.0);
     let img = Rect::from_min_size(rect.min, Vec2::splat(width));
     let radius = if c.round { width / 2.0 } else { theme::card_radius().min(width / 2.0) };
     paint_cover(ui, img, &c.thumbs, radius, 1.0 + 0.06 * h * theme::hover_k());
@@ -690,43 +875,32 @@ pub fn card(ui: &mut Ui, c: &Card, width: f32, liked: bool, acts: &mut Vec<Actio
         let p = ui.interact(prect, resp.id.with("play"), Sense::click());
         let playing = active == Some(true);
         let p = named(p, &format!("{} {}", if playing { "Pause" } else { "Play" }, c.title)).on_hover_cursor(egui::CursorIcon::PointingHand);
-        let ph = theme::anim_bool(ui.ctx(), p.id.with("ph"), p.hovered(), 0.15);
+        let press = crate::glass::press(ui, &p, prect, 1.0);
+        let ph = press.hover;
         let r = 18.0 + 1.5 * ph;
-        let button_rect = Rect::from_center_size(center, Vec2::splat(r * 2.0));
+        let base_rect = Rect::from_center_size(center, Vec2::splat(r * 2.0));
+        let button_rect = Rect::from_center_size(press.rect.center(), press.rect.size() + Vec2::splat(3.0 * ph));
         let light = theme::light();
-        ui.painter().circle_filled(center + vec2(0.0, 1.5), r, Color32::from_black_alpha((36.0 * h) as u8));
         if crate::renderer::active() == crate::renderer::Renderer::OpenGl {
-            let (tint_col, tint_alpha, sat, sheen) = if light {
-                (Color32::WHITE, 0.60 + 0.12 * ph, 1.25, 0.22)
+            let tint = if light {
+                Color32::from_white_alpha((48.0 + 28.0 * ph) as u8)
             } else {
-                (Color32::from_rgb(0x1a, 0x1c, 0x22), 0.52 + 0.12 * ph, 1.30, 0.18)
+                Color32::from_rgba_unmultiplied(26, 28, 34, (44.0 + 28.0 * ph) as u8)
             };
-            super::shell::paint_live_backdrop_blur(
-                ui,
-                egui::Id::unique("card-hover-play-blur"),
-                button_rect,
-                r,
-                tint_col,
-                tint_alpha,
-                sat,
-                sheen,
-                h,
-            );
-            let stroke_col = if light {
-                Color32::from_white_alpha((180.0 * h) as u8)
-            } else {
-                Color32::from_white_alpha(((55.0 + 30.0 * ph) * h) as u8)
-            };
-            ui.painter().circle_stroke(center, r, egui::Stroke::new(1.0, stroke_col));
+            let mut style = crate::glass::Style::clear(crate::glass::Corner::Capsule, Some(tint), if light { 0.10 } else { 0.88 }, h);
+            press.apply(&mut style);
+            crate::glass::paint(ui, resp.id.with("card-hover-play-blur"), button_rect, style);
         } else {
-            ui.painter().circle_filled(center, r, theme::shade((0.62 + 0.10 * ph) * h));
+            let _ = base_rect;
+            ui.painter().circle_filled(press.rect.center() + vec2(0.0, 1.5), r, Color32::from_black_alpha((36.0 * h) as u8));
+            ui.painter().circle_filled(press.rect.center(), r, theme::shade((0.62 + 0.10 * ph) * h));
         }
         let glyph_col = if light {
             theme::with_alpha(Color32::from_rgb(0x18, 0x14, 0x1c), h)
         } else {
             theme::with_alpha(Color32::WHITE, h)
         };
-        play_pause_glyph(ui, center, 8.5, glyph_col, playing);
+        play_pause_glyph(ui, press.rect.center(), 8.5 * press.scale, glyph_col, playing);
         play_hit = p.clicked();
     }
     let tcolor = theme::text();
@@ -750,7 +924,7 @@ pub fn card(ui: &mut Ui, c: &Card, width: f32, liked: bool, acts: &mut Vec<Actio
         }
     }
     // Right-click anywhere on the tile opens its menu.
-    egui::Popup::context_menu(&resp).show(|ui| card_menu_contents(ui, c, liked, acts));
+    context_menu(&resp, |ui| card_menu_contents(ui, c, liked, acts));
 
     if play_hit {
         match &c.target {
@@ -779,7 +953,7 @@ fn card_menu_contents(ui: &mut Ui, c: &Card, liked: bool, acts: &mut Vec<Action>
     match &c.target {
         Target::Song(t) => song_menu(ui, t, liked, None, None, acts),
         t => {
-            ui.set_width(210.0);
+            ui.set_width(178.0);
             ui.add_space(2.0);
             if menu_action(ui, Some(icon::PLAY), "Play") {
                 acts.push(Action::PlayCollection(t.clone(), false));
@@ -812,10 +986,10 @@ pub fn menu_separator(ui: &mut Ui) {
     ui.add_space(3.0);
 }
 
-/// A menu's row, with macOS menu measures: 21 points tall, 13-point text,
+/// A menu's row, with macOS menu measures: 26 points tall, 13-point text,
 /// and theme accent selection filling the row under the pointer with white text.
 fn menu_row(ui: &mut Ui, label: &str, draw: Option<impl FnOnce(&Ui, Pos2, Color32)>) -> bool {
-    let (rect, response) = ui.allocate_exact_size(vec2(ui.available_width(), 21.0), Sense::click());
+    let (rect, response) = ui.allocate_exact_size(vec2(ui.available_width(), 26.0), Sense::click());
     let response = named(response, label);
     let over = response.hovered();
     if over {
@@ -849,27 +1023,19 @@ pub fn menu_action(ui: &mut Ui, glyph: Option<char>, label: &str) -> bool {
     }
 }
 
-/// A menu row marked with the app's own star, filled once the song is liked.
-fn menu_action_star(ui: &mut Ui, liked: bool, label: &str) -> bool {
-    menu_row(ui, label, Some(|ui: &Ui, at: Pos2, color: Color32| {
-        let glyph = if liked { super::glyphs::STAR_FILLED } else { super::glyphs::STAR };
-        super::glyphs::draw(ui, at, 13.5, glyph, color);
-    }))
-}
-
 /// `remove`: the song's row in the open playlist, when it's yours and the song can come out.
 pub fn song_menu(ui: &mut Ui, t: &Track, liked: bool, remove: Option<usize>, remove_queue: Option<usize>, acts: &mut Vec<Action>) {
-    ui.set_width(210.0);
+    ui.set_width(178.0);
     ui.add_space(2.0);
     song_actions(ui, t, liked, remove, remove_queue, acts);
     menu_separator(ui);
     if menu_action(ui, Some(icon::LIST_PLUS), "Play next") {
         acts.push(Action::PlayNext(t.clone()));
     }
-    if menu_action(ui, Some(icon::LIST_MUSIC), "Add to queue") {
+    if menu_action(ui, None, "Add to queue") {
         acts.push(Action::Enqueue(t.clone()));
     }
-    if menu_action(ui, Some(icon::LIST_MUSIC), "View queue") {
+    if menu_action(ui, None, "View queue") {
         acts.push(Action::ViewQueue);
     }
     ui.add_space(2.0);
@@ -877,34 +1043,34 @@ pub fn song_menu(ui: &mut Ui, t: &Track, liked: bool, remove: Option<usize>, rem
 
 /// The song menu's items, for menus that add their own (now playing's options).
 pub fn song_actions(ui: &mut Ui, t: &Track, liked: bool, remove: Option<usize>, remove_queue: Option<usize>, acts: &mut Vec<Action>) {
-    if menu_action_star(ui, liked, if liked { "Remove like" } else { "Like song" }) {
+    if menu_action(ui, None, if liked { "Remove like" } else { "Like song" }) {
         acts.push(Action::Like(t.clone(), !liked));
     }
-    if menu_action(ui, Some(icon::THUMBS_DOWN), "Dislike") {
+    if menu_action(ui, None, "Dislike") {
         acts.push(Action::Dislike(t.clone()));
     }
     menu_separator(ui);
-    if menu_action(ui, Some(icon::LIST_PLUS), "Add to playlist") {
+    if menu_action(ui, None, "Add to playlist") {
         acts.push(Action::AddToPlaylist(vec![t.clone()]));
     }
     if let Some(i) = remove
-        && menu_action(ui, Some(icon::LIST_MINUS), "Remove from playlist")
+        && menu_action(ui, None, "Remove from playlist")
     {
         acts.push(Action::RemoveFromPlaylist(vec![i]));
     }
     if let Some(i) = remove_queue
-        && menu_action(ui, Some(icon::LIST_MINUS), &t!("remove_from_queue"))
+        && menu_action(ui, None, &t!("remove_from_queue"))
     {
         acts.push(Action::QueueRemove(i));
     }
     match crate::downloads::path(&t.id) {
         Some(path) => {
-            if menu_action(ui, Some(icon::FOLDER_OPEN), "Show in folder") {
+            if menu_action(ui, None, "Show in folder") {
                 crate::downloads::show_file(&path);
             }
         }
         None => {
-            if menu_action(ui, Some(icon::DOWNLOAD), "Download") {
+            if menu_action(ui, None, "Download") {
                 acts.push(Action::Download(t.clone()));
             }
         }
@@ -1149,11 +1315,18 @@ pub fn track_row(ui: &mut Ui, t: &Track, o: &RowOpts, acts: &mut Vec<Action>) ->
     };
     let resp = named(ui.interact(hit_rect, base.id.with("play"), sense), &t.title).on_hover_cursor(cursor);
     let h = if base.contains_pointer() { 1.0 } else { 0.0 };
-    if o.alt || o.number.is_some_and(|n| n % 2 == 1) {
-        ui.painter().rect_filled(rect, 8.0, theme::glass(0.025));
+    let highlighted = o.current || o.is_dragged || o.selected == Some(true);
+    if !highlighted {
+        let divider = if o.plain_text {
+            theme::with_alpha(if theme::light() { Color32::BLACK } else { Color32::WHITE }, 0.10)
+        } else {
+            theme::glass(0.08)
+        };
+        let line_right = if o.draggable { rect.right() - 12.0 } else { rect.right() - 18.0 };
+        ui.painter().hline((rect.left() + 10.0)..=line_right, rect.bottom() - 0.5, egui::Stroke::new(1.0, divider));
     }
-    if h > 0.0 || o.current || o.is_dragged {
-        let a = if o.is_dragged { 0.12 } else if o.current { 0.07 + 0.05 * h } else { 0.07 * h };
+    if o.current || o.is_dragged {
+        let a = if o.is_dragged { 0.12 } else { 0.07 };
         ui.painter().rect_filled(rect, 8.0, theme::glass(a));
         if o.is_dragged {
             ui.painter().rect_stroke(rect, 8.0, egui::Stroke::new(1.5, theme::with_alpha(o.accent, 0.7)), egui::StrokeKind::Inside);
@@ -1250,7 +1423,7 @@ pub fn track_row(ui: &mut Ui, t: &Track, o: &RowOpts, acts: &mut Vec<Action>) ->
                 ui.painter().line_segment([pos2(handle_x - 6.0, cy + dy), pos2(handle_x + 6.0, cy + dy)], stroke);
             }
         }
-        egui::Popup::context_menu(&resp).show(|ui| song_menu(ui, t, o.liked, o.remove, o.remove_queue, acts));
+        context_menu(&resp, |ui| song_menu(ui, t, o.liked, o.remove, o.remove_queue, acts));
         return resp;
     }
     // Other rows: title + artists, then album, then plays when there's room.
@@ -1267,7 +1440,7 @@ pub fn track_row(ui: &mut Ui, t: &Track, o: &RowOpts, acts: &mut Vec<Action>) ->
     };
     let title_y = if sub.is_some() { cy - 18.0 } else { cy - 9.0 };
     let text_max_w = title_w.min(content_right - x).max(20.0);
-    text_at(ui, pos2(x, title_y), &t.title, theme::semibold(14.5), title_col, text_max_w);
+    title_with_explicit(ui, pos2(x, title_y), &t.title, theme::semibold(14.5), title_col, text_max_w, t.explicit);
     if let Some(sub) = &sub {
         linked_text(ui, pos2(x, cy + 2.0), sub, &t.artists, theme::regular(13.0), dim_col, text_max_w, acts);
     }
@@ -1305,7 +1478,7 @@ pub fn track_row(ui: &mut Ui, t: &Track, o: &RowOpts, acts: &mut Vec<Action>) ->
         }
     }
     // Right-click anywhere on the row opens its menu.
-    egui::Popup::context_menu(&resp).show(|ui| song_menu(ui, t, o.liked, o.remove, o.remove_queue, acts));
+    context_menu(&resp, |ui| song_menu(ui, t, o.liked, o.remove, o.remove_queue, acts));
     resp
 }
 
@@ -1481,6 +1654,29 @@ pub fn shimmer_band(ui: &Ui, r: Rect, radius: f32, time: f64) {
     skeleton_rect(ui, r, radius, time);
 }
 
+/// Aspect-fill crop inside `uv` so `tex_size` maps onto `rect_size` without stretching.
+fn cover_uv(uv: Rect, tex_size: Vec2, rect_size: Vec2) -> Rect {
+    if tex_size.x <= 0.0 || tex_size.y <= 0.0 || rect_size.x <= 0.0 || rect_size.y <= 0.0 {
+        return uv;
+    }
+    let uv_aspect = (uv.width() * tex_size.x) / (uv.height() * tex_size.y).max(1e-4);
+    let rect_aspect = rect_size.x / rect_size.y;
+    if (uv_aspect - rect_aspect).abs() < 0.01 {
+        return uv;
+    }
+    if uv_aspect > rect_aspect {
+        let new_w = uv.width() * (rect_aspect / uv_aspect);
+        Rect::from_center_size(uv.center(), vec2(new_w, uv.height()))
+    } else {
+        let new_h = uv.height() * (uv_aspect / rect_aspect);
+        let max_top = (uv.bottom() - new_h).max(uv.top());
+        let center_top = (uv.center().y - new_h * 0.5).clamp(uv.top(), max_top);
+        // Bias slightly upward on tall portraits so heads stay centered inside circles.
+        let y0 = egui::lerp(center_top..=uv.top(), 0.25).clamp(uv.top(), max_top);
+        Rect::from_min_size(pos2(uv.left(), y0), vec2(uv.width(), new_h))
+    }
+}
+
 /// Paint a remote image into `rect`: a pulsing skeleton while it downloads (not
 /// egui's spinner), then a quick fade-in. One already loaded just shows.
 pub fn paint_remote(ui: &Ui, url: &str, rect: Rect, radius: f32, uv: Rect, tint: Color32) {
@@ -1502,6 +1698,7 @@ pub fn paint_remote(ui: &Ui, url: &str, rect: Rect, radius: f32, uv: Rect, tint:
             if a < 1.0 {
                 super::animate(ctx);
             }
+            let uv = cover_uv(uv, texture.size, rect.size());
             egui::Image::from_texture(texture).uv(uv).corner_radius(CornerRadius::same(radius as u8)).tint(tint.gamma_multiply(theme::ease_out(a))).paint_at(ui, rect);
         }
         Ok(egui::load::TexturePoll::Pending { .. }) => {
@@ -1653,6 +1850,7 @@ mod shelf_scroll_tests {
             track_nr: None,
             plays: None,
             music_video: false,
+            explicit: false,
         };
 
         // Reference tracks from media_1794682052828_401d102e.jpg
@@ -1684,5 +1882,19 @@ mod shelf_scroll_tests {
     fn test_quality_icon_aspect() {
         assert!((super::quality_icon_aspect(false) - (86.0 / 60.0)).abs() < 0.001);
         assert!((super::quality_icon_aspect(true) - (78.0 / 60.0)).abs() < 0.001);
+    }
+
+    #[test]
+    fn cover_uv_crops_non_square_images_without_stretching() {
+        use egui::{Rect, pos2, vec2};
+        let unit = Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0));
+        // Wide 16:9 artist photo in a square circle: trims width equally so pixel aspect is 1:1.
+        let wide = super::cover_uv(unit, vec2(1600.0, 900.0), vec2(120.0, 120.0));
+        assert!(((wide.width() * 1600.0) - (wide.height() * 900.0)).abs() < 0.5);
+        assert!((wide.center().x - 0.5).abs() < 0.001);
+        // Portrait artist photo in a square circle: trims height with upward bias so head isn't clipped.
+        let tall = super::cover_uv(unit, vec2(600.0, 900.0), vec2(120.0, 120.0));
+        assert!(((tall.width() * 600.0) - (tall.height() * 900.0)).abs() < 0.5);
+        assert!(tall.top() < (1.0 - tall.bottom()));
     }
 }

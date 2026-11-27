@@ -70,6 +70,18 @@ impl App {
                     self.prefetch_next();
                 }
             }
+            Action::PlayNextMany(tracks) => {
+                if tracks.is_empty() {
+                    return;
+                }
+                let start = self.queue.play_next_many(tracks);
+                self.toast("Playing next");
+                if start {
+                    self.play_current();
+                } else {
+                    self.prefetch_next();
+                }
+            }
             Action::Enqueue(t) => {
                 let start = self.queue.enqueue(t);
                 self.toast("Added to queue");
@@ -136,11 +148,35 @@ impl App {
                 self.share_pending = Some(share_url(&target));
                 self.toast("Link copied");
             }
+            Action::ShareAt(target, rect) => {
+                self.share_sheet_pending = Some((share_url(&target), rect));
+            }
             Action::Download(track) => {
                 self.toast(format!("Downloading \u{201c}{}\u{201d}", track.title));
                 // The song version playing for a music video: that video plays the file too.
                 let for_video = if self.playing_as().is_some_and(|s| s.id == track.id) { self.current_id().map(str::to_owned) } else { None };
                 self.backend.request(Req::Download { track: Box::new(track), for_video });
+            }
+            Action::DownloadMany(tracks) => {
+                let missing: Vec<Track> = tracks.into_iter().filter(|t| crate::downloads::path(&t.id).is_none()).collect();
+                if missing.is_empty() {
+                    self.toast("Already downloaded");
+                    return;
+                }
+                if missing.len() == 1 {
+                    let track = missing.into_iter().next().unwrap();
+                    self.toast(format!("Downloading \u{201c}{}\u{201d}", track.title));
+                    let for_video = if self.playing_as().is_some_and(|s| s.id == track.id) { self.current_id().map(str::to_owned) } else { None };
+                    self.backend.request(Req::Download { track: Box::new(track), for_video });
+                } else {
+                    self.toast(format!("Downloading {} songs…", missing.len()));
+                    let playing_as_id = self.playing_as().map(|s| s.id.clone());
+                    let cur_id = self.current_id().map(str::to_owned);
+                    for track in missing {
+                        let for_video = if playing_as_id.as_deref() == Some(track.id.as_str()) { cur_id.clone() } else { None };
+                        self.backend.request(Req::Download { track: Box::new(track), for_video });
+                    }
+                }
             }
             Action::AddToPlaylist(tracks) => {
                 if self.logged_in { self.dialog = Some(Dialog::PickPlaylist(tracks)); }
@@ -208,6 +244,31 @@ impl App {
                     self.backend.request(Req::SaveCollection { id, save });
                 }
                 else { self.toast("Sign in to save to library"); }
+            }
+            Action::TogglePin(card) => {
+                if let Some(pos) = self.pinned.iter().position(|c| c.target == card.target) {
+                    self.pinned.remove(pos);
+                    self.toast("Unpinned");
+                } else {
+                    self.pinned.insert(0, card);
+                    self.toast("Pinned to sidebar");
+                }
+            }
+            Action::ToggleFavouriteCollection(id) => {
+                if self.favourite_collections.remove(&id) {
+                    self.toast("Removed from favourites");
+                } else {
+                    self.favourite_collections.insert(id);
+                    self.toast("Added to favourites");
+                }
+            }
+            Action::SuggestLess(id) => {
+                if self.suggest_less.remove(&id) {
+                    self.toast("Removed from suggest less");
+                } else {
+                    self.suggest_less.insert(id);
+                    self.toast("We'll suggest less like this");
+                }
             }
             // The account's YouTube subscription to the artist, flipped at once (the
             // round trip is slow) and put back if YouTube Music refuses it.
@@ -302,9 +363,17 @@ impl App {
                 cmd(egui::Key::L),
                 i.modifiers.command && i.key_pressed(egui::Key::Comma),
                 cmd(egui::Key::W),
+                cmd(egui::Key::F),
             )
         });
-        let (space, back, fwd, next, prev, lyr, queue, full, esc, vol_up, vol_down, mini, lyr_panel, settings, close_w) = i;
+        let (space, back, fwd, next, prev, lyr, queue, full, esc, vol_up, vol_down, mini, lyr_panel, settings, close_w, find) = i;
+        if find {
+            self.np_open = false;
+            self.search_refocus = true;
+            if !matches!(self.page, Page::Search(_)) {
+                self.go(Page::Search(self.search_text.clone()));
+            }
+        }
         if mini {
             self.actions.push(Action::Mini(!self.mini.target()));
         }
@@ -348,14 +417,18 @@ impl App {
         if (full && self.np_open) || fs_toggled {
             self.set_fullscreen(ctx, !is_fullscreen);
         }
-        let in_search = self.search_focused || !self.search_text.is_empty() || self.search_drop.is_some();
+        let in_search = self.search_focused || !self.search_text.is_empty();
         if esc {
             if in_search {
                 self.search_focused = false;
                 self.search_text.clear();
-                self.search_drop = None;
+                self.search_synced.clear();
+                self.live_search_due = None;
                 self.suggestions = Default::default();
                 self.suggest_sel = None;
+                if matches!(self.page, Page::Search(_)) {
+                    self.page = Page::Search(String::new());
+                }
             } else if is_fullscreen {
                 self.set_fullscreen(ctx, false);
                 ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(false));
@@ -434,7 +507,7 @@ mod share_tests {
 
     #[test]
     fn shares_youtube_music_urls() {
-        let song = Track { id: "abc123".into(), title: String::new(), artists: vec![], album: None, duration: None, thumbs: vec![], track_nr: None, plays: None, music_video: false };
+        let song = Track { id: "abc123".into(), title: String::new(), artists: vec![], album: None, duration: None, thumbs: vec![], track_nr: None, plays: None, music_video: false, explicit: false };
         assert_eq!(share_url(&Target::Song(song)), "https://music.youtube.com/watch?v=abc123");
         assert_eq!(share_url(&Target::Playlist("PL123".into())), "https://music.youtube.com/playlist?list=PL123");
         assert_eq!(share_url(&Target::Album("MPRE123".into())), "https://music.youtube.com/browse/MPRE123");

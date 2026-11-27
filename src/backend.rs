@@ -567,7 +567,7 @@ impl Backend {
         std::fs::create_dir_all(&storage)?;
         let data_dir = storage;
         let http = crate::proxy::http();
-        let lyrics = Arc::new(lyrics::Client::new(http.clone(), &data_dir));
+        let lyrics = Arc::new(lyrics::Client::new(http.clone()));
         let translate = Arc::new(crate::translate::Client::new(http, &data_dir));
         let jsc = Arc::new(jsc::Solver::new(&data_dir));
         let api = Arc::new(ytmapi::Api::new(&data_dir));
@@ -1002,7 +1002,13 @@ impl Backend {
                     let username = if self.is_logged_in() {
                         None
                     } else {
-                        self.spotify.restore_if_needed().await.ok().flatten()
+                        match self.spotify.restore_if_needed().await {
+                            Ok(u) => u,
+                            Err(e) => {
+                                log::warn!("spotify restore failed at launch (keeping saved session): {e:#}");
+                                self.spotify.saved_username()
+                            }
+                        }
                     };
                     Resp::SpotifyAuth { username, challenge: None, message: None }
                 }
@@ -1223,120 +1229,67 @@ impl Backend {
             return;
         }
 
-        let artist = t.artist_line();
-        let duration = match t.duration {
-            Some(d) => Some(d),
-            None => self.stream_duration(&t.id).await,
+        let fail_env = std::env::var("YTM_LYRICS_FAIL").ok();
+        let blocked = |p: lyrics::Provider| {
+            fail_env
+                .as_deref()
+                .is_some_and(|fail| fail.split(',').any(|k| k.trim() == p.key()))
         };
-        let album = t.album.as_ref().map(|a| a.name.clone());
-        let song = t.title.clone();
+        let usable = |l: &lyrics::Lyrics| l.lines.iter().any(|x| !x.instrumental && !x.text.trim().is_empty());
 
-        // Race all lyrics providers concurrently and stream results as soon as each arrives.
-        let (ptx, mut prx) = tokio::sync::mpsc::unbounded_channel::<Vec<lyrics::Lyrics>>();
+        let artist = t.artist_line();
+        let mut source: Option<lyrics::Lyrics> = None;
+        let mut ytm_id: Option<String> = (!crate::spotify::is_spotify_id(&video_id)).then(|| video_id.clone());
+
         if crate::spotify::is_spotify_id(&video_id) {
-            let sp = self.spotify.clone();
-            let ptx = ptx.clone();
-            let vid = video_id.clone();
-            tokio::spawn(async move {
-                match sp.lyrics(&vid).await {
+            if !blocked(lyrics::Provider::Spotify) {
+                match self.spotify.lyrics(&video_id).await {
                     Ok(Some((lines, lang))) => {
-                        if let Some(l) = lyrics::Lyrics::from_raw(lyrics::Provider::Spotify, lines, lang, Vec::new()) {
-                            let _ = ptx.send(vec![l]);
-                        }
+                        source = lyrics::Lyrics::from_raw(lyrics::Provider::Spotify, lines, lang, Vec::new())
+                            .filter(usable);
                     }
                     Ok(None) => {}
-                    Err(e) => log::debug!("spotify lyrics {vid}: {e:#}"),
+                    Err(e) => log::debug!("spotify lyrics {video_id}: {e:#}"),
                 }
-            });
-        }
-        for kind in 0..3u8 {
-            let client = self.lyrics.clone();
-            let ptx = ptx.clone();
-            let (vid, s, art, alb) = (video_id.clone(), song.clone(), artist.clone(), album.clone());
-            tokio::spawn(async move {
-                let q = lyrics::Query {
-                    video_id: &vid,
-                    song: &s,
-                    artist: &art,
-                    album: alb.as_deref(),
-                    duration,
-                };
-                let res = match kind {
-                    0 => client.fetch_unison(&q).await,
-                    1 => client.fetch_lrcred(&q).await,
-                    _ => client.fetch_stream(&q).await,
-                };
-                match res {
-                    Ok(list) if !list.is_empty() => {
-                        let _ = ptx.send(list);
-                    }
-                    Ok(_) => {}
-                    Err(e) => {
-                        let label = match kind {
-                            0 => "unison",
-                            1 => "lrc.red",
-                            _ => "better lyrics",
-                        };
-                        if kind == 2 {
-                            log::warn!("{label} failed: {e:#}");
-                        } else {
-                            log::info!("{label}: {e:#}");
-                        }
+            }
+            if source.is_none()
+                && let Ok(matched) = self.resolve_spotify_ytm(&video_id, Some(t)).await
+            {
+                ytm_id = Some(matched.id.clone());
+                if !blocked(lyrics::Provider::YouTubeMusic) {
+                    match ytm::lyrics(&self.api, &matched.id, self.is_logged_in()).await {
+                        Ok(l) => source = l.filter(usable),
+                        Err(e) => log::info!("youtube music lyrics {}: {e:#}", matched.id),
                     }
                 }
+            }
+        } else if !blocked(lyrics::Provider::YouTubeMusic) {
+            match ytm::lyrics(&self.api, &video_id, self.is_logged_in()).await {
+                Ok(l) => source = l.filter(usable),
+                Err(e) => log::info!("youtube music lyrics {video_id}: {e:#}"),
+            }
+        }
+
+        if source.is_none() {
+            let dur = t.duration.or_else(|| {
+                self.current
+                    .lock_unpoisoned()
+                    .as_ref()
+                    .filter(|(id, _)| id == &video_id)
+                    .map(|(_, s)| (s.duration_ms / 1000) as u32)
+                    .filter(|&d| d > 0)
             });
-        }
-        drop(ptx);
-
-        let fail_env = std::env::var("YTM_LYRICS_FAIL").ok();
-        let mut all_sources: Vec<lyrics::Lyrics> = Vec::new();
-        let mut emitted = false;
-        while let Some(batch) = prx.recv().await {
-            let mut changed = false;
-            for src in batch {
-                if let Some(fail) = &fail_env
-                    && fail.split(',').any(|k| k.trim() == src.provider.key())
-                {
-                    continue;
-                }
-                if !all_sources.iter().any(|existing| existing.provider == src.provider) {
-                    all_sources.push(src);
-                    changed = true;
-                }
-            }
-            if changed {
-                all_sources.sort_by_key(|l| lyrics::Provider::ALL.iter().position(|p| *p == l.provider));
-                let set = LyricsSet { sources: all_sources.clone() };
-                self.lyrics.insert_recent(video_id.clone(), set.clone());
-                let _ = self.tx.send(Resp::Lyrics { video_id: video_id.clone(), lyrics: set });
-                self.wake();
-                emitted = true;
+            if let Some(fb) = self.lyrics.fetch_fallback(ytm_id.as_deref(), &t.title, &artist, dur).await
+                && !blocked(fb.provider)
+            {
+                source = Some(fb);
             }
         }
 
-        if !emitted {
-            let empty = LyricsSet::default();
-            self.lyrics.insert_recent(video_id.clone(), empty.clone());
-            let _ = self.tx.send(Resp::Lyrics { video_id, lyrics: empty });
-            self.wake();
-        }
-    }
-
-    /// The song's length from its stream, for a track listed without one (some home,
-    /// radio and queue rows). Without a duration Better Lyrics only finds plain lyrics,
-    /// so wait for playback to resolve the stream briefly. The player's own duration
-    /// counts too: starting a song clears it, and a restored session sets it.
-    async fn stream_duration(&self, video_id: &str) -> Option<u32> {
-        for _ in 0..2 {
-            let ms = self.current.lock_unpoisoned().as_ref().filter(|(id, _)| id == video_id).map(|(_, s)| s.duration_ms);
-            let ms = ms.filter(|ms| *ms > 0).or_else(|| self.audio.status.duration().map(|d| d.as_millis() as u64));
-            if let Some(ms) = ms.filter(|ms| *ms > 0) {
-                return Some((ms / 1000) as u32);
-            }
-            tokio::time::sleep(std::time::Duration::from_millis(40)).await;
-        }
-        log::debug!("lyrics: no duration for {video_id}");
-        None
+        let set = LyricsSet { sources: source.into_iter().collect() };
+        self.lyrics.insert_recent(video_id.clone(), set.clone());
+        let _ = self.tx.send(Resp::Lyrics { video_id, lyrics: set });
+        self.wake();
     }
 
     /// Sign in with the youtube.com cookies the Google sign-in window hands over.
@@ -2068,6 +2021,10 @@ impl Backend {
 
     pub fn is_logged_in(&self) -> bool {
         self.api.account().is_some()
+    }
+
+    pub fn saved_spotify_user(&self) -> Option<String> {
+        self.spotify.saved_username()
     }
 }
 

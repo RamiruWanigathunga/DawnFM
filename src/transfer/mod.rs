@@ -1261,6 +1261,7 @@ mod tests {
             track_nr: None,
             plays: None,
             music_video: false,
+            explicit: false,
         }
     }
 

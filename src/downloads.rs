@@ -233,6 +233,7 @@ mod tests {
             track_nr: None,
             plays: None,
             music_video: false,
+            explicit: false,
         };
         let t = track("What? / Why: \"Now\"...", vec![Link { name: "AC/DC".into(), id: None }]);
         assert_eq!(file_stem(&t), "AC_DC - What_ _ Why_ _Now_");

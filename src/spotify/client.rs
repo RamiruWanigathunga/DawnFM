@@ -62,6 +62,10 @@ impl SpotifyClient {
         }
     }
 
+    pub fn saved_username(&self) -> Option<String> {
+        self.auth.saved_username()
+    }
+
     pub async fn restore_if_needed(&self) -> Result<Option<String>> {
         self.auth.restore_if_needed(&proxy::http()).await
     }
@@ -532,6 +536,7 @@ impl SpotifyClient {
                             track_nr: None,
                             plays: None,
                             music_video: false,
+                            explicit: tr.as_ref().is_some_and(|t| t.number(9) == Some(1)),
                         },
                     );
                 }
@@ -1824,6 +1829,7 @@ fn parse_track(uri: &str, raw: &[u8]) -> Result<Track> {
         track_nr,
         plays: None,
         music_video: false,
+        explicit: msg.number(9) == Some(1),
     })
 }
 

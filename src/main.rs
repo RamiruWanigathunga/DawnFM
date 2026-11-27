@@ -9,7 +9,7 @@ use dawnfm::*;
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 fn main() -> eframe::Result {
-    // Child-process modes for the webview windows (see login.rs / turnstile.rs).
+    // Child-process modes for the webview windows (see login.rs).
     let mut args = std::env::args_os().skip(1);
     if let (Some(flag), Some(dir)) = (args.next(), args.next()) {
         // The parent hands its proxy setting down through the environment.
@@ -20,10 +20,6 @@ fn main() -> eframe::Result {
         }
         if flag == login::SPOTIFY_FLAG {
             login::child_main(login::Site::Spotify, dir.into());
-            return Ok(());
-        }
-        if flag == turnstile::FLAG {
-            turnstile::child_main(dir.into());
             return Ok(());
         }
     }
@@ -111,6 +107,7 @@ fn main() -> eframe::Result {
             menubar::install(wake);
             // Native macOS window vibrancy (NSVisualEffectView behind content view).
             theme::apply_native_vibrancy();
+            theme::align_macos_traffic_lights();
             // Keep `ytm-rs:` links pointing at this copy; dev builds leave it alone
             // (even with YTM_UPDATE_FORCE).
             if update::installed() && !cfg!(debug_assertions) {

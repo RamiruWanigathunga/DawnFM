@@ -285,6 +285,7 @@ fn test_queue_manipulation_from_pages_during_active_playback() {
         track_nr: None,
         plays: None,
         music_video: false,
+        explicit: false,
     };
     queue.play_next(priority_track);
     assert_eq!(queue.tracks[1].title, "VIP Up Next");

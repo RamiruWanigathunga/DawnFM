@@ -96,6 +96,7 @@ fn test_tracklist_boundary_track_metadata() {
         track_nr: None,
         plays: None,
         music_video: false,
+        explicit: false,
     };
     let (bpm_empty, key_empty) = track_bpm_key(&empty_title_track);
     assert!((115..=133).contains(&bpm_empty));
@@ -115,6 +116,7 @@ fn test_tracklist_boundary_track_metadata() {
         track_nr: Some(999),
         plays: Some(0),
         music_video: false,
+        explicit: false,
     };
     let (bpm_long, key_long) = track_bpm_key(&long_title_track);
     assert!((115..=133).contains(&bpm_long));

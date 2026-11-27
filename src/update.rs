@@ -293,14 +293,26 @@ impl Updater {
     /// Run the downloaded installer silently once this process has exited, then
     /// (if `relaunch`) start the updated app.
     pub fn install(&self, relaunch: bool) {
-        let State::Ready { installer, .. } = self.state() else { return };
+        let State::Ready { installer, .. } = self.state() else {
+            if relaunch {
+                relaunch_current();
+            }
+            return;
+        };
         let exe = std::env::current_exe().unwrap_or_default();
         #[cfg(target_os = "macos")]
         if let (Some(new), Some(app)) = (bundle_of(&installer), bundle_of(&exe)) {
-            return replace_bundle(new, app, relaunch);
+            if !replace_bundle(new, app, exe.file_name(), relaunch) && relaunch {
+                relaunch_current();
+            }
+            return;
         }
         #[cfg(unix)]
-        replace_binary(&installer, &exe, relaunch);
+        {
+            if !replace_binary(&installer, &exe, relaunch) && relaunch {
+                relaunch_current();
+            }
+        }
         #[cfg(windows)]
         self.run_installer(&installer, &exe, relaunch);
     }
@@ -308,12 +320,15 @@ impl Updater {
     #[cfg(windows)]
     fn run_installer(&self, installer: &Path, exe: &Path, relaunch: bool) {
         if portable_dir().is_some() {
-            return swap_exe(installer, exe, relaunch);
+            if !swap_exe(installer, exe, relaunch) && relaunch {
+                relaunch_windows_exe(exe);
+            }
+            return;
         }
         let program_files = std::env::var_os("ProgramFiles").map(PathBuf::from);
         let scope = if program_files.is_some_and(|p| exe.starts_with(p)) { "/ALLUSERS" } else { "/CURRENTUSER" };
         let mut script = format!(
-            "ping -n 3 127.0.0.1 >NUL & \"{}\" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART {scope}",
+            "ping -n 4 127.0.0.1 >NUL & \"{}\" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART {scope}",
             installer.display()
         );
         if relaunch {
@@ -328,59 +343,86 @@ impl Updater {
     }
 }
 
+/// Start this app again once the current process has finished exiting.
+pub fn relaunch_current() {
+    let Ok(exe) = std::env::current_exe() else { return };
+    log::info!("restarting {}", exe.display());
+    #[cfg(target_os = "macos")]
+    if let Some(app) = bundle_of(&exe) {
+        relaunch_bundle(app, exe.file_name());
+        return;
+    }
+    #[cfg(unix)]
+    {
+        relaunch_unix_exe(&exe);
+    }
+    #[cfg(windows)]
+    {
+        relaunch_windows_exe(&exe);
+    }
+}
+
 /// The portable update: Windows lets a running exe be renamed, so move this one aside
 /// and put the new one in its place (the next launch deletes the old one).
 #[cfg(windows)]
-fn swap_exe(new: &Path, exe: &Path, relaunch: bool) {
+fn swap_exe(new: &Path, exe: &Path, relaunch: bool) -> bool {
     let old = exe.with_extension("exe.old");
     if std::env::var_os("YTM_UPDATE_DRYRUN").is_some() {
         log::info!("update (dry run): {} aside to {}, {} in its place", exe.display(), old.display(), new.display());
-        return;
+        return true;
     }
     let _ = std::fs::remove_file(&old);
     if let Err(e) = std::fs::rename(exe, &old) {
-        return log::warn!("update: couldn't move {} aside: {e}", exe.display());
+        log::warn!("update: couldn't move {} aside: {e}", exe.display());
+        return false;
     }
     if let Err(e) = std::fs::copy(new, exe) {
         log::warn!("update: couldn't copy the new version: {e}");
         let _ = std::fs::rename(&old, exe);
-        return;
+        return false;
     }
     log::info!("update: replaced {}", exe.display());
     if relaunch {
-        run_detached(&format!("ping -n 3 127.0.0.1 >NUL & start \"\" \"{}\" {}", exe.display(), crate::deeplink::RELAUNCH_FLAG));
+        relaunch_windows_exe(exe);
     }
+    true
+}
+
+#[cfg(windows)]
+fn relaunch_windows_exe(exe: &Path) {
+    run_detached(&format!("ping -n 4 127.0.0.1 >NUL & start \"\" \"{}\" {}", exe.display(), crate::deeplink::RELAUNCH_FLAG));
 }
 
 /// A bare binary (not in a bundle): rename the new one over this one. The running
 /// process keeps its copy open until it exits; the next launch runs the new one.
 #[cfg(unix)]
-fn replace_binary(new: &Path, exe: &Path, relaunch: bool) {
+fn replace_binary(new: &Path, exe: &Path, relaunch: bool) -> bool {
     use std::os::unix::fs::PermissionsExt;
     let tmp = exe.with_file_name(".dawnfm.new");
     if std::env::var_os("YTM_UPDATE_DRYRUN").is_some() {
         log::info!("update (dry run): {} over {}", new.display(), exe.display());
-        return;
+        return true;
     }
     let done = std::fs::copy(new, &tmp)
         .and_then(|_| std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o755)))
         .and_then(|_| std::fs::rename(&tmp, exe));
     if let Err(e) = done {
         let _ = std::fs::remove_file(&tmp);
-        return log::warn!("update: couldn't replace {}: {e}", exe.display());
+        log::warn!("update: couldn't replace {}: {e}", exe.display());
+        return false;
     }
     log::info!("update: replaced {}", exe.display());
     if relaunch {
-        // Once this process has saved and exited.
-        let quoted = exe.display().to_string().replace('\'', r"'\''");
-        run_detached(&format!("sleep 2; exec '{quoted}'"));
+        relaunch_unix_exe(exe);
     }
+    true
 }
 
 /// macOS: put the new app bundle where this one is, so its Info.plist and icon update
 /// too. A running app's bundle can be moved; this process keeps running from the old
 /// one until it exits.
-fn replace_bundle(new: &Path, app: &Path, relaunch: bool) {
+#[cfg(target_os = "macos")]
+fn replace_bundle(new: &Path, app: &Path, bin_name: Option<&std::ffi::OsStr>, relaunch: bool) -> bool {
     let parent = app.parent().unwrap_or(Path::new("/"));
     let (tmp, old) = (parent.join(".dawnfm.app.new"), parent.join(".dawnfm.app.old"));
     // A copy comes back as Dawn FM.app.
@@ -388,7 +430,7 @@ fn replace_bundle(new: &Path, app: &Path, relaunch: bool) {
     let dest = if app.file_name() != renamed.file_name() && !renamed.exists() { renamed } else { app.to_path_buf() };
     if std::env::var_os("YTM_UPDATE_DRYRUN").is_some() {
         log::info!("update (dry run): {} in place of {}", new.display(), app.display());
-        return;
+        return true;
     }
     let _ = std::fs::remove_dir_all(&tmp);
     let _ = std::fs::remove_dir_all(&old);
@@ -396,24 +438,68 @@ fn replace_bundle(new: &Path, app: &Path, relaunch: bool) {
     let copied = std::process::Command::new("ditto").arg(new).arg(&tmp).status().is_ok_and(|s| s.success());
     if !copied {
         let _ = std::fs::remove_dir_all(&tmp);
-        return log::warn!("update: couldn't copy {} beside {}", new.display(), app.display());
+        log::warn!("update: couldn't copy {} beside {}", new.display(), app.display());
+        return false;
     }
     if let Err(e) = std::fs::rename(app, &old) {
         let _ = std::fs::remove_dir_all(&tmp);
-        return log::warn!("update: couldn't move {} aside: {e}", app.display());
+        log::warn!("update: couldn't move {} aside: {e}", app.display());
+        return false;
     }
     if let Err(e) = std::fs::rename(&tmp, &dest) {
         let _ = std::fs::rename(&old, app);
         let _ = std::fs::remove_dir_all(&tmp);
-        return log::warn!("update: couldn't put the new version in place: {e}");
+        log::warn!("update: couldn't put the new version in place: {e}");
+        return false;
     }
     let _ = std::fs::remove_dir_all(&old);
     log::info!("update: replaced {} with {}", app.display(), dest.display());
     if relaunch {
-        // Once this process has saved and exited.
-        let quoted = dest.display().to_string().replace('\'', r"'\''");
-        run_detached(&format!("sleep 2; open '{quoted}'"));
+        relaunch_bundle(&dest, bin_name);
     }
+    true
+}
+
+#[cfg(unix)]
+fn shell_quote(path: &Path) -> String {
+    path.display().to_string().replace('\'', r"'\''")
+}
+
+#[cfg(unix)]
+fn relaunch_unix_exe(exe: &Path) {
+    let pid = std::process::id();
+    let quoted = shell_quote(exe);
+    run_detached(&format!(
+        "i=0; while kill -0 {pid} 2>/dev/null && [ $i -lt 150 ]; do sleep 0.1; i=$((i+1)); done; \
+         sleep 0.1; \
+         exec '{quoted}' {}",
+        crate::deeplink::RELAUNCH_FLAG,
+    ));
+}
+
+#[cfg(target_os = "macos")]
+fn bundle_relaunch_script(app: &Path, bin_name: Option<&std::ffi::OsStr>, pid: u32) -> String {
+    let bundle = shell_quote(app);
+    let bin = app
+        .join("Contents/MacOS")
+        .join(bin_name.filter(|s| !s.is_empty()).unwrap_or_else(|| std::ffi::OsStr::new("dawnfm")));
+    let bin = shell_quote(&bin);
+    let flag = crate::deeplink::RELAUNCH_FLAG;
+    // Wait until the exiting process is completely gone before calling LaunchServices:
+    // `open` without `-n` activates the dying instance instead of launching the new one,
+    // and launching too early can race with persistence writes or LaunchServices deregistration.
+    format!(
+        "i=0; while kill -0 {pid} 2>/dev/null && [ $i -lt 150 ]; do sleep 0.1; i=$((i+1)); done; \
+         sleep 0.2; \
+         xattr -dr com.apple.quarantine '{bundle}' 2>/dev/null || true; \
+         open -n '{bundle}' --args {flag} || {{ sleep 0.5; open -n '{bundle}' --args {flag}; }} || exec '{bin}' {flag} >/dev/null 2>&1"
+    )
+}
+
+#[cfg(target_os = "macos")]
+fn relaunch_bundle(app: &Path, bin_name: Option<&std::ffi::OsStr>) {
+    let script = bundle_relaunch_script(app, bin_name, std::process::id());
+    run_detached(&script);
 }
 
 /// macOS: the app from a downloaded installer disk image, copied out into `dir`.
@@ -475,8 +561,24 @@ fn run_detached(script: &str) {
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;
-        // Its own process group, so it isn't taken down with this one.
-        if let Err(e) = std::process::Command::new("sh").arg("-c").arg(script).process_group(0).spawn() {
+        use std::process::Stdio;
+        let mut cmd = std::process::Command::new("sh");
+        cmd.arg("-c")
+            .arg(script)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        // New session & process group so closing the parent never terminates the relaunch helper.
+        // SAFETY: `setsid` / `setpgid` are async-signal-safe between fork and exec.
+        unsafe {
+            cmd.pre_exec(|| {
+                if libc::setsid() == -1 {
+                    let _ = libc::setpgid(0, 0);
+                }
+                Ok(())
+            });
+        }
+        if let Err(e) = cmd.spawn() {
             log::warn!("update: couldn't run the update: {e}");
         }
     }
@@ -564,5 +666,14 @@ mod tests {
         assert!(exe.is_file(), "{}", exe.display());
 
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn bundle_relaunch_waits_for_pid_uses_new_instance_and_falls_back_to_binary() {
+        let s = super::bundle_relaunch_script(std::path::Path::new("/Applications/Dawn FM.app"), None, 4242);
+        assert!(s.contains("kill -0 4242"));
+        assert!(s.contains("open -n '/Applications/Dawn FM.app' --args --relaunch"));
+        assert!(s.contains("exec '/Applications/Dawn FM.app/Contents/MacOS/dawnfm' --relaunch"));
     }
 }

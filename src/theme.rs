@@ -338,6 +338,136 @@ pub fn apply_native_vibrancy() {
 #[cfg(not(target_os = "macos"))]
 pub fn apply_native_vibrancy() {}
 
+/// Lowers the macOS `NSTitlebarContainerView` slightly so the window's traffic light buttons
+/// sit on the same ~22 pt vertical centerline as the floating header capsules.
+#[cfg(target_os = "macos")]
+pub fn align_macos_traffic_lights() {
+    use objc2::msg_send;
+    use objc2::rc::Retained;
+    use objc2::runtime::{AnyObject, Bool};
+    use objc2_foundation::{NSPoint, NSRect};
+
+    const EXTRA_TOP: f64 = 7.0;
+    const NS_FULLSCREEN_MASK: usize = 1 << 14;
+
+    unsafe {
+        let app: Option<Retained<AnyObject>> = msg_send![objc2::class!(NSApplication), sharedApplication];
+        let Some(app) = app else { return };
+        let windows: Option<Retained<AnyObject>> = msg_send![&*app, windows];
+        let Some(windows) = windows else { return };
+        let count: usize = msg_send![&*windows, count];
+        if count == 0 {
+            return;
+        }
+        let window: Option<Retained<AnyObject>> = msg_send![&*windows, objectAtIndex: 0usize];
+        let Some(window) = window else { return };
+        let mask: usize = msg_send![&*window, styleMask];
+        if (mask & NS_FULLSCREEN_MASK) != 0 {
+            return;
+        }
+        let close_btn: Option<Retained<AnyObject>> = msg_send![&*window, standardWindowButton: 0usize];
+        let Some(close_btn) = close_btn else { return };
+        let titlebar_view: Option<Retained<AnyObject>> = msg_send![&*close_btn, superview];
+        let Some(titlebar_view) = titlebar_view else { return };
+        let container: Option<Retained<AnyObject>> = msg_send![&*titlebar_view, superview];
+        let Some(container) = container else { return };
+        let theme_frame: Option<Retained<AnyObject>> = msg_send![&*container, superview];
+        let Some(theme_frame) = theme_frame else { return };
+
+        let theme_bounds: NSRect = msg_send![&*theme_frame, bounds];
+        let container_frame: NSRect = msg_send![&*container, frame];
+        let flipped: Bool = msg_send![&*theme_frame, isFlipped];
+        let target_y = if flipped.as_bool() {
+            EXTRA_TOP
+        } else {
+            (theme_bounds.size.height - container_frame.size.height - EXTRA_TOP).max(0.0)
+        };
+        if (container_frame.origin.y - target_y).abs() > 0.5 {
+            let origin = NSPoint::new(container_frame.origin.x, target_y);
+            let () = msg_send![&*container, setFrameOrigin: origin];
+        }
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn align_macos_traffic_lights() {}
+
+/// Presents the native macOS `NSSharingServicePicker` anchored to `anchor` (in window points).
+/// Returns `true` if presented, or `false` when unavailable so callers can copy the URL instead.
+#[cfg(target_os = "macos")]
+pub fn show_share_sheet(url: &str, anchor: egui::Rect) -> bool {
+    use std::cell::RefCell;
+    use objc2::msg_send;
+    use objc2::rc::Retained;
+    use objc2::runtime::{AnyObject, Bool};
+    use objc2_foundation::{NSPoint, NSRect, NSSize, NSString};
+
+    thread_local! {
+        static ACTIVE_PICKER: RefCell<Option<Retained<AnyObject>>> = const { RefCell::new(None) };
+    }
+
+    unsafe {
+        let app: Option<Retained<AnyObject>> = msg_send![objc2::class!(NSApplication), sharedApplication];
+        let Some(app) = app else { return false };
+        let key_win: Option<Retained<AnyObject>> = msg_send![&*app, keyWindow];
+        let window = match key_win {
+            Some(w) => w,
+            None => {
+                let windows: Option<Retained<AnyObject>> = msg_send![&*app, windows];
+                let Some(windows) = windows else { return false };
+                let count: usize = msg_send![&*windows, count];
+                if count == 0 {
+                    return false;
+                }
+                let Some(w): Option<Retained<AnyObject>> = msg_send![&*windows, objectAtIndex: 0usize] else {
+                    return false;
+                };
+                w
+            }
+        };
+        let content_view: Option<Retained<AnyObject>> = msg_send![&*window, contentView];
+        let Some(content_view) = content_view else { return false };
+
+        let ns_str = NSString::from_str(url);
+        let ns_url: Option<Retained<AnyObject>> = msg_send![objc2::class!(NSURL), URLWithString: &*ns_str];
+        let items: Option<Retained<AnyObject>> = match ns_url.as_deref() {
+            Some(u) => msg_send![objc2::class!(NSArray), arrayWithObject: u],
+            None => msg_send![objc2::class!(NSArray), arrayWithObject: &*ns_str],
+        };
+        let Some(items) = items else { return false };
+
+        let picker_alloc: *mut AnyObject = msg_send![objc2::class!(NSSharingServicePicker), alloc];
+        if picker_alloc.is_null() {
+            return false;
+        }
+        let picker_ptr: *mut AnyObject = msg_send![picker_alloc, initWithItems: &*items];
+        let Some(picker) = Retained::from_raw(picker_ptr) else { return false };
+
+        let bounds: NSRect = msg_send![&*content_view, bounds];
+        let flipped: Bool = msg_send![&*content_view, isFlipped];
+        let y = if flipped.as_bool() {
+            anchor.top() as f64
+        } else {
+            bounds.size.height - anchor.bottom() as f64
+        };
+        let rect = NSRect::new(
+            NSPoint::new(anchor.left() as f64, y),
+            NSSize::new(anchor.width().max(1.0) as f64, anchor.height().max(1.0) as f64),
+        );
+        // Bottom edge of the button: MaxY (3) when flipped, MinY (1) when unflipped.
+        let edge: usize = if flipped.as_bool() { 3 } else { 1 };
+
+        ACTIVE_PICKER.with(|slot| *slot.borrow_mut() = Some(picker.clone()));
+        let () = msg_send![&*picker, showRelativeToRect: rect, ofView: &*content_view, preferredEdge: edge];
+        true
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn show_share_sheet(_url: &str, _anchor: egui::Rect) -> bool {
+    false
+}
+
 /// The Windows accent colour, in the lighter shade Windows itself uses on dark
 /// surfaces (`AccentPalette`'s second entry), or the base accent if there's no palette.
 /// Read again every couple of seconds, so a new colour picked in Windows' settings
@@ -492,6 +622,7 @@ const INTER: [&[u8]; 3] = [
     include_bytes!("../assets/fonts/Inter-ExtraBold.ttf"),
 ];
 const LUCIDE: &[u8] = include_bytes!("../assets/fonts/lucide.ttf");
+const NOTO_SINHALA: &[u8] = include_bytes!("../assets/fonts/NotoSansSinhala.ttf");
 
 /// Lyric typefaces used by theme presets, as static regular / semibold / bold
 /// instances. They cover Latin only (their upstream has no Vietnamese, Greek or
@@ -661,9 +792,35 @@ struct SysFace {
 
 static INSTALLED_FONTS: std::sync::OnceLock<Vec<SysFamily>> = std::sync::OnceLock::new();
 fn font_dirs() -> Vec<std::path::PathBuf> {
-    let mut dirs: Vec<std::path::PathBuf> = ["/System/Library/Fonts", "/Library/Fonts"].map(Into::into).into();
-    if let Some(home) = std::env::var_os("HOME") {
-        dirs.push(std::path::PathBuf::from(home).join(".local/share/fonts"));
+    let mut dirs: Vec<std::path::PathBuf> = Vec::new();
+    #[cfg(target_os = "windows")]
+    {
+        let win = std::env::var_os("WINDIR")
+            .or_else(|| std::env::var_os("SystemRoot"))
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| std::path::PathBuf::from(r"C:\Windows"));
+        dirs.push(win.join("Fonts"));
+        if let Some(local) = std::env::var_os("LOCALAPPDATA") {
+            dirs.push(std::path::PathBuf::from(local).join("Microsoft/Windows/Fonts"));
+        }
+    }
+    #[cfg(target_os = "macos")]
+    {
+        dirs.push("/System/Library/Fonts".into());
+        dirs.push("/Library/Fonts".into());
+        if let Some(home) = std::env::var_os("HOME") {
+            let home = std::path::PathBuf::from(home);
+            dirs.push(home.join("Library/Fonts"));
+            dirs.push(home.join(".local/share/fonts"));
+        }
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        dirs.push("/usr/share/fonts".into());
+        dirs.push("/usr/local/share/fonts".into());
+        if let Some(home) = std::env::var_os("HOME") {
+            dirs.push(std::path::PathBuf::from(home).join(".local/share/fonts"));
+        }
     }
     dirs
 }
@@ -753,22 +910,144 @@ fn load_choice(ui_font: &str) {
     *CHOICE.write_unpoisoned() = faces.map(|faces| Chosen { name, faces });
 }
 
-// System fallbacks: egui's fonts cover Latin only, so CJK, Arabic, Indic, Thai,
-// symbols and emoji in titles would render as boxes. Memory-mapped, not read, so a
-// 20 MB CJK collection costs only the glyph pages actually drawn.
-const CANDIDATES: &[(&str, u32)] = &[
-    ("/System/Library/Fonts/Supplemental/Arial Unicode.ttf", 0),
-    ("/System/Library/Fonts/Hiragino Sans GB.ttc", 0),
-    ("/System/Library/Fonts/AppleSDGothicNeo.ttc", 0),
-    // Sinhala, which Arial Unicode lacks: song titles, artists and lyrics.
-    (SINHALA, 0),
-    ("/System/Library/Fonts/Apple Symbols.ttf", 0),
-];
+// System fallbacks: egui's fonts cover Latin only, so CJK, Arabic, Sinhala,
+// symbols and emoji would otherwise render as rectangle boxes. Memory-mapped, not read,
+// so fallback collections cost only the glyph pages actually drawn.
+#[cfg(target_os = "macos")]
+fn system_fallbacks() -> [Vec<(String, Face)>; 3] {
+    const SINHALA: &str = "/System/Library/Fonts/Supplemental/Sinhala Sangam MN.ttc";
+    const CANDIDATES: &[(&str, u32)] = &[
+        ("/System/Library/Fonts/Supplemental/Arial Unicode.ttf", 0),
+        ("/System/Library/Fonts/Hiragino Sans GB.ttc", 0),
+        ("/System/Library/Fonts/AppleSDGothicNeo.ttc", 0),
+        (SINHALA, 0),
+        ("/System/Library/Fonts/Apple Symbols.ttf", 0),
+    ];
+    const HEAVIER: &[(&str, [(&str, u32); 2])] = &[(SINHALA, [(SINHALA, 1), (SINHALA, 1)])];
+    std::array::from_fn(|w| {
+        CANDIDATES
+            .iter()
+            .filter_map(|&(path, index)| {
+                let heavy = (w > 0).then(|| HEAVIER.iter().find(|(base, _)| *base == path)).flatten().map(|(_, v)| v[w - 1]);
+                let mapped = |(p, i): (&str, u32)| validated_face(p, i, w);
+                heavy.and_then(mapped).or_else(|| mapped((path, index)))
+            })
+            .collect()
+    })
+}
 
-const SINHALA: &str = "/System/Library/Fonts/Supplemental/Sinhala Sangam MN.ttc";
+#[cfg(target_os = "windows")]
+fn system_fallbacks() -> [Vec<(String, Face)>; 3] {
+    let dirs = font_dirs();
+    let find_in_dirs = |names: &[&str]| -> Option<std::path::PathBuf> {
+        names.iter().find_map(|name| dirs.iter().map(|d| d.join(name)).find(|p| p.is_file()))
+    };
+    let mut entries: Vec<[(Option<std::path::PathBuf>, u32); 3]> = Vec::new();
+    // Sinhala first: static Iskoola Pota TTF (when installed), then Nirmala UI (built-in
+    // Windows Indic/Sinhala superfont, supporting both TTC and single-TTF/variable builds).
+    let iskpota_reg = find_in_dirs(&["iskpota.ttf"]);
+    let iskpota_bold = find_in_dirs(&["iskpotab.ttf"]).or_else(|| iskpota_reg.clone());
+    let mut has_sinhala = false;
+    if let Some(reg) = iskpota_reg {
+        entries.push([(Some(reg), 0), (iskpota_bold.clone(), 0), (iskpota_bold, 0)]);
+        has_sinhala = true;
+    }
+    if let Some(nirmala) = find_in_dirs(&["Nirmala.ttc"]) {
+        entries.push([(Some(nirmala.clone()), 0), (Some(nirmala.clone()), 1), (Some(nirmala), 1)]);
+        has_sinhala = true;
+    } else if let Some(nirmala_ttf) = find_in_dirs(&["Nirmala.ttf"]) {
+        let bold = find_in_dirs(&["NirmalaB.ttf"]).or_else(|| Some(nirmala_ttf.clone()));
+        entries.push([(Some(nirmala_ttf), 0), (bold.clone(), 0), (bold, 0)]);
+        has_sinhala = true;
+    }
+    // Additional CJK, symbol, and emoji system fallbacks on Windows.
+    for (reg_names, bold_names) in [
+        (&["seguisym.ttf"][..], &["seguisym.ttf"][..]),
+        (&["msyh.ttc"][..], &["msyhbd.ttc", "msyh.ttc"][..]),
+        (&["YuGothR.ttc", "msgothic.ttc"][..], &["YuGothB.ttc", "msgothic.ttc"][..]),
+        (&["malgun.ttf"][..], &["malgunbd.ttf", "malgun.ttf"][..]),
+        (&["seguiemj.ttf"][..], &["seguiemj.ttf"][..]),
+    ] {
+        if let Some(reg) = find_in_dirs(reg_names) {
+            let bold = find_in_dirs(bold_names).or_else(|| Some(reg.clone()));
+            entries.push([(Some(reg), 0), (bold.clone(), 0), (bold, 0)]);
+        }
+    }
+    // If neither Iskoola Pota nor Nirmala was found, scan Windows font folders for any
+    // other Sinhala font (e.g. Noto Sans Sinhala, Abhaya Libre) across all weights.
+    let sinhala_extra = if has_sinhala { Vec::new() } else { scan_sinhala_fonts(&dirs) };
+    std::array::from_fn(|w| {
+        let mut out: Vec<(String, Face)> = entries
+            .iter()
+            .filter_map(|slots| {
+                let (path, idx) = (&slots[w].0, slots[w].1);
+                path.as_ref().and_then(|p| validated_face(p, idx, w))
+                    .or_else(|| slots[0].0.as_ref().and_then(|p| validated_face(p, slots[0].1, w)))
+            })
+            .collect();
+        for (p, idx) in &sinhala_extra {
+            if let Some(item) = validated_face(p, *idx, w)
+                && !out.iter().any(|(id, _)| *id == item.0)
+            {
+                out.push(item);
+            }
+        }
+        out
+    })
+}
 
-/// Semibold and bold faces of the fallbacks: Sinhala Sangam MN's bold for both.
-const HEAVIER: &[(&str, [(&str, u32); 2])] = &[(SINHALA, [(SINHALA, 1), (SINHALA, 1)])];
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+fn system_fallbacks() -> [Vec<(String, Face)>; 3] {
+    let extra = scan_sinhala_fonts(&font_dirs());
+    std::array::from_fn(|w| extra.iter().filter_map(|(p, idx)| validated_face(p, *idx, w)).collect())
+}
+
+fn validated_face(path: impl AsRef<std::path::Path>, index: u32, weight_slot: usize) -> Option<(String, Face)> {
+    use skrifa::MetadataProvider;
+    let p = path.as_ref();
+    let bytes = map(p)?;
+    let font = skrifa::FontRef::from_index(bytes, index).ok()?;
+    let target = [400.0f32, 600.0, 750.0][weight_slot.min(2)];
+    let wght = font
+        .axes()
+        .iter()
+        .find(|a| a.tag() == skrifa::Tag::new(b"wght"))
+        .map(|a| target.clamp(a.min_value(), a.max_value()));
+    Some((format!("sys:{}#{index}", p.display()), Face { bytes, index, wght }))
+}
+
+#[cfg(not(target_os = "macos"))]
+fn scan_sinhala_fonts(dirs: &[std::path::PathBuf]) -> Vec<(std::path::PathBuf, u32)> {
+    use skrifa::MetadataProvider;
+    let mut found = Vec::new();
+    let mut stack = dirs.to_vec();
+    while let Some(dir) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&dir) else { continue };
+        for e in entries.flatten() {
+            let path = e.path();
+            if path.is_dir() {
+                stack.push(path);
+                continue;
+            }
+            let is_font = path
+                .extension()
+                .and_then(|x| x.to_str())
+                .is_some_and(|x| matches!(x.to_ascii_lowercase().as_str(), "ttf" | "otf" | "ttc" | "otc"));
+            if !is_font {
+                continue;
+            }
+            let Ok(file) = std::fs::File::open(&path) else { continue };
+            let Ok(data) = (unsafe { memmap2::Mmap::map(&file) }) else { continue };
+            let Ok(fonts) = skrifa::raw::FileRef::new(&data) else { continue };
+            if let Some((idx, _)) = fonts.fonts().enumerate().find(|(_, f)| {
+                f.as_ref().is_ok_and(|font| font.charmap().map('\u{0D85}').is_some())
+            }) {
+                found.push((path, idx as u32));
+            }
+        }
+    }
+    found
+}
 
 /// Ascent and line height in em, as egui lays text out (skrifa's metrics: OS/2 typo
 /// values when the font asks for them, else hhea).
@@ -821,18 +1100,7 @@ pub fn install_fonts(ctx: &egui::Context, ui_font: &str) {
     // the fallback list at each weight.
     type Fallbacks = [Vec<(String, Face)>; 3];
     static SYSTEM: std::sync::OnceLock<Fallbacks> = std::sync::OnceLock::new();
-    let system = SYSTEM.get_or_init(|| {
-        std::array::from_fn(|w| {
-            CANDIDATES
-                .iter()
-                .filter_map(|&(path, index)| {
-                    let heavy = (w > 0).then(|| HEAVIER.iter().find(|(base, _)| *base == path)).flatten().map(|(_, v)| v[w - 1]);
-                    let mapped = |(p, i): (&str, u32)| map(p).map(|bytes| (format!("sys:{p}#{i}"), Face { bytes, index: i, wght: None }));
-                    heavy.and_then(mapped).or_else(|| mapped((path, index)))
-                })
-                .collect()
-        })
-    });
+    let system = SYSTEM.get_or_init(system_fallbacks);
     // Primary fonts: Inter, each lyric font, and the installed font picked in Settings.
     let choice = CHOICE.read_unpoisoned().as_ref().map(|c| c.faces);
     let mut groups: Vec<(&str, [Face; 3])> = vec![("inter", INTER.map(Face::of))];
@@ -845,7 +1113,11 @@ pub fn install_fonts(ctx: &egui::Context, ui_font: &str) {
             defs.font_data.insert(name.clone(), Arc::new(font_data(*face, 0.0)));
             let mut chain = vec![name.clone()];
             let inter = (*key != "inter").then(|| ("inter".to_owned(), Face::of(INTER[w])));
-            for (fallback, f) in inter.iter().chain(&system[w]) {
+            let sinhala = Some((
+                "noto-sinhala".to_owned(),
+                Face { bytes: NOTO_SINHALA, index: 0, wght: Some([400.0, 600.0, 750.0][w]) },
+            ));
+            for (fallback, f) in inter.iter().chain(&sinhala).chain(&system[w]) {
                 let Some((asc_f, h_f)) = em_metrics(f.bytes, f.index) else { continue };
                 let shift = asc_p - (asc_f + 0.5 * (h_p - h_f));
                 let id = format!("{fallback}-{w}@{key}");
@@ -1018,6 +1290,15 @@ mod tests {
         // In test environments where NSApplication may have zero windows or headless execution,
         // apply_native_vibrancy must exit gracefully without panicking.
         apply_native_vibrancy();
+    }
+
+    #[test]
+    fn bundled_noto_sinhala_covers_sinhala_letters_and_metrics() {
+        use skrifa::MetadataProvider;
+        let font = skrifa::FontRef::from_index(NOTO_SINHALA, 0).expect("valid NotoSansSinhala TTF");
+        assert!(font.charmap().map('\u{0D85}').is_some(), "missing Sinhala letter අ");
+        assert!(font.charmap().map('\u{0DC3}').is_some(), "missing Sinhala letter ස");
+        assert!(em_metrics(NOTO_SINHALA, 0).is_some());
     }
 }
 

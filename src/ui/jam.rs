@@ -177,7 +177,7 @@ pub fn dev_script(app: &mut App, ctx: &egui::Context, now: f64) {
             "queue=on" => set_control(app, app.jam.control, true),
             "queue=off" => set_control(app, app.jam.control, false),
             a if a.starts_with("add=") => {
-                let track = crate::model::Track { id: a[4..].to_owned(), title: "Test song".into(), artists: vec![], album: None, duration: None, thumbs: vec![], track_nr: None, plays: None, music_video: false };
+                let track = crate::model::Track { id: a[4..].to_owned(), title: "Test song".into(), artists: vec![], album: None, duration: None, thumbs: vec![], track_nr: None, plays: None, music_video: false, explicit: false };
                 app.apply(Action::Enqueue(track));
             }
             a if a.starts_with("seek=") => {
@@ -561,7 +561,7 @@ pub fn guest_action(app: &mut App, a: Action) -> Option<Action> {
         }
         Action::Open(Target::Song(t)) | Action::Radio(t) | Action::Enqueue(t) => request(app, Cmd::Add { track: t }),
         Action::PlayNext(t) => request(app, Cmd::Next { track: t }),
-        Action::PlayCollection(..) => app.toast("In a jam, add songs one at a time"),
+        Action::PlayNextMany(_) | Action::PlayCollection(..) => app.toast("In a jam, add songs one at a time"),
         Action::QueueJump(i) => request(app, Cmd::Jump { index: i }),
         Action::QueueRemove(_) => app.toast("Only the host can remove songs"),
         Action::QueueMove(..) => app.toast("Only the host can reorder songs"),
@@ -602,7 +602,11 @@ fn lobby(app: &mut App, ui: &mut Ui) {
         let hint = app.account_name.clone().unwrap_or_else(|| "Guest".to_owned());
         setting_row(ui, "Your name", Some("What others in the jam see."), |ui| {
             let (rect, _) = ui.allocate_exact_size(vec2(200.0, 36.0), Sense::hover());
-            ui.painter().rect_filled(rect, 10.0, theme::glass(0.08));
+            if crate::renderer::active() == crate::renderer::Renderer::OpenGl {
+                crate::glass::paint(ui, egui::Id::unique("jam-name-glass"), rect, crate::glass::control(10.0, theme::light(), 0.0, 1.0));
+            } else {
+                ui.painter().rect_filled(rect, 10.0, theme::glass(0.08));
+            }
             let inner = rect.shrink2(vec2(12.0, 4.0));
             ui.put(
                 inner,
@@ -633,7 +637,11 @@ fn lobby(app: &mut App, ui: &mut Ui) {
             join_now |= pill(ui, "Join", None, true).clicked();
             ui.add_space(10.0);
             let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 42.0), Sense::hover());
-            ui.painter().rect_filled(rect, 10.0, theme::glass(0.08));
+            if crate::renderer::active() == crate::renderer::Renderer::OpenGl {
+                crate::glass::paint(ui, egui::Id::unique("jam-code-glass"), rect, crate::glass::control(10.0, theme::light(), 0.0, 1.0));
+            } else {
+                ui.painter().rect_filled(rect, 10.0, theme::glass(0.08));
+            }
             let inner = rect.shrink2(vec2(14.0, 4.0));
             let edit = ui.put(
                 inner,
