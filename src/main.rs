@@ -107,6 +107,7 @@ fn main() -> eframe::Result {
             menubar::install(wake);
             // Native macOS window vibrancy (NSVisualEffectView behind content view).
             theme::apply_native_vibrancy();
+            theme::align_macos_traffic_lights();
             // Keep `ytm-rs:` links pointing at this copy; dev builds leave it alone
             // (even with YTM_UPDATE_FORCE).
             if update::installed() && !cfg!(debug_assertions) {

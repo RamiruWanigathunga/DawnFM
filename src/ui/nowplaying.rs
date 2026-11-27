@@ -103,7 +103,7 @@ fn body(app: &mut App, ui: &mut Ui, now: f64) {
     let narrow = area.width() - 64.0 < 860.0;
     // Header: on the window buttons' line, when the app draws them.
     let is_fullscreen = app.fullscreen || ui.input(|i| i.viewport().fullscreen.unwrap_or(false));
-    let header_top = area.top() + if is_fullscreen { 16.0 } else { 11.0 };
+    let header_top = area.top() + if is_fullscreen { 16.0 } else { 6.0 };
     let header = Rect::from_min_size(pos2(area.left() + 20.0, header_top), vec2(area.width() - 40.0, 42.0));
 
     // Fullscreen auto-hide after 5.0s of mouse inactivity: top pills, bottom-right pill, and controls disappear together

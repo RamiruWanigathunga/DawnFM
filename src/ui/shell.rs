@@ -219,14 +219,13 @@ pub fn sidebar(app: &mut App, ui: &mut Ui) {
     // Content width: text keeps its truncation inside it.
     let full_w = ui.available_width();
 
-    // The page history buttons, on the macOS window buttons' line and right after them
-    // (the buttons' centres are 16 points down, the last one ending some 62 in). A
-    // floating sidebar starts beside the window buttons, not under: it keeps the row.
+    // The page history buttons, on the macOS window buttons' line (~22 pt centre) and right
+    // after them. A floating sidebar starts below the window buttons.
     let top = ui.cursor().min;
     let screen = ui.ctx().content_rect();
     let below = pos2(top.x + ICON_X - 14.0, top.y + 3.0);
     let on_line = top.y - screen.top() >= 36.0;
-    let at = if on_line { pos2(screen.left() + 76.0, screen.top() + 3.0) } else { below };
+    let at = if on_line { pos2(screen.left() + 86.0, screen.top() + 9.0) } else { below };
     let button = |i: usize| Rect::from_min_size(at + vec2([0.0, 30.0][i], 0.0), vec2(28.0, 26.0));
     if history_button(ui, button(0), icon::CHEVRON_LEFT, "Back") {
         app.nav_back();

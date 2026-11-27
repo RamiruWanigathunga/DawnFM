@@ -338,6 +338,60 @@ pub fn apply_native_vibrancy() {
 #[cfg(not(target_os = "macos"))]
 pub fn apply_native_vibrancy() {}
 
+/// Lowers the macOS `NSTitlebarContainerView` slightly so the window's traffic light buttons
+/// sit on the same ~22 pt vertical centerline as the floating header capsules.
+#[cfg(target_os = "macos")]
+pub fn align_macos_traffic_lights() {
+    use objc2::msg_send;
+    use objc2::rc::Retained;
+    use objc2::runtime::{AnyObject, Bool};
+    use objc2_foundation::{NSPoint, NSRect};
+
+    const EXTRA_TOP: f64 = 7.0;
+    const NS_FULLSCREEN_MASK: usize = 1 << 14;
+
+    unsafe {
+        let app: Option<Retained<AnyObject>> = msg_send![objc2::class!(NSApplication), sharedApplication];
+        let Some(app) = app else { return };
+        let windows: Option<Retained<AnyObject>> = msg_send![&*app, windows];
+        let Some(windows) = windows else { return };
+        let count: usize = msg_send![&*windows, count];
+        if count == 0 {
+            return;
+        }
+        let window: Option<Retained<AnyObject>> = msg_send![&*windows, objectAtIndex: 0usize];
+        let Some(window) = window else { return };
+        let mask: usize = msg_send![&*window, styleMask];
+        if (mask & NS_FULLSCREEN_MASK) != 0 {
+            return;
+        }
+        let close_btn: Option<Retained<AnyObject>> = msg_send![&*window, standardWindowButton: 0usize];
+        let Some(close_btn) = close_btn else { return };
+        let titlebar_view: Option<Retained<AnyObject>> = msg_send![&*close_btn, superview];
+        let Some(titlebar_view) = titlebar_view else { return };
+        let container: Option<Retained<AnyObject>> = msg_send![&*titlebar_view, superview];
+        let Some(container) = container else { return };
+        let theme_frame: Option<Retained<AnyObject>> = msg_send![&*container, superview];
+        let Some(theme_frame) = theme_frame else { return };
+
+        let theme_bounds: NSRect = msg_send![&*theme_frame, bounds];
+        let container_frame: NSRect = msg_send![&*container, frame];
+        let flipped: Bool = msg_send![&*theme_frame, isFlipped];
+        let target_y = if flipped.as_bool() {
+            EXTRA_TOP
+        } else {
+            (theme_bounds.size.height - container_frame.size.height - EXTRA_TOP).max(0.0)
+        };
+        if (container_frame.origin.y - target_y).abs() > 0.5 {
+            let origin = NSPoint::new(container_frame.origin.x, target_y);
+            let () = msg_send![&*container, setFrameOrigin: origin];
+        }
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn align_macos_traffic_lights() {}
+
 /// The Windows accent colour, in the lighter shade Windows itself uses on dark
 /// surfaces (`AccentPalette`'s second entry), or the base accent if there's no palette.
 /// Read again every couple of seconds, so a new colour picked in Windows' settings

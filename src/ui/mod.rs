@@ -1805,6 +1805,7 @@ impl eframe::App for App {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         dev_pace();
         theme::watch_system_appearance(ctx);
+        theme::align_macos_traffic_lights();
         self.lyric_view.release_hidden(ctx.cumulative_pass_nr());
         let now = ctx.input(|i| i.time);
 

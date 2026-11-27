@@ -22,8 +22,8 @@ pub fn custom() -> bool {
     cfg!(windows) && std::env::var_os("YTM_NATIVE_TITLEBAR").is_none()
 }
 
-/// How far down the sidebar starts so its first row clears the macOS window buttons.
-pub const MAC_BUTTONS_CLEAR: i8 = 40;
+/// How far down the sidebar starts so its first row clears the lowered macOS window buttons.
+pub const MAC_BUTTONS_CLEAR: i8 = 44;
 
 /// Whether the top strip moves the window: the title bar is hidden, so the empty top
 /// of the window does what it did. Not in full screen.
