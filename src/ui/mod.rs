@@ -102,6 +102,7 @@ pub enum Action {
     /// Click on a card: songs start a radio, everything else opens its page.
     Open(Target),
     PlayNext(Track),
+    PlayNextMany(Vec<Track>),
     Enqueue(Track),
     Radio(Track),
     Go(Page),
@@ -120,12 +121,16 @@ pub enum Action {
     /// Rows (indices into the open playlist) to take out of it.
     RemoveFromPlaylist(Vec<usize>),
     Download(Track),
+    DownloadMany(Vec<Track>),
     NewPlaylist(Vec<Track>),
     EditPlaylist,
     /// The open playlist's collaboration settings.
     Collaborate,
     DeletePlaylist,
     SaveCollection(String, bool),
+    TogglePin(Card),
+    ToggleFavouriteCollection(String),
+    SuggestLess(String),
     /// Subscribe to (or unsubscribe from) the artist page's channel.
     SetSubscribed(bool),
     HomeChip(Option<String>),
@@ -583,6 +588,11 @@ pub struct App {
     /// The sidebar playlists' order (by id), and the ones hidden from it.
     playlist_order: Vec<String>,
     hidden_playlists: HashSet<String>,
+    /// Albums/playlists pinned by the user to the sidebar.
+    pinned: Vec<Card>,
+    /// Collection IDs marked as Favourite or Suggest less.
+    favourite_collections: HashSet<String>,
+    suggest_less: HashSet<String>,
     /// The collection page whose inline search is open, and what's typed in it.
     coll_search: Option<(String, String)>,
     pub actions: Vec<Action>,
@@ -774,6 +784,9 @@ impl App {
             good_window: get("window"),
             playlist_order: get("playlist_order").map(|v| v.lines().filter(|l| !l.is_empty()).map(str::to_owned).collect()).unwrap_or_default(),
             hidden_playlists: get("hidden_playlists").map(|v| v.lines().filter(|l| !l.is_empty()).map(str::to_owned).collect()).unwrap_or_default(),
+            pinned: get("pinned_items").and_then(|v| serde_json::from_str(&v).ok()).unwrap_or_default(),
+            favourite_collections: get("favourite_collections").map(|v| v.lines().filter(|l| !l.is_empty()).map(str::to_owned).collect()).unwrap_or_default(),
+            suggest_less: get("suggest_less").map(|v| v.lines().filter(|l| !l.is_empty()).map(str::to_owned).collect()).unwrap_or_default(),
             coll_search: None,
             update_checked: None,
             update_announced: false,
@@ -2242,6 +2255,9 @@ impl eframe::App for App {
         }
         storage.set_string("playlist_order", self.playlist_order.join("\n"));
         storage.set_string("hidden_playlists", self.hidden_playlists.iter().cloned().collect::<Vec<_>>().join("\n"));
+        storage.set_string("pinned_items", serde_json::to_string(&self.pinned).unwrap_or_default());
+        storage.set_string("favourite_collections", self.favourite_collections.iter().cloned().collect::<Vec<_>>().join("\n"));
+        storage.set_string("suggest_less", self.suggest_less.iter().cloned().collect::<Vec<_>>().join("\n"));
         // Pretend versions (dev hook) mustn't decide the real "what's new".
         if std::env::var_os("YTM_UPDATE_AS").is_none() {
             storage.set_string("last_version", crate::update::current_version());

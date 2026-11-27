@@ -717,7 +717,7 @@ pub fn share_more_pill(
     }
 
     widgets::popup_menu(&more_resp, None, |ui| {
-        ui.set_width(200.0);
+        ui.set_width(178.0);
         ui.add_space(2.0);
         menu(ui, acts, target);
         ui.add_space(3.0);
@@ -1135,6 +1135,16 @@ fn home(app: &mut App, ui: &mut Ui, now: f64) {
         let id = format!("home-{i}-{}-{}", s.title, app.page_visit);
         match &s.kind {
             ShelfKind::Cards(cards) => {
+                let cards: Vec<&Card> = cards
+                    .iter()
+                    .filter(|c| match &c.target {
+                        Target::Album(cid) | Target::Playlist(cid) | Target::Artist(cid) => !app.suggest_less.contains(cid),
+                        Target::Song(t) => !app.suggest_less.contains(&t.id),
+                    })
+                    .collect();
+                if cards.is_empty() {
+                    continue;
+                }
                 let (strap, thumb) = if s.title == "Listen again" { (None, None) } else { (s.strapline.as_deref(), s.strap_thumb.as_deref()) };
                 let (l, r) = shelf_header(ui, &id, &s.title, strap, thumb, true);
                 let nudge = r as i32 - l as i32;
@@ -1143,10 +1153,10 @@ fn home(app: &mut App, ui: &mut Ui, now: f64) {
                 let liked = &app.liked;
                 h_scroll(ui, &id, nudge, cards.len(), tile, 20.0, |ui| {
                     ui.spacing_mut().item_spacing.x = 20.0;
-                    for c in cards {
+                    for c in &cards {
                         let is_liked = matches!(&c.target, Target::Song(t) if liked.contains(&t.id));
                         // Home shows no play or view counts.
-                        let c = Card { subtitle: without_counts(&c.subtitle), ..c.clone() };
+                        let c = Card { subtitle: without_counts(&c.subtitle), ..(*c).clone() };
                         card(ui, &c, tile, is_liked, acts);
                     }
                 });
@@ -1428,6 +1438,12 @@ pub fn collection(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
     let mut start_select = false;
     let mut stop_select = false;
     let active_lib = if app.spotify_mode { &app.spotify_library } else { &app.library };
+    let is_pinned = app.pinned.iter().any(|c| match &c.target {
+        Target::Album(cid) | Target::Playlist(cid) => cid == id,
+        _ => false,
+    });
+    let is_fav = app.favourite_collections.contains(id);
+    let is_less = app.suggest_less.contains(id);
     let photo = artist_id.as_ref().and_then(|a| app.artist_photos.get(a)).filter(|t| !t.is_empty());
     let is_liked = id == "LM" || id == super::LIKED_MUSIC || id == "VLLM" || id == crate::spotify::SPOTIFY_LIKED_ID;
     ui.add_space(18.0);
@@ -1571,20 +1587,88 @@ pub fn collection(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
                     let (pill_rect, _) = ui.allocate_exact_size(vec2(70.0, 34.0), Sense::hover());
                     let app_logged_in = app.logged_in;
                     let tracks_empty = tracks.is_empty();
+                    let pin_card = Card {
+                        title: c.title.clone(),
+                        subtitle: c.byline(),
+                        thumbs: c.thumbs.clone(),
+                        target: target.clone(),
+                        round: false,
+                        links: c.artists.clone(),
+                    };
+                    let missing_dl: Vec<Track> = tracks.iter().filter(|t| crate::downloads::path(&t.id).is_none()).cloned().collect();
+                    let coll_id = id.to_owned();
                     share_more_pill(ui, pill_rect, "coll", &target, acts, |ui, acts, target| {
                         let mut any = false;
-                        if app_logged_in && !auto && !tracks_empty
-                            && widgets::menu_action(ui, Some(icon::LIST_CHECKS), if selecting { "Done selecting" } else { "Select" })
-                        {
-                            if selecting { stop_select = true } else { start_select = true }
-                        }
-                        if app_logged_in && !auto && !tracks_empty {
+                        // 1. Pin album / Pin playlist
+                        if !auto {
+                            let label = match (is_album, is_pinned) {
+                                (true, false) => "Pin album",
+                                (true, true) => "Unpin album",
+                                (false, false) => "Pin playlist",
+                                (false, true) => "Unpin playlist",
+                            };
+                            let glyph = if is_pinned { icon::PIN_OFF } else { icon::PIN };
+                            if widgets::menu_action(ui, Some(glyph), label) {
+                                acts.push(Action::TogglePin(pin_card.clone()));
+                            }
                             any = true;
                         }
-                        if owned {
+                        // 2. Add to library (only when not already saved and can be saved)
+                        if !auto && !saved && let Some(sid) = &save_id {
+                            if widgets::menu_action(ui, Some(icon::LIBRARY), "Add to library") {
+                                acts.push(Action::SaveCollection(sid.clone(), true));
+                            }
+                            any = true;
+                        }
+                        // 3–5. Download, Add to playlist, Play next
+                        if !tracks_empty {
                             if any {
                                 widgets::menu_separator(ui);
                             }
+                            any = true;
+                            if missing_dl.is_empty() {
+                                if widgets::menu_action(ui, Some(icon::FOLDER_OPEN), "Show in folder") {
+                                    crate::downloads::open_folder();
+                                }
+                            } else if widgets::menu_action(ui, Some(icon::DOWNLOAD), "Download") {
+                                acts.push(Action::DownloadMany(missing_dl.clone()));
+                            }
+                            if widgets::menu_action(ui, Some(icon::LIST_PLUS), "Add to playlist") {
+                                acts.push(Action::AddToPlaylist(tracks.to_vec()));
+                            }
+                            if widgets::menu_action(ui, Some(icon::LIST_PLUS), "Play next") {
+                                acts.push(Action::PlayNextMany(tracks.to_vec()));
+                            }
+                        }
+                        // 6–7. Favourite & Suggest less
+                        if !auto {
+                            if any {
+                                widgets::menu_separator(ui);
+                            }
+                            any = true;
+                            if widgets::menu_action_star(ui, is_fav, if is_fav { "Undo favourite" } else { "Favourite" }) {
+                                acts.push(Action::ToggleFavouriteCollection(coll_id.clone()));
+                            }
+                            if !owned
+                                && widgets::menu_action(ui, Some(icon::THUMBS_DOWN), if is_less { "Undo suggest less" } else { "Suggest less" })
+                            {
+                                acts.push(Action::SuggestLess(coll_id.clone()));
+                            }
+                        }
+                        // Extra context actions: Select, owned playlist management, 8. Delete from library, Share
+                        let has_select = app_logged_in && !auto && !tracks_empty;
+                        let has_delete_lib = !auto && saved && save_id.is_some();
+                        if any && (has_select || owned || has_delete_lib) {
+                            widgets::menu_separator(ui);
+                            any = false;
+                        }
+                        if has_select {
+                            any = true;
+                            if widgets::menu_action(ui, Some(icon::LIST_CHECKS), if selecting { "Done selecting" } else { "Select" }) {
+                                if selecting { stop_select = true } else { start_select = true }
+                            }
+                        }
+                        if owned {
                             any = true;
                             if widgets::menu_action(ui, Some(icon::MUSIC), "Edit playlist") {
                                 acts.push(Action::EditPlaylist);
@@ -1594,6 +1678,13 @@ pub fn collection(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
                             }
                             if widgets::menu_action(ui, Some(icon::TRASH_2), "Delete playlist") {
                                 acts.push(Action::DeletePlaylist);
+                            }
+                        }
+                        // 8. Delete from library (when saved to library and removable)
+                        if !auto && saved && let Some(sid) = &save_id {
+                            any = true;
+                            if widgets::menu_action(ui, Some(icon::TRASH_2), "Delete from library") {
+                                acts.push(Action::SaveCollection(sid.clone(), false));
                             }
                         }
                         if any {

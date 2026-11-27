@@ -305,6 +305,7 @@ pub fn sidebar(app: &mut App, ui: &mut Ui) {
     // Drag-to-reorder and right-click-to-hide results, applied once the rows are done.
     let mut reorder: Option<(String, String)> = None;
     let mut hide: Option<String> = None;
+    let mut unpin: Option<crate::model::Card> = None;
 
     let transferring = super::transfer::sidebar_visible(app, ui.input(|i| i.time));
     let ready = app.updater.as_ref().and_then(|u| match u.state() {
@@ -335,6 +336,37 @@ pub fn sidebar(app: &mut App, ui: &mut Ui) {
                 icon_row(ui, icon::HISTORY, &t!("recently_played"), Page::Library(LibTab::History), lib(LibTab::History), &mut go_to);
             }
             nav(ui, glyphs::DOWNLOAD, APPLE, &t!("downloads"), Page::Downloads, p == Page::Downloads, &mut go_to);
+        }
+        if !app.pinned.is_empty() {
+            ui.add_space(4.0);
+            if section(ui, "Pinned") {
+                for c in &app.pinned {
+                    let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 30.0), Sense::click());
+                    let resp = named(resp, &c.title).on_hover_cursor(egui::CursorIcon::PointingHand);
+                    let h = if resp.hovered() { 1.0 } else { 0.0 };
+                    let selected = matches!(
+                        (&c.target, &p),
+                        (Target::Album(a), Page::Album(b))
+                            | (Target::Playlist(a), Page::Playlist(b))
+                            | (Target::Artist(a), Page::Artist(b))
+                            if a == b
+                    );
+                    ui.painter().rect_filled(rect, look.radius, theme::glass(0.05 * h + if selected { 0.08 } else { 0.0 }));
+                    let img = Rect::from_center_size(pos2(rect.left() + ICON_X, rect.center().y), Vec2::splat(20.0));
+                    paint_cover(ui, img, &c.thumbs, if c.round { 10.0 } else { theme::thumb_radius() }, 1.0);
+                    let w = full_w - 54.0;
+                    text_at(ui, pos2(rect.left() + 44.0, rect.center().y - 8.5), &c.title, theme::regular(13.0), theme::label(), w);
+                    widgets::context_menu(&resp, |ui| {
+                        ui.set_min_width(150.0);
+                        if widgets::menu_action(ui, Some(icon::PIN_OFF), "Unpin") {
+                            unpin = Some(c.clone());
+                        }
+                    });
+                    if resp.clicked() {
+                        app.actions.push(Action::Open(c.target.clone()));
+                    }
+                }
+            }
         }
         ui.add_space(4.0);
         let playlists_open = section(ui, &t!("playlists"));
@@ -469,6 +501,9 @@ pub fn sidebar(app: &mut App, ui: &mut Ui) {
     }
     if let Some(id) = hide {
         app.hidden_playlists.insert(id);
+    }
+    if let Some(card) = unpin {
+        app.actions.push(Action::TogglePin(card));
     }
     if let Some((dragged, target)) = reorder
         && let (Some(from), Some(to)) = (app.playlist_order.iter().position(|x| x == &dragged), app.playlist_order.iter().position(|x| x == &target))

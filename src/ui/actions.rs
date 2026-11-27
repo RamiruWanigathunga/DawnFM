@@ -70,6 +70,18 @@ impl App {
                     self.prefetch_next();
                 }
             }
+            Action::PlayNextMany(tracks) => {
+                if tracks.is_empty() {
+                    return;
+                }
+                let start = self.queue.play_next_many(tracks);
+                self.toast("Playing next");
+                if start {
+                    self.play_current();
+                } else {
+                    self.prefetch_next();
+                }
+            }
             Action::Enqueue(t) => {
                 let start = self.queue.enqueue(t);
                 self.toast("Added to queue");
@@ -142,6 +154,27 @@ impl App {
                 let for_video = if self.playing_as().is_some_and(|s| s.id == track.id) { self.current_id().map(str::to_owned) } else { None };
                 self.backend.request(Req::Download { track: Box::new(track), for_video });
             }
+            Action::DownloadMany(tracks) => {
+                let missing: Vec<Track> = tracks.into_iter().filter(|t| crate::downloads::path(&t.id).is_none()).collect();
+                if missing.is_empty() {
+                    self.toast("Already downloaded");
+                    return;
+                }
+                if missing.len() == 1 {
+                    let track = missing.into_iter().next().unwrap();
+                    self.toast(format!("Downloading \u{201c}{}\u{201d}", track.title));
+                    let for_video = if self.playing_as().is_some_and(|s| s.id == track.id) { self.current_id().map(str::to_owned) } else { None };
+                    self.backend.request(Req::Download { track: Box::new(track), for_video });
+                } else {
+                    self.toast(format!("Downloading {} songs…", missing.len()));
+                    let playing_as_id = self.playing_as().map(|s| s.id.clone());
+                    let cur_id = self.current_id().map(str::to_owned);
+                    for track in missing {
+                        let for_video = if playing_as_id.as_deref() == Some(track.id.as_str()) { cur_id.clone() } else { None };
+                        self.backend.request(Req::Download { track: Box::new(track), for_video });
+                    }
+                }
+            }
             Action::AddToPlaylist(tracks) => {
                 if self.logged_in { self.dialog = Some(Dialog::PickPlaylist(tracks)); }
                 else { self.toast("Sign in to edit playlists"); }
@@ -208,6 +241,31 @@ impl App {
                     self.backend.request(Req::SaveCollection { id, save });
                 }
                 else { self.toast("Sign in to save to library"); }
+            }
+            Action::TogglePin(card) => {
+                if let Some(pos) = self.pinned.iter().position(|c| c.target == card.target) {
+                    self.pinned.remove(pos);
+                    self.toast("Unpinned");
+                } else {
+                    self.pinned.insert(0, card);
+                    self.toast("Pinned to sidebar");
+                }
+            }
+            Action::ToggleFavouriteCollection(id) => {
+                if self.favourite_collections.remove(&id) {
+                    self.toast("Removed from favourites");
+                } else {
+                    self.favourite_collections.insert(id);
+                    self.toast("Added to favourites");
+                }
+            }
+            Action::SuggestLess(id) => {
+                if self.suggest_less.remove(&id) {
+                    self.toast("Removed from suggest less");
+                } else {
+                    self.suggest_less.insert(id);
+                    self.toast("We'll suggest less like this");
+                }
             }
             // The account's YouTube subscription to the artist, flipped at once (the
             // round trip is slow) and put back if YouTube Music refuses it.

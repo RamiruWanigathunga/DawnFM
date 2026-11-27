@@ -158,6 +158,21 @@ impl Queue {
         true
     }
 
+    /// Insert `tracks` right after the current song (in order): true when nothing was
+    /// playing, so playback starts at the first inserted track.
+    pub fn play_next_many(&mut self, tracks: Vec<Track>) -> bool {
+        if tracks.is_empty() {
+            return false;
+        }
+        let at = self.index.map_or(0, |i| i + 1).min(self.tracks.len());
+        let start = self.index.is_none();
+        self.tracks.splice(at..at, tracks);
+        if start {
+            self.index = Some(0);
+        }
+        start
+    }
+
     /// Add `t` at the end: true when nothing was playing, so it starts now.
     pub fn enqueue(&mut self, t: Track) -> bool {
         self.tracks.push(t);
@@ -282,6 +297,20 @@ mod tests {
         assert_eq!(q.index, Some(0));
         // Nothing queued: nothing to do.
         assert!(!Queue::new(Repeat::All).advance());
+    }
+
+    #[test]
+    fn play_next_many_inserts_in_order_and_starts_when_idle() {
+        let mut q = queue(&["a", "b"], 0, Repeat::Off);
+        assert!(!q.play_next_many(vec![track("x"), track("y")]));
+        assert_eq!(ids(&q), vec!["a", "x", "y", "b"]);
+        assert_eq!(q.index, Some(0));
+
+        let mut empty = Queue::new(Repeat::Off);
+        assert!(!empty.play_next_many(vec![]));
+        assert!(empty.play_next_many(vec![track("p"), track("q")]));
+        assert_eq!(ids(&empty), vec!["p", "q"]);
+        assert_eq!(empty.index, Some(0));
     }
 
     #[test]

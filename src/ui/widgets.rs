@@ -892,7 +892,7 @@ pub fn menu_action(ui: &mut Ui, glyph: Option<char>, label: &str) -> bool {
 }
 
 /// A menu row marked with the app's own star, filled once the song is liked.
-fn menu_action_star(ui: &mut Ui, liked: bool, label: &str) -> bool {
+pub fn menu_action_star(ui: &mut Ui, liked: bool, label: &str) -> bool {
     menu_row(ui, label, Some(|ui: &Ui, at: Pos2, color: Color32| {
         let glyph = if liked { super::glyphs::STAR_FILLED } else { super::glyphs::STAR };
         super::glyphs::draw(ui, at, 13.5, glyph, color);
