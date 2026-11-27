@@ -1,9 +1,5 @@
 //! App chrome: background, sidebar, top bar, player bar, queue drawer, toasts.
 
-use std::num::NonZeroU32;
-use std::sync::{Arc, Mutex};
-
-use eframe::egui_glow::glow::{self, HasContext};
 use egui::{Align2, Color32, Pos2, Rect, Sense, Ui, Vec2, pos2, vec2};
 
 use super::widgets::{self, icon_at, icon_button, named, paint_cover, text_at};
@@ -11,7 +7,6 @@ use super::{Action, App, LibTab, NpTab, Page, Repeat, fmt_time, glyphs};
 use crate::i18n::t;
 use crate::model::Target;
 use crate::shader::Params;
-use crate::sync::MutexExt;
 use crate::theme::{self, icon};
 
 // ------------------------------------------------------------------ background
@@ -859,414 +854,6 @@ fn paint_blurred_capsule(painter: &egui::Painter, cap: Rect, radius: f32, tex: &
     painter.add(egui::Shape::mesh(mesh));
 }
 
-const BLUR_VERTEX: &str = r#"
-OUT vec2 v_uv;
-void main() {
-  vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
-  v_uv = p;
-  gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
-}
-"#;
-
-const BLUR_FRAG: &str = r#"
-precision highp float;
-uniform sampler2D u_tex;
-uniform vec2 u_texel_step;
-IN vec2 v_uv;
-#if NEW_SHADER_INTERFACE
-out vec4 frag_color;
-#define FRAG frag_color
-#define TEX texture
-#else
-#define FRAG gl_FragColor
-#define TEX texture2D
-#endif
-void main() {
-  const float w0 = 0.204164;
-  const float w1 = 0.180174;
-  const float w2 = 0.123832;
-  const float w3 = 0.066282;
-  const float w4 = 0.027630;
-  vec3 c = TEX(u_tex, v_uv).rgb * w0;
-  c += (TEX(u_tex, v_uv + u_texel_step * 1.0).rgb + TEX(u_tex, v_uv - u_texel_step * 1.0).rgb) * w1;
-  c += (TEX(u_tex, v_uv + u_texel_step * 2.0).rgb + TEX(u_tex, v_uv - u_texel_step * 2.0).rgb) * w2;
-  c += (TEX(u_tex, v_uv + u_texel_step * 3.0).rgb + TEX(u_tex, v_uv - u_texel_step * 3.0).rgb) * w3;
-  c += (TEX(u_tex, v_uv + u_texel_step * 4.0).rgb + TEX(u_tex, v_uv - u_texel_step * 4.0).rgb) * w4;
-  FRAG = vec4(c, 1.0);
-}
-"#;
-
-const COMP_FRAG: &str = r#"
-precision highp float;
-uniform sampler2D u_tex;
-uniform vec4 u_uv_rect;
-uniform vec2 u_rect_size;
-uniform float u_radius_px;
-uniform vec4 u_tint;
-uniform float u_sat;
-uniform float u_sheen;
-uniform float u_alpha;
-IN vec2 v_uv;
-#if NEW_SHADER_INTERFACE
-out vec4 frag_color;
-#define FRAG frag_color
-#define TEX texture
-#else
-#define FRAG gl_FragColor
-#define TEX texture2D
-#endif
-void main() {
-  vec2 pos_px = v_uv * u_rect_size;
-  vec2 half_sz = u_rect_size * 0.5;
-  vec2 q = abs(pos_px - half_sz) - (half_sz - vec2(u_radius_px));
-  float dist = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - u_radius_px;
-  float edge = (1.0 - smoothstep(-0.75, 0.75, dist)) * u_alpha;
-  if (edge <= 0.001) {
-    discard;
-  }
-  vec2 suv = u_uv_rect.xy + v_uv * u_uv_rect.zw;
-  vec3 blur_col = TEX(u_tex, suv).rgb;
-  float lum = dot(blur_col, vec3(0.299, 0.587, 0.114));
-  vec3 vib = mix(vec3(lum), blur_col, u_sat);
-  vec3 rgb = mix(vib, u_tint.rgb, u_tint.a);
-  float top_sheen = smoothstep(2.5, 0.0, abs(u_rect_size.y - pos_px.y - 1.5)) * smoothstep(-3.0, -1.0, dist);
-  float rim = smoothstep(2.2, 0.0, abs(dist + 1.2)) * 0.18;
-  rgb += vec3(u_sheen * (top_sheen * 0.85 + rim * 0.75));
-  float dither = (fract(sin(dot(pos_px, vec2(12.9898, 78.233))) * 43758.5453) - 0.5) * (1.0 / 255.0);
-  rgb = clamp(rgb + dither, 0.0, 1.0);
-  FRAG = vec4(rgb * edge, edge);
-}
-"#;
-
-struct BlurUniforms {
-    tex: Option<glow::UniformLocation>,
-    step: Option<glow::UniformLocation>,
-}
-
-struct CompUniforms {
-    tex: Option<glow::UniformLocation>,
-    uv_rect: Option<glow::UniformLocation>,
-    rect_size: Option<glow::UniformLocation>,
-    radius_px: Option<glow::UniformLocation>,
-    tint: Option<glow::UniformLocation>,
-    sat: Option<glow::UniformLocation>,
-    sheen: Option<glow::UniformLocation>,
-    alpha: Option<glow::UniformLocation>,
-}
-
-struct BackdropBlurGl {
-    vao: glow::VertexArray,
-    prog_blur: glow::Program,
-    blur_loc: BlurUniforms,
-    prog_comp: glow::Program,
-    comp_loc: CompUniforms,
-    tex_src: glow::Texture,
-    tex_h: glow::Texture,
-    tex_v: glow::Texture,
-    fbo_h: glow::Framebuffer,
-    fbo_v: glow::Framebuffer,
-    src_size: (i32, i32),
-    blur_size: (i32, i32),
-}
-
-impl BackdropBlurGl {
-    unsafe fn link_program(gl: &glow::Context, header: &str, frag_src: &str) -> Option<glow::Program> {
-        unsafe {
-            let prog = gl.create_program().ok()?;
-            let vs = gl.create_shader(glow::VERTEX_SHADER).ok()?;
-            let fs = gl.create_shader(glow::FRAGMENT_SHADER).ok()?;
-            gl.shader_source(vs, &format!("{header}{BLUR_VERTEX}"));
-            gl.compile_shader(vs);
-            if !gl.get_shader_compile_status(vs) {
-                log::warn!("backdrop blur vs: {}", gl.get_shader_info_log(vs));
-                gl.delete_shader(vs);
-                gl.delete_shader(fs);
-                gl.delete_program(prog);
-                return None;
-            }
-            gl.shader_source(fs, &format!("{header}{frag_src}"));
-            gl.compile_shader(fs);
-            if !gl.get_shader_compile_status(fs) {
-                log::warn!("backdrop blur fs: {}", gl.get_shader_info_log(fs));
-                gl.delete_shader(vs);
-                gl.delete_shader(fs);
-                gl.delete_program(prog);
-                return None;
-            }
-            gl.attach_shader(prog, vs);
-            gl.attach_shader(prog, fs);
-            gl.link_program(prog);
-            gl.detach_shader(prog, vs);
-            gl.detach_shader(prog, fs);
-            gl.delete_shader(vs);
-            gl.delete_shader(fs);
-            if !gl.get_program_link_status(prog) {
-                log::warn!("backdrop blur link: {}", gl.get_program_info_log(prog));
-                gl.delete_program(prog);
-                return None;
-            }
-            Some(prog)
-        }
-    }
-
-    unsafe fn make_tex(gl: &glow::Context) -> Option<glow::Texture> {
-        unsafe {
-            let t = gl.create_texture().ok()?;
-            gl.bind_texture(glow::TEXTURE_2D, Some(t));
-            for (p, v) in [
-                (glow::TEXTURE_MIN_FILTER, glow::LINEAR),
-                (glow::TEXTURE_MAG_FILTER, glow::LINEAR),
-                (glow::TEXTURE_WRAP_S, glow::CLAMP_TO_EDGE),
-                (glow::TEXTURE_WRAP_T, glow::CLAMP_TO_EDGE),
-            ] {
-                gl.tex_parameter_i32(glow::TEXTURE_2D, p, v as i32);
-            }
-            Some(t)
-        }
-    }
-
-    unsafe fn new(gl: &glow::Context) -> Option<Self> {
-        let version = eframe::egui_glow::ShaderVersion::get(gl);
-        let header = format!(
-            "{}\n#define NEW_SHADER_INTERFACE {}\n{}\n",
-            version.version_declaration(),
-            version.is_new_shader_interface() as i32,
-            if version.is_new_shader_interface() {
-                "#define IN in\n#define OUT out"
-            } else {
-                "#define IN varying\n#define OUT varying"
-            }
-        );
-        unsafe {
-            let prog_blur = Self::link_program(gl, &header, BLUR_FRAG)?;
-            let prog_comp = Self::link_program(gl, &header, COMP_FRAG)?;
-            let vao = gl.create_vertex_array().ok()?;
-            let tex_src = Self::make_tex(gl)?;
-            let tex_h = Self::make_tex(gl)?;
-            let tex_v = Self::make_tex(gl)?;
-            let fbo_h = gl.create_framebuffer().ok()?;
-            let fbo_v = gl.create_framebuffer().ok()?;
-            let blur_loc = BlurUniforms {
-                tex: gl.get_uniform_location(prog_blur, "u_tex"),
-                step: gl.get_uniform_location(prog_blur, "u_texel_step"),
-            };
-            let comp_loc = CompUniforms {
-                tex: gl.get_uniform_location(prog_comp, "u_tex"),
-                uv_rect: gl.get_uniform_location(prog_comp, "u_uv_rect"),
-                rect_size: gl.get_uniform_location(prog_comp, "u_rect_size"),
-                radius_px: gl.get_uniform_location(prog_comp, "u_radius_px"),
-                tint: gl.get_uniform_location(prog_comp, "u_tint"),
-                sat: gl.get_uniform_location(prog_comp, "u_sat"),
-                sheen: gl.get_uniform_location(prog_comp, "u_sheen"),
-                alpha: gl.get_uniform_location(prog_comp, "u_alpha"),
-            };
-            Some(Self {
-                vao,
-                prog_blur,
-                blur_loc,
-                prog_comp,
-                comp_loc,
-                tex_src,
-                tex_h,
-                tex_v,
-                fbo_h,
-                fbo_v,
-                src_size: (0, 0),
-                blur_size: (0, 0),
-            })
-        }
-    }
-
-    unsafe fn ensure_sizes(&mut self, gl: &glow::Context, src: (i32, i32), blur: (i32, i32)) {
-        unsafe {
-            if self.src_size != src {
-                gl.bind_texture(glow::TEXTURE_2D, Some(self.tex_src));
-                gl.tex_image_2d(
-                    glow::TEXTURE_2D,
-                    0,
-                    glow::RGBA8 as i32,
-                    src.0,
-                    src.1,
-                    0,
-                    glow::RGBA,
-                    glow::UNSIGNED_BYTE,
-                    glow::PixelUnpackData::Slice(None),
-                );
-                self.src_size = src;
-            }
-            if self.blur_size != blur {
-                for (tex, fbo) in [(self.tex_h, self.fbo_h), (self.tex_v, self.fbo_v)] {
-                    gl.bind_texture(glow::TEXTURE_2D, Some(tex));
-                    gl.tex_image_2d(
-                        glow::TEXTURE_2D,
-                        0,
-                        glow::RGBA8 as i32,
-                        blur.0,
-                        blur.1,
-                        0,
-                        glow::RGBA,
-                        glow::UNSIGNED_BYTE,
-                        glow::PixelUnpackData::Slice(None),
-                    );
-                    gl.bind_framebuffer(glow::FRAMEBUFFER, Some(fbo));
-                    gl.framebuffer_texture_2d(glow::FRAMEBUFFER, glow::COLOR_ATTACHMENT0, glow::TEXTURE_2D, Some(tex), 0);
-                }
-                self.blur_size = blur;
-            }
-        }
-    }
-}
-
-#[derive(Default)]
-struct BackdropBlurCell {
-    gl: Option<BackdropBlurGl>,
-    failed: bool,
-}
-
-pub(crate) fn paint_live_backdrop_blur(
-    ui: &mut Ui,
-    id: egui::Id,
-    cap: Rect,
-    radius: f32,
-    tint_col: Color32,
-    tint_alpha: f32,
-    sat: f32,
-    sheen: f32,
-    alpha: f32,
-) {
-    let effective_alpha = (ui.opacity() * alpha).clamp(0.0, 1.0);
-    if effective_alpha <= 0.001 {
-        return;
-    }
-    let state: Arc<Mutex<BackdropBlurCell>> = ui.ctx().data_mut(|d| {
-        d.get_temp_mut_or_insert_with(id, || Arc::new(Mutex::new(BackdropBlurCell::default())))
-            .clone()
-    });
-    let tint = [
-        tint_col.r() as f32 / 255.0,
-        tint_col.g() as f32 / 255.0,
-        tint_col.b() as f32 / 255.0,
-        tint_alpha,
-    ];
-    let safe_radius = radius.min(cap.width() / 2.0).min(cap.height() / 2.0);
-    let cb = eframe::egui_glow::CallbackFn::new(move |info, painter| {
-        let vp = info.viewport_in_pixels();
-        if vp.width_px <= 0 || vp.height_px <= 0 {
-            return;
-        }
-        let gl = painter.gl();
-        let mut cell = state.lock_unpoisoned();
-        if cell.failed {
-            return;
-        }
-        unsafe {
-            if cell.gl.is_none() {
-                match BackdropBlurGl::new(gl) {
-                    Some(g) => cell.gl = Some(g),
-                    None => {
-                        cell.failed = true;
-                        return;
-                    }
-                }
-            }
-            let Some(s) = cell.gl.as_mut() else { return };
-
-            let prev_draw_fbo = NonZeroU32::new(gl.get_parameter_i32(glow::DRAW_FRAMEBUFFER_BINDING) as u32).map(glow::NativeFramebuffer);
-            let prev_read_fbo = NonZeroU32::new(gl.get_parameter_i32(glow::READ_FRAMEBUFFER_BINDING) as u32).map(glow::NativeFramebuffer);
-            let prev_scissor = gl.is_enabled(glow::SCISSOR_TEST);
-            let prev_blend = gl.is_enabled(glow::BLEND);
-            let prev_srgb = gl.is_enabled(glow::FRAMEBUFFER_SRGB);
-            let prev_prog = NonZeroU32::new(gl.get_parameter_i32(glow::CURRENT_PROGRAM) as u32).map(glow::NativeProgram);
-            let prev_vao = NonZeroU32::new(gl.get_parameter_i32(glow::VERTEX_ARRAY_BINDING) as u32).map(glow::NativeVertexArray);
-            let prev_active_tex = gl.get_parameter_i32(glow::ACTIVE_TEXTURE) as u32;
-            let prev_tex = NonZeroU32::new(gl.get_parameter_i32(glow::TEXTURE_BINDING_2D) as u32).map(glow::NativeTexture);
-
-            let pad_px = (24.0 * info.pixels_per_point).round() as i32;
-            let sw = info.screen_size_px[0] as i32;
-            let sh = info.screen_size_px[1] as i32;
-            let cap_x0 = (vp.left_px - pad_px).clamp(0, sw);
-            let cap_y0 = (vp.from_bottom_px - pad_px).clamp(0, sh);
-            let cap_x1 = (vp.left_px + vp.width_px + pad_px).clamp(0, sw);
-            let cap_y1 = (vp.from_bottom_px + vp.height_px + pad_px).clamp(0, sh);
-            let cap_w = (cap_x1 - cap_x0).max(1);
-            let cap_h = (cap_y1 - cap_y0).max(1);
-
-            let div = if info.pixels_per_point >= 1.5 { 3 } else { 2 };
-            let blur_w = (cap_w / div).max(1);
-            let blur_h = (cap_h / div).max(1);
-            let step = if info.pixels_per_point >= 1.5 { 1.65 } else { 1.35 };
-
-            gl.active_texture(glow::TEXTURE0);
-            s.ensure_sizes(gl, (cap_w, cap_h), (blur_w, blur_h));
-
-            // Capture the rendered screen behind `cap` from the currently bound read FBO.
-            gl.bind_framebuffer(glow::READ_FRAMEBUFFER, prev_read_fbo);
-            gl.bind_texture(glow::TEXTURE_2D, Some(s.tex_src));
-            gl.copy_tex_sub_image_2d(glow::TEXTURE_2D, 0, 0, 0, cap_x0, cap_y0, cap_w, cap_h);
-
-            // Two-pass separable Gaussian blur at downsampled resolution.
-            gl.disable(glow::SCISSOR_TEST);
-            gl.disable(glow::BLEND);
-            if prev_srgb {
-                gl.disable(glow::FRAMEBUFFER_SRGB);
-            }
-            gl.bind_vertex_array(Some(s.vao));
-            gl.use_program(Some(s.prog_blur));
-            gl.uniform_1_i32(s.blur_loc.tex.as_ref(), 0);
-            gl.viewport(0, 0, blur_w, blur_h);
-
-            gl.bind_framebuffer(glow::FRAMEBUFFER, Some(s.fbo_h));
-            gl.bind_texture(glow::TEXTURE_2D, Some(s.tex_src));
-            gl.uniform_2_f32(s.blur_loc.step.as_ref(), step / blur_w as f32, 0.0);
-            gl.draw_arrays(glow::TRIANGLES, 0, 3);
-
-            gl.bind_framebuffer(glow::FRAMEBUFFER, Some(s.fbo_v));
-            gl.bind_texture(glow::TEXTURE_2D, Some(s.tex_h));
-            gl.uniform_2_f32(s.blur_loc.step.as_ref(), 0.0, step / blur_h as f32);
-            gl.draw_arrays(glow::TRIANGLES, 0, 3);
-
-            // Composite blurred capsule back onto egui's active framebuffer.
-            gl.bind_framebuffer(glow::DRAW_FRAMEBUFFER, prev_draw_fbo);
-            gl.bind_framebuffer(glow::READ_FRAMEBUFFER, prev_read_fbo);
-            if prev_srgb {
-                gl.enable(glow::FRAMEBUFFER_SRGB);
-            }
-            if prev_scissor {
-                gl.enable(glow::SCISSOR_TEST);
-            }
-            gl.enable(glow::BLEND);
-            gl.blend_func_separate(glow::ONE, glow::ONE_MINUS_SRC_ALPHA, glow::ONE, glow::ONE_MINUS_SRC_ALPHA);
-            gl.viewport(vp.left_px, vp.from_bottom_px, vp.width_px, vp.height_px);
-
-            let u0 = (vp.left_px - cap_x0) as f32 / cap_w as f32;
-            let v0 = (vp.from_bottom_px - cap_y0) as f32 / cap_h as f32;
-            let uw = vp.width_px as f32 / cap_w as f32;
-            let vh = vp.height_px as f32 / cap_h as f32;
-
-            gl.use_program(Some(s.prog_comp));
-            gl.bind_texture(glow::TEXTURE_2D, Some(s.tex_v));
-            gl.uniform_1_i32(s.comp_loc.tex.as_ref(), 0);
-            gl.uniform_4_f32(s.comp_loc.uv_rect.as_ref(), u0, v0, uw, vh);
-            gl.uniform_2_f32(s.comp_loc.rect_size.as_ref(), vp.width_px as f32, vp.height_px as f32);
-            gl.uniform_1_f32(s.comp_loc.radius_px.as_ref(), safe_radius * info.pixels_per_point);
-            gl.uniform_4_f32(s.comp_loc.tint.as_ref(), tint[0], tint[1], tint[2], tint[3]);
-            gl.uniform_1_f32(s.comp_loc.sat.as_ref(), sat);
-            gl.uniform_1_f32(s.comp_loc.sheen.as_ref(), sheen);
-            gl.uniform_1_f32(s.comp_loc.alpha.as_ref(), effective_alpha);
-            gl.draw_arrays(glow::TRIANGLES, 0, 3);
-
-            if !prev_blend {
-                gl.disable(glow::BLEND);
-            }
-            gl.use_program(prev_prog);
-            gl.bind_vertex_array(prev_vao);
-            gl.bind_texture(glow::TEXTURE_2D, prev_tex);
-            gl.active_texture(prev_active_tex);
-        }
-    });
-    ui.painter().add(egui::PaintCallback { rect: cap, callback: Arc::new(cb) });
-}
-
 pub fn player_bar(app: &mut App, ui: &mut Ui, now: f64, _frosted: bool) {
     let full = ui.max_rect();
     // A docked strip is opaque and takes clicks across its whole width.
@@ -1292,12 +879,13 @@ pub fn player_bar(app: &mut App, ui: &mut Ui, now: f64, _frosted: bool) {
         let light = theme::light();
         let p_col = app.page_color(&ctx);
         if crate::renderer::active() == crate::renderer::Renderer::OpenGl {
-            let (tint_col, tint_alpha, sat, sheen) = if light {
-                (theme::lerp_color(p_col, Color32::WHITE, 0.78), 0.56, 1.15, 0.16)
+            let tint = if light {
+                theme::with_alpha(theme::lerp_color(p_col, Color32::WHITE, 0.78), 0.22)
             } else {
-                (theme::lerp_color(p_col, Color32::from_rgb(0x16, 0x16, 0x18), 0.55), 0.52, 1.25, 0.07)
+                theme::with_alpha(theme::lerp_color(p_col, Color32::from_rgb(0x16, 0x16, 0x18), 0.55), 0.22)
             };
-            paint_live_backdrop_blur(ui, egui::Id::unique("player-bar-blur-gl"), cap, radius, tint_col, tint_alpha, sat, sheen, 1.0);
+            let style = crate::glass::Style::regular(crate::glass::Corner::Capsule, Some(tint), if light { 0.08 } else { 0.90 }, 1.0);
+            crate::glass::paint(ui, egui::Id::unique("player-bar-liquid-glass"), cap, style);
         } else {
             let fill = if light {
                 theme::with_alpha(theme::lerp_color(p_col, Color32::WHITE, 0.72), 0.72)
@@ -1333,13 +921,6 @@ pub fn player_bar(app: &mut App, ui: &mut Ui, now: f64, _frosted: bool) {
                 }
             }
         }
-
-        let stroke_col = if light {
-            Color32::from_white_alpha(150)
-        } else {
-            Color32::from_white_alpha(38)
-        };
-        ui.painter().rect_stroke(cap, radius, egui::Stroke::new(1.0, stroke_col), egui::StrokeKind::Inside);
 
         cap
     };
@@ -2010,26 +1591,15 @@ pub fn toast(app: &mut App, ctx: &egui::Context, now: f64) {    let Some((msg, s
         .fixed_pos(Pos2::new(screen.center().x, if screen.height() < 200.0 { screen.center().y + 22.0 } else { screen.bottom() - 104.0 } + 14.0 * (1.0 - t)))
         .show(ctx, |ui| {
             ui.set_opacity(t);
-            let stroke = if theme::light() {
-                egui::Stroke::new(0.5, Color32::from_black_alpha(25))
-            } else {
-                egui::Stroke::new(0.5, Color32::from_white_alpha(32))
-            };
-            egui::Frame::new()
-                .fill(theme::menu_fill())
-                .corner_radius(10)
-                .stroke(stroke)
-                .inner_margin(egui::Margin::symmetric(16, 10))
-                .shadow(egui::epaint::Shadow {
-                    offset: [0, 4],
-                    blur: 14,
-                    spread: 0,
-                    color: if theme::light() { Color32::from_black_alpha(25) } else { Color32::from_black_alpha(70) },
-                })
-                .show(ui, |ui| {
-                    ui.set_max_width(520.0);
-                    ui.label(egui::RichText::new(msg.as_str()).font(theme::regular(14.0)).color(theme::text()));
-                });
+            let font = theme::regular(14.0);
+            let g = ui.fonts_mut(|f| f.layout(msg.clone(), font, theme::text(), 520.0));
+            let size = g.size() + vec2(36.0, 20.0);
+            let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
+            let light = theme::light();
+            let tint = theme::with_alpha(theme::menu_fill(), 0.28);
+            let style = crate::glass::Style::regular(crate::glass::Corner::Capsule, Some(tint), if light { 0.08 } else { 0.90 }, 1.0);
+            crate::glass::paint(ui, egui::Id::unique("toast-liquid-glass"), rect, style);
+            ui.painter().galley(rect.min + vec2(18.0, 10.0), g, theme::text());
         });
     // Frames only while it fades in or out; in between it just waits.
     if (0.25..4.1).contains(&age) {

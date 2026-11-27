@@ -259,19 +259,18 @@ pub fn pill(ui: &mut Ui, label: &str, glyph: Option<char>, primary: bool) -> Res
     let r = rect.shrink(if resp.is_pointer_button_down_on() { 1.0 } else { 0.0 });
     let radius = r.height() / 2.0;
 
-    // Soft drop shadow matching resume autoscroll button
-    let shadow_alpha = if light { (25.0 + 10.0 * h) as u8 } else { (42.0 + 14.0 * h) as u8 };
-    ui.painter().rect_filled(r.translate(vec2(0.0, 1.5)), radius, Color32::from_black_alpha(shadow_alpha));
-
-    // Frosted capsule fill (no border)
+    // Liquid Glass capsule fill (no border)
     if !primary && crate::renderer::active() == crate::renderer::Renderer::OpenGl {
-        let (tint, tint_alpha, sat, sheen) = if light {
-            (Color32::WHITE, 0.52 + 0.12 * h, 1.15, 0.18)
+        let tint = if light {
+            Color32::from_white_alpha((44.0 + 28.0 * h) as u8)
         } else {
-            (Color32::from_rgb(0x22, 0x22, 0x28), 0.48 + 0.12 * h, 1.25, 0.12)
+            Color32::from_rgba_unmultiplied(34, 34, 40, (44.0 + 28.0 * h) as u8)
         };
-        super::shell::paint_live_backdrop_blur(ui, resp.id.with("pill-blur"), r, radius, tint, tint_alpha, sat, sheen, 1.0);
+        let style = crate::glass::Style::regular(crate::glass::Corner::Capsule, Some(tint), if light { 0.08 } else { 0.90 }, 1.0);
+        crate::glass::paint(ui, resp.id.with("pill-blur"), r, style);
     } else {
+        let shadow_alpha = if light { (25.0 + 10.0 * h) as u8 } else { (42.0 + 14.0 * h) as u8 };
+        ui.painter().rect_filled(r.translate(vec2(0.0, 1.5)), radius, Color32::from_black_alpha(shadow_alpha));
         ui.painter().rect_filled(r, radius, fill);
     }
 
@@ -679,25 +678,16 @@ pub fn card(ui: &mut Ui, c: &Card, width: f32, liked: bool, acts: &mut Vec<Actio
         let r = 18.0 + 1.5 * ph;
         let button_rect = Rect::from_center_size(center, Vec2::splat(r * 2.0));
         let light = theme::light();
-        ui.painter().circle_filled(center + vec2(0.0, 1.5), r, Color32::from_black_alpha((36.0 * h) as u8));
         if crate::renderer::active() == crate::renderer::Renderer::OpenGl {
-            let (tint_col, tint_alpha, sat, sheen) = if light {
-                (Color32::WHITE, 0.60 + 0.12 * ph, 1.25, 0.22)
+            let tint = if light {
+                Color32::from_white_alpha((48.0 + 28.0 * ph) as u8)
             } else {
-                (Color32::from_rgb(0x1a, 0x1c, 0x22), 0.52 + 0.12 * ph, 1.30, 0.18)
+                Color32::from_rgba_unmultiplied(26, 28, 34, (44.0 + 28.0 * ph) as u8)
             };
-            super::shell::paint_live_backdrop_blur(
-                ui,
-                egui::Id::unique("card-hover-play-blur"),
-                button_rect,
-                r,
-                tint_col,
-                tint_alpha,
-                sat,
-                sheen,
-                h,
-            );
+            let style = crate::glass::Style::clear(crate::glass::Corner::Capsule, Some(tint), if light { 0.10 } else { 0.88 }, h);
+            crate::glass::paint(ui, resp.id.with("card-hover-play-blur"), button_rect, style);
         } else {
+            ui.painter().circle_filled(center + vec2(0.0, 1.5), r, Color32::from_black_alpha((36.0 * h) as u8));
             ui.painter().circle_filled(center, r, theme::shade((0.62 + 0.10 * ph) * h));
         }
         let glyph_col = if light {

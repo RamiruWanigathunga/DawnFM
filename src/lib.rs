@@ -14,6 +14,7 @@ pub mod discord;
 pub mod dock;
 pub mod downloads;
 pub mod fullscreen;
+pub mod glass;
 pub mod hires;
 pub mod i18n;
 pub mod images;

@@ -73,9 +73,14 @@ pub fn overlay(app: &mut App, ctx: &egui::Context, now: f64, screen: Rect) {
         });
 }
 
-fn paint_np_capsule(ui: &Ui, rect: Rect) {
-    let r = rect.height() / 2.0;
-    ui.painter().rect_filled(rect, r, theme::glass(0.14));
+fn paint_np_capsule(ui: &Ui, id_salt: &str, rect: Rect, bg_light: bool) {
+    let tint = if bg_light {
+        Color32::from_white_alpha(48)
+    } else {
+        Color32::from_rgba_unmultiplied(24, 24, 28, 42)
+    };
+    let style = crate::glass::Style::clear(crate::glass::Corner::Capsule, Some(tint), if bg_light { 0.10 } else { 0.88 }, 1.0);
+    crate::glass::paint(ui, ui.scope_id().with(id_salt), rect, style);
 }
 
 fn body(app: &mut App, ui: &mut Ui, now: f64) {
@@ -329,7 +334,7 @@ fn body(app: &mut App, ui: &mut Ui, now: f64) {
         let tl_w = if cfg!(windows) { 32.0 } else { 68.0 };
         let tl_rect = Rect::from_min_size(pos2(tl_x, header_top), vec2(tl_w, 30.0));
         ui.ctx().data_mut(|d| d.insert_temp(egui::Id::unique("np-top-left-rect"), tl_rect));
-        paint_np_capsule(ui, tl_rect);
+        paint_np_capsule(ui, "np-tl-glass", tl_rect, bg_light);
 
         let close_rect = if cfg!(windows) {
             tl_rect
@@ -374,7 +379,7 @@ fn body(app: &mut App, ui: &mut Ui, now: f64) {
         let tr_right = area.right() - 20.0 - r_gap;
         let tr_rect = Rect::from_min_size(pos2(tr_right - 144.0, header_top), vec2(144.0, 30.0));
         ui.ctx().data_mut(|d| d.insert_temp(egui::Id::unique("np-top-right-rect"), tr_rect));
-        paint_np_capsule(ui, tr_rect);
+        paint_np_capsule(ui, "np-tr-glass", tr_rect, bg_light);
 
         let slider_rect = Rect::from_min_max(pos2(tr_rect.left() + 14.0, tr_rect.top()), pos2(tr_rect.right() - 34.0, tr_rect.bottom()));
         let vol = app.audio.volume();
@@ -426,7 +431,7 @@ fn body(app: &mut App, ui: &mut Ui, now: f64) {
         // 3. Bottom-right segmented capsule: [ Lyrics | Queue ]
         let br_rect = Rect::from_min_size(pos2(area.right() - 24.0 - 72.0, area.bottom() - 18.0 - 32.0), vec2(72.0, 32.0));
         ui.ctx().data_mut(|d| d.insert_temp(egui::Id::unique("np-bottom-right-rect"), br_rect));
-        paint_np_capsule(ui, br_rect);
+        paint_np_capsule(ui, "np-br-glass", br_rect, bg_light);
 
         let lyr_rect = Rect::from_min_max(br_rect.min, pos2(br_rect.center().x, br_rect.max.y));
         let q_rect = Rect::from_min_max(pos2(br_rect.center().x, br_rect.min.y), br_rect.max);
@@ -1085,26 +1090,19 @@ fn synced(app: &mut App, ui: &mut Ui, rect: Rect, id: &str, lyrics: &Lyrics, now
         let resp = ui.interact(r, ui.scope_id().with("lyr-resume-btn"), if out.user_scrolling { Sense::click() } else { Sense::hover() });
         let resp = named(resp, &resume_label).on_hover_cursor(egui::CursorIcon::PointingHand);
         let hover = theme::anim_bool(ui.ctx(), "lyr-resume-h", resp.hovered() && out.user_scrolling, 0.2);
-        let p = ui.painter().with_clip_rect(rect.expand2(vec2(0.0, 4.0)));
-        let radius = h / 2.0;
-
-        // Soft drop shadow
-        let shadow_alpha = (40.0 * shown) as u8;
-        p.rect_filled(r.translate(vec2(0.0, 1.5)), radius, Color32::from_black_alpha(shadow_alpha));
-
-        // Frosted capsule fill matching app UI theme
-        let (fill, fg) = if bg_light {
-            let bg_alpha = (235.0 * shown) as u8;
-            let fill = theme::lerp_color(Color32::from_white_alpha(bg_alpha), Color32::WHITE, hover);
-            (fill, Color32::from_rgb(0x18, 0x14, 0x1c))
+        let clip = rect.expand2(vec2(0.0, 4.0));
+        let (tint, fg) = if bg_light {
+            (Color32::from_white_alpha(64), Color32::from_rgb(0x18, 0x14, 0x1c))
         } else {
-            let base_fill = theme::glass((0.14 + 0.08 * hover) * shown);
-            let fg = theme::lerp_color(Color32::from_white_alpha((220.0 * shown) as u8), Color32::WHITE, hover);
-            (base_fill, fg)
+            let fg = theme::lerp_color(Color32::from_white_alpha((225.0 * shown) as u8), Color32::WHITE, hover);
+            (Color32::from_rgba_unmultiplied(24, 24, 28, (48.0 + 24.0 * hover) as u8), fg)
         };
-
-        p.rect_filled(r, radius, fill);
-
+        ui.scope_builder(egui::UiBuilder::new().max_rect(r), |ui| {
+            ui.set_clip_rect(clip);
+            let style = crate::glass::Style::clear(crate::glass::Corner::Capsule, Some(tint), if bg_light { 0.10 } else { 0.88 }, shown);
+            crate::glass::paint(ui, egui::Id::unique("lyr-resume-liquid-glass"), r, style);
+        });
+        let p = ui.painter().with_clip_rect(clip);
         let at = r.center() - g.size() / 2.0;
         p.galley_with_override_text_color(at, g, fg);
 

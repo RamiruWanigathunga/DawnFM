@@ -214,19 +214,6 @@ fn parse_lyrics_endpoint(v: &Value) -> Option<(String, Option<String>)> {
         .or_else(|| find(&|t| t["title"].as_str().is_some_and(|s| s.eq_ignore_ascii_case("lyrics"))))
 }
 
-fn find_key<'a>(v: &'a Value, key: &str) -> Option<&'a Value> {
-    match v {
-        Value::Object(map) => {
-            if let Some(found) = map.get(key) {
-                return Some(found);
-            }
-            map.values().find_map(|child| find_key(child, key))
-        }
-        Value::Array(items) => items.iter().find_map(|child| find_key(child, key)),
-        _ => None,
-    }
-}
-
 fn parse_ms(v: &Value) -> Option<i32> {
     v.as_i64()
         .or_else(|| v.as_str().and_then(|s| s.trim().parse::<i64>().ok()))

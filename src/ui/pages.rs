@@ -471,20 +471,19 @@ pub fn circle_action(ui: &mut Ui, glyph: CircleGlyph, name: &str, active: bool) 
     let press = if resp.is_pointer_button_down_on() { 18.0 } else { 19.0 };
     let light = theme::light();
 
-    // Soft drop shadow matching resume autoscroll button
-    let shadow_alpha = if light { (25.0 + 10.0 * h) as u8 } else { (42.0 + 14.0 * h) as u8 };
-    ui.painter().circle_filled(rect.center() + vec2(0.0, 1.5), press, Color32::from_black_alpha(shadow_alpha));
-
-    // Frosted glass fill & inside stroke
+    // Liquid Glass fill (with soft fallback when not on OpenGL)
     if crate::renderer::active() == crate::renderer::Renderer::OpenGl {
-        let (tint, tint_alpha, sat, sheen) = if light {
-            (Color32::WHITE, 0.52 + 0.12 * h, 1.15, 0.18)
+        let tint = if light {
+            Color32::from_white_alpha((44.0 + 28.0 * h) as u8)
         } else {
-            (Color32::from_rgb(0x22, 0x22, 0x28), 0.48 + 0.12 * h, 1.25, 0.12)
+            Color32::from_rgba_unmultiplied(34, 34, 40, (44.0 + 28.0 * h) as u8)
         };
         let cap = Rect::from_center_size(rect.center(), Vec2::splat(press * 2.0));
-        super::shell::paint_live_backdrop_blur(ui, resp.id.with("blur"), cap, press, tint, tint_alpha, sat, sheen, 1.0);
+        let style = crate::glass::Style::regular(crate::glass::Corner::Capsule, Some(tint), if light { 0.08 } else { 0.90 }, 1.0);
+        crate::glass::paint(ui, resp.id.with("blur"), cap, style);
     } else {
+        let shadow_alpha = if light { (25.0 + 10.0 * h) as u8 } else { (42.0 + 14.0 * h) as u8 };
+        ui.painter().circle_filled(rect.center() + vec2(0.0, 1.5), press, Color32::from_black_alpha(shadow_alpha));
         let fill = if light {
             theme::lerp_color(Color32::from_black_alpha(15), Color32::from_black_alpha(28), h)
         } else {
@@ -591,16 +590,17 @@ pub fn share_more_pill(
     menu: impl FnOnce(&mut Ui, &mut Vec<Action>, &Target),
 ) {
     let light = theme::light();
-    let pill_shadow = if light { 18 } else { 35 };
-    ui.painter().rect_filled(pill_rect.translate(vec2(0.0, 1.0)), 17.0, Color32::from_black_alpha(pill_shadow));
     if crate::renderer::active() == crate::renderer::Renderer::OpenGl {
-        let (tint, tint_alpha, sat, sheen) = if light {
-            (Color32::WHITE, 0.50, 1.15, 0.16)
+        let tint = if light {
+            Color32::from_white_alpha(46)
         } else {
-            (Color32::from_rgb(0x22, 0x22, 0x28), 0.46, 1.25, 0.10)
+            Color32::from_rgba_unmultiplied(34, 34, 40, 44)
         };
-        super::shell::paint_live_backdrop_blur(ui, ui.scope_id().with((id_salt, "pill-blur")), pill_rect, 17.0, tint, tint_alpha, sat, sheen, 1.0);
+        let style = crate::glass::Style::regular(crate::glass::Corner::Capsule, Some(tint), if light { 0.08 } else { 0.90 }, 1.0);
+        crate::glass::paint(ui, ui.scope_id().with((id_salt, "pill-blur")), pill_rect, style);
     } else {
+        let pill_shadow = if light { 18 } else { 35 };
+        ui.painter().rect_filled(pill_rect.translate(vec2(0.0, 1.0)), 17.0, Color32::from_black_alpha(pill_shadow));
         let pill_fill = if light { Color32::from_black_alpha(15) } else { theme::glass(0.12) };
         ui.painter().rect_filled(pill_rect, 17.0, pill_fill);
     }
@@ -1266,25 +1266,16 @@ fn top_result(ui: &mut Ui, c: &Card, pick: bool, acts: &mut Vec<Action>) {    ui
         let r = 26.0 + 2.0 * ph;
         let play_rect = Rect::from_center_size(pc, Vec2::splat(r * 2.0));
         let light = theme::light();
-        ui.painter().circle_filled(pc + vec2(0.0, 2.0), r, Color32::from_black_alpha(if light { 30 } else { 50 }));
         if crate::renderer::active() == crate::renderer::Renderer::OpenGl {
-            let (tint_col, tint_alpha, sat, sheen) = if light {
-                (Color32::WHITE, 0.62 + 0.12 * ph, 1.25, 0.22)
+            let tint = if light {
+                Color32::from_white_alpha((48.0 + 28.0 * ph) as u8)
             } else {
-                (Color32::from_rgb(0x1a, 0x1c, 0x22), 0.52 + 0.12 * ph, 1.30, 0.18)
+                Color32::from_rgba_unmultiplied(26, 28, 34, (44.0 + 28.0 * ph) as u8)
             };
-            super::shell::paint_live_backdrop_blur(
-                ui,
-                egui::Id::unique("top-result-play-blur"),
-                play_rect,
-                r,
-                tint_col,
-                tint_alpha,
-                sat,
-                sheen,
-                0.4 + 0.6 * h,
-            );
+            let style = crate::glass::Style::clear(crate::glass::Corner::Capsule, Some(tint), if light { 0.10 } else { 0.88 }, 0.4 + 0.6 * h);
+            crate::glass::paint(ui, egui::Id::unique("top-result-play-blur"), play_rect, style);
         } else {
+            ui.painter().circle_filled(pc + vec2(0.0, 2.0), r, Color32::from_black_alpha(if light { 30 } else { 50 }));
             ui.painter().circle_filled(pc, r, theme::with_alpha(Color32::WHITE, 0.4 + 0.6 * h));
         }
         let nudge = if playing { 0.0 } else { 1.5 };

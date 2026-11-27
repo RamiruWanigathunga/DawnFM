@@ -2008,16 +2008,16 @@ impl eframe::App for App {
             // The macOS window buttons sit over the sidebar's top-left: start below them.
             let side_margin = egui::Margin { left: 14, right: 14, top: titlebar::top_margin(16, 32.0).max(titlebar::MAC_BUTTONS_CLEAR), bottom: 16 };
             let side_fill = self.sidebar_fill(&ctx, side_alpha);
+            let glass_sidebar = matches!(app_style.sidebar, SidebarStyle::Glass | SidebarStyle::Floating);
             let side_frame = match app_style.sidebar {
-                SidebarStyle::Glass => egui::Frame::new().fill(side_fill).inner_margin(side_margin),
+                SidebarStyle::Glass => egui::Frame::NONE,
                 SidebarStyle::Transparent => egui::Frame::new().inner_margin(side_margin),
                 SidebarStyle::Solid => egui::Frame::new().fill(side_fill).inner_margin(side_margin),
-                SidebarStyle::Floating => egui::Frame::new()
-                    .fill(side_fill)
-                    .stroke(egui::Stroke::new(1.0, theme::glass(0.08)))
-                    .corner_radius(egui::CornerRadius::same(theme::panel_radius().max(12)))
-                    .outer_margin(egui::Margin { left: 10, right: 4, top: 10, bottom: 10 })
-                    .inner_margin(egui::Margin::symmetric(12, 14)),
+                SidebarStyle::Floating => egui::Frame::NONE.outer_margin(egui::Margin { left: 10, right: 4, top: 10, bottom: 10 }),
+            };
+            let inner_side_margin = match app_style.sidebar {
+                SidebarStyle::Floating => egui::Margin::symmetric(12, 14),
+                _ => side_margin,
             };
             // The sidebar first, so it runs the window's full height: the player floats
             // over the main section only, and the page content scrolls under it.
@@ -2025,28 +2025,58 @@ impl eframe::App for App {
                 .exact_size(shell::SIDEBAR_W)
                 .frame(side_frame)
                 .show_separator_line(false)
-                .show(ui, |ui| shell::sidebar(self, ui));
-            ui.painter().vline(side.response.rect.right(), side.response.rect.y_range(), egui::Stroke::new(1.0, theme::glass(if light { 0.06 } else { 0.07 })));
+                .show(ui, |ui| {
+                    if glass_sidebar {
+                        let corner = if app_style.sidebar == SidebarStyle::Floating {
+                            crate::glass::Corner::Radius(theme::panel_radius().max(14) as f32)
+                        } else {
+                            crate::glass::Corner::Circular(0.0)
+                        };
+                        let tint = theme::with_alpha(side_fill, if light { 0.24 } else { 0.28 });
+                        let style = crate::glass::Style::thick(corner, Some(tint), if light { 0.08 } else { 0.90 }, 1.0);
+                        crate::glass::paint(ui, egui::Id::unique("sidebar-liquid-glass"), ui.max_rect(), style);
+                        egui::Frame::NONE.inner_margin(inner_side_margin).show(ui, |ui| shell::sidebar(self, ui));
+                    } else {
+                        shell::sidebar(self, ui);
+                    }
+                });
+            if app_style.sidebar != SidebarStyle::Floating {
+                ui.painter().vline(side.response.rect.right(), side.response.rect.y_range(), egui::Stroke::new(1.0, theme::glass(if light { 0.06 } else { 0.07 })));
+            }
             self.scroll_panes.push(side.response.rect);
             let section = ui.available_rect_before_wrap();
             const DRAWER_W: f32 = 340.0;
             let q = theme::anim_bool(&ctx, "queue-drawer", self.queue_open && !self.np_open, 0.25);
             if q > 0.01 {
+                let drawer_fill = self.lyrics_panel_fill(&ctx);
                 let r = egui::Panel::right("queue").resizable(false)
                     .exact_size(DRAWER_W * q)
-                    .frame(egui::Frame::new().fill(self.lyrics_panel_fill(&ctx)).inner_margin(egui::Margin::symmetric(14, 16)))
+                    .frame(egui::Frame::NONE)
                     .show_separator_line(false)
-                    .show(ui, |ui| shell::queue_drawer(self, ui));
+                    .show(ui, |ui| {
+                        let tint = theme::with_alpha(drawer_fill, if light { 0.22 } else { 0.30 });
+                        let style = crate::glass::Style::thick(crate::glass::Corner::Circular(0.0), Some(tint), if light { 0.08 } else { 0.90 }, 1.0);
+                        crate::glass::paint(ui, egui::Id::unique("queue-liquid-glass"), ui.max_rect(), style);
+                        egui::Frame::NONE.inner_margin(egui::Margin::symmetric(14, 16)).show(ui, |ui| shell::queue_drawer(self, ui));
+                    });
                 self.scroll_panes.push(r.response.rect);
             }
             // Lyrics beside the pages; Up next takes the place when it's open.
             let l = theme::anim_bool(&ctx, "lyrics-drawer", self.lyrics_drawer && !self.queue_open && !self.np_open, 0.25);
             if l > 0.01 {
+                let drawer_fill = self.lyrics_panel_fill(&ctx);
                 let r = egui::Panel::right("lyrics-drawer").resizable(false)
                     .exact_size(DRAWER_W * l)
-                    .frame(egui::Frame::new().fill(self.lyrics_panel_fill(&ctx)).inner_margin(egui::Margin { left: 20, right: 16, top: 16, bottom: 16 }))
+                    .frame(egui::Frame::NONE)
                     .show_separator_line(false)
-                    .show(ui, |ui| nowplaying::lyrics_drawer(self, ui, now));
+                    .show(ui, |ui| {
+                        let tint = theme::with_alpha(drawer_fill, if light { 0.22 } else { 0.30 });
+                        let style = crate::glass::Style::thick(crate::glass::Corner::Circular(0.0), Some(tint), if light { 0.08 } else { 0.90 }, 1.0);
+                        crate::glass::paint(ui, egui::Id::unique("lyrics-drawer-liquid-glass"), ui.max_rect(), style);
+                        egui::Frame::NONE
+                            .inner_margin(egui::Margin { left: 20, right: 16, top: 16, bottom: 16 })
+                            .show(ui, |ui| nowplaying::lyrics_drawer(self, ui, now));
+                    });
                 self.scroll_panes.push(r.response.rect);
             }
             let main_right = ui.available_rect_before_wrap().right();
