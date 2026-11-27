@@ -229,76 +229,145 @@ fn placeholder_artist(app: &mut App, ui: &mut Ui, now: f64) {
     if check_failed(app, ui) {
         return;
     }
-    let skeleton = |ui: &Ui, r: Rect, radius: f32| {
-        widgets::skeleton_rect(ui, r, radius, now);
-    };
+    let sk = |ui: &Ui, r: Rect, radius: f32| widgets::skeleton_rect(ui, r, radius, now);
+    let sk_at = |ui: &Ui, r: Rect, radius: f32, offset: f64| widgets::skeleton_rect_at(ui, r, radius, now, offset);
     let w = ui.available_width();
-    let hero_h = hero_height(w);
+    let page_bg = super::shell::base_color(app);
+
+    // ── Hero banner ───────────────────────────────────────────────────────────
+    // Matches the real artist page: (w * 0.48).clamp(340, 560) px tall.
+    let hero_h = (w * 0.48).clamp(340.0, 560.0);
     let (hero, _) = ui.allocate_exact_size(vec2(w, hero_h), Sense::hover());
-    skeleton(ui, hero, 0.0);
-    paint_hero_gradient_dissolve(ui.painter(), hero, super::shell::base_color(app));
+    sk(ui, hero, 0.0);
 
+    // Same artist-specific gradient stops as the loaded page (dissolve from 56%).
+    const ARTIST_STOPS: [(f32, u8); 5] = [
+        (0.56,   0),
+        (0.72,  90),
+        (0.86, 185),
+        (0.95, 240),
+        (1.00, 255),
+    ];
+    for sw in ARTIST_STOPS.windows(2) {
+        let (y0, a0) = sw[0];
+        let (y1, a1) = sw[1];
+        let seg = Rect::from_min_max(
+            pos2(hero.left(),  hero.top() + hero.height() * y0),
+            pos2(hero.right(), hero.top() + hero.height() * y1),
+        );
+        let c0 = Color32::from_rgba_unmultiplied(page_bg.r(), page_bg.g(), page_bg.b(), a0);
+        let c1 = Color32::from_rgba_unmultiplied(page_bg.r(), page_bg.g(), page_bg.b(), a1);
+        super::shell::vgradient(ui.painter(), seg, c0, c1);
+    }
+
+    // Share circle: top-right corner of the hero, matching the loaded page.
+    let share_r = Rect::from_min_size(pos2(hero.right() - 54.0, hero.top() + 18.0), vec2(34.0, 34.0));
+    sk(ui, share_r, 17.0);
+
+    // ── Name + stats overlay at the base of the hero ──────────────────────────
+    // stats line sits 8 px above the hero bottom; name sits 18 px above that.
     let base_x = hero.left() + 28.0;
-    let btn_y = hero.bottom() - 36.0;
+    let stats_y  = hero.bottom() - 8.0;
+    let name_bottom_y = stats_y - 18.0;
+    // Name: bold(52) → represent as a tall-ish rect.
+    let name_w = (w * 0.45).clamp(220.0, 400.0);
+    sk(ui, Rect::from_min_max(pos2(base_x, name_bottom_y - 46.0), pos2(base_x + name_w, name_bottom_y)), 8.0);
+    // Stats: semibold(13.5) → one narrow line.
+    sk(ui, Rect::from_min_size(pos2(base_x, stats_y - 13.0), vec2(160.0, 13.0)), 4.0);
 
-    let more_rect = Rect::from_center_size(pos2(base_x + 19.0, btn_y), vec2(38.0, 38.0));
-    skeleton(ui, more_rect, 19.0);
+    // ── Button row (58 px spacer below hero, then play + subscribe pill) ──────
+    let (below, _) = ui.allocate_exact_size(vec2(w, 58.0), Sense::hover());
+    let btn_y = below.top() + 26.0;
+    // Play circle: 48 × 48 px
+    let play_center = pos2(base_x + 24.0, btn_y);
+    sk(ui, Rect::from_center_size(play_center, vec2(48.0, 48.0)), 24.0);
+    // Subscribe pill: typical width ~130 px, 34 px tall
+    sk(ui, Rect::from_min_size(pos2(play_center.x + 24.0 + 14.0, btn_y - 17.0), vec2(130.0, 34.0)), 17.0);
 
-    let play_center = pos2(base_x + 38.0 + 14.0 + 24.0, btn_y);
-    let play_rect = Rect::from_center_size(play_center, vec2(48.0, 48.0));
-    skeleton(ui, play_rect, 24.0);
+    // ── Content sections ──────────────────────────────────────────────────────
+    egui::Frame::new()
+        .inner_margin(egui::Margin { left: 28, right: 48, top: 0, bottom: 0 })
+        .show(ui, |ui| {
+            let cw = ui.available_width();
+            ui.add_space(26.0);
+            let is_wide = cw >= 780.0;
 
-    let name_w = (w * 0.45).clamp(220.0, 380.0);
-    let name_r = Rect::from_min_size(pos2(base_x, btn_y - 88.0), vec2(name_w, 44.0));
-    skeleton(ui, name_r, 8.0);
-
-    let stats_r = Rect::from_min_size(pos2(base_x, btn_y - 32.0), vec2(160.0, 14.0));
-    skeleton(ui, stats_r, 4.0);
-
-    egui::Frame::new().inner_margin(egui::Margin { left: 28, right: 48, top: 0, bottom: 0 }).show(ui, |ui| {
-        let cw = ui.available_width();
-        ui.add_space(26.0);
-        let is_wide = cw >= 780.0;
-        if is_wide {
-            let left_w = (cw * 0.30).clamp(280.0, 320.0);
-            let right_w = (cw - left_w - 32.0).max(360.0);
-            ui.horizontal_top(|ui| {
-                ui.allocate_ui_with_layout(vec2(left_w, 0.0), egui::Layout::top_down(egui::Align::LEFT), |ui| {
-                    let (head, _) = ui.allocate_exact_size(vec2(140.0, 22.0), Sense::hover());
-                    skeleton(ui, head, 4.0);
-                    ui.add_space(8.0);
-                    let (card_r, _) = ui.allocate_exact_size(vec2(left_w, left_w * 0.65), Sense::hover());
-                    skeleton(ui, card_r, 12.0);
+            // Latest Release card (left) + Top Songs (right) — mirrors the real layout.
+            if is_wide {
+                let left_w  = (cw * 0.30).clamp(280.0, 320.0);
+                let right_w = (cw - left_w - 32.0).max(360.0);
+                ui.horizontal_top(|ui| {
+                    ui.allocate_ui_with_layout(vec2(left_w, 0.0), egui::Layout::top_down(egui::Align::LEFT), |ui| {
+                        // "Latest Release" heading skeleton
+                        let (head, _) = ui.allocate_exact_size(vec2(140.0, 22.0), Sense::hover());
+                        sk_at(ui, head, 4.0, 0.0);
+                        ui.add_space(8.0);
+                        // Card image + sub-label
+                        let (card_r, _) = ui.allocate_exact_size(vec2(left_w, left_w * 0.65), Sense::hover());
+                        sk_at(ui, card_r, 12.0, 0.04);
+                        ui.add_space(8.0);
+                        let (sub, _) = ui.allocate_exact_size(vec2(left_w * 0.7, 13.0), Sense::hover());
+                        sk_at(ui, sub, 4.0, 0.08);
+                    });
+                    ui.add_space(24.0);
+                    ui.allocate_ui_with_layout(vec2(right_w, 0.0), egui::Layout::top_down(egui::Align::LEFT), |ui| {
+                        // "Top Songs" heading skeleton
+                        let (head, _) = ui.allocate_exact_size(vec2(120.0, 22.0), Sense::hover());
+                        sk_at(ui, head, 4.0, 0.0);
+                        ui.add_space(8.0);
+                        widgets::skeleton_rows(ui, now, 5);
+                    });
                 });
-                ui.add_space(24.0);
-                ui.allocate_ui_with_layout(vec2(right_w, 0.0), egui::Layout::top_down(egui::Align::LEFT), |ui| {
-                    let (head, _) = ui.allocate_exact_size(vec2(120.0, 22.0), Sense::hover());
-                    skeleton(ui, head, 4.0);
-                    ui.add_space(8.0);
-                    widgets::skeleton_rows(ui, now, 4);
-                });
-            });
-        } else {
-            let (head, _) = ui.allocate_exact_size(vec2(140.0, 22.0), Sense::hover());
-            skeleton(ui, head, 4.0);
-            ui.add_space(8.0);
-            widgets::skeleton_rows(ui, now, 4);
-        }
-
-        ui.add_space(26.0);
-        let (shelf_head, _) = ui.allocate_exact_size(vec2(160.0, 22.0), Sense::hover());
-        skeleton(ui, shelf_head, 4.0);
-        ui.add_space(14.0);
-        ui.horizontal(|ui| {
-            for _ in 0..6 {
-                let (r, _) = ui.allocate_exact_size(vec2(CARD, CARD + 50.0), Sense::hover());
-                let img_r = Rect::from_min_size(r.min, Vec2::splat(CARD));
-                skeleton(ui, img_r, 8.0);
-                let t_r = Rect::from_min_size(r.min + vec2(0.0, CARD + 10.0), vec2(CARD * 0.8, 12.0));
-                skeleton(ui, t_r, 4.0);
+            } else {
+                let (head, _) = ui.allocate_exact_size(vec2(140.0, 22.0), Sense::hover());
+                sk(ui, head, 4.0);
+                ui.add_space(8.0);
+                widgets::skeleton_rows(ui, now, 5);
             }
+
+            // Albums & singles shelf
+            ui.add_space(26.0);
+            let (albums_head, _) = ui.allocate_exact_size(vec2(170.0, 22.0), Sense::hover());
+            sk_at(ui, albums_head, 4.0, 0.0);
+            ui.add_space(14.0);
+            ui.horizontal(|ui| {
+                for i in 0..5 {
+                    let offset = i as f64 * 0.05;
+                    let (r, _) = ui.allocate_exact_size(vec2(CARD, CARD + 46.0), Sense::hover());
+                    sk_at(ui, Rect::from_min_size(r.min, Vec2::splat(CARD)), 8.0, offset);
+                    sk_at(ui, Rect::from_min_size(r.min + vec2(0.0, CARD + 10.0), vec2(CARD * 0.75, 12.0)), 4.0, offset + 0.02);
+                    sk_at(ui, Rect::from_min_size(r.min + vec2(0.0, CARD + 28.0), vec2(CARD * 0.45, 10.0)), 4.0, offset + 0.04);
+                }
+            });
+
+            // Featured on shelf
+            ui.add_space(26.0);
+            let (featured_head, _) = ui.allocate_exact_size(vec2(130.0, 22.0), Sense::hover());
+            sk_at(ui, featured_head, 4.0, 0.08);
+            ui.add_space(14.0);
+            ui.horizontal(|ui| {
+                for i in 0..4 {
+                    let offset = 0.08 + i as f64 * 0.05;
+                    let (r, _) = ui.allocate_exact_size(vec2(CARD, CARD + 46.0), Sense::hover());
+                    sk_at(ui, Rect::from_min_size(r.min, Vec2::splat(CARD)), 8.0, offset);
+                    sk_at(ui, Rect::from_min_size(r.min + vec2(0.0, CARD + 10.0), vec2(CARD * 0.75, 12.0)), 4.0, offset + 0.02);
+                }
+            });
+
+            // Fans also like shelf
+            ui.add_space(26.0);
+            let (fans_head, _) = ui.allocate_exact_size(vec2(180.0, 22.0), Sense::hover());
+            sk_at(ui, fans_head, 4.0, 0.16);
+            ui.add_space(14.0);
+            ui.horizontal(|ui| {
+                for i in 0..5 {
+                    let offset = 0.16 + i as f64 * 0.05;
+                    let (r, _) = ui.allocate_exact_size(vec2(CARD, CARD + 46.0), Sense::hover());
+                    sk_at(ui, Rect::from_min_size(r.min, Vec2::splat(CARD)), 8.0, offset);
+                    sk_at(ui, Rect::from_min_size(r.min + vec2(0.0, CARD + 10.0), vec2(CARD * 0.75, 12.0)), 4.0, offset + 0.02);
+                }
+            });
         });
-    });
     super::animate(ui.ctx());
 }
 
