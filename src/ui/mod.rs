@@ -2061,16 +2061,18 @@ impl eframe::App for App {
                             crate::glass::Corner::Circular(0.0)
                         };
                         let tint = theme::with_alpha(side_fill, if light { 0.24 } else { 0.28 });
-                        let style = crate::glass::Style::thick(corner, Some(tint), if light { 0.08 } else { 0.90 }, 1.0);
+                        let mut style = crate::glass::Style::thick(corner, Some(tint), if light { 0.08 } else { 0.90 }, 1.0);
+                        // Render frosted sidebar glass without a white specular border or divider line.
+                        style.material.rim = 0.0;
+                        style.material.rim_base = 0.0;
+                        style.material.inner_glow = 0.0;
+                        style.material.light_spill = 0.0;
                         crate::glass::paint(ui, egui::Id::unique("sidebar-liquid-glass"), ui.max_rect(), style);
                         egui::Frame::NONE.inner_margin(inner_side_margin).show(ui, |ui| shell::sidebar(self, ui));
                     } else {
                         shell::sidebar(self, ui);
                     }
                 });
-            if app_style.sidebar != SidebarStyle::Floating {
-                ui.painter().vline(side.response.rect.right(), side.response.rect.y_range(), egui::Stroke::new(1.0, theme::glass(if light { 0.06 } else { 0.07 })));
-            }
             self.scroll_panes.push(side.response.rect);
             let section = ui.available_rect_before_wrap();
             const DRAWER_W: f32 = 340.0;
