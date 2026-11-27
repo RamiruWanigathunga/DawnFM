@@ -1230,7 +1230,7 @@ pub fn track_row(ui: &mut Ui, t: &Track, o: &RowOpts, acts: &mut Vec<Action>) ->
     };
     let resp = named(ui.interact(hit_rect, base.id.with("play"), sense), &t.title).on_hover_cursor(cursor);
     let h = if base.contains_pointer() { 1.0 } else { 0.0 };
-    let highlighted = h > 0.0 || o.current || o.is_dragged || o.selected == Some(true);
+    let highlighted = o.current || o.is_dragged || o.selected == Some(true);
     if !highlighted {
         let divider = if o.plain_text {
             theme::with_alpha(if theme::light() { Color32::BLACK } else { Color32::WHITE }, 0.10)
@@ -1240,8 +1240,8 @@ pub fn track_row(ui: &mut Ui, t: &Track, o: &RowOpts, acts: &mut Vec<Action>) ->
         let line_right = if o.draggable { rect.right() - 12.0 } else { rect.right() - 18.0 };
         ui.painter().hline((rect.left() + 10.0)..=line_right, rect.bottom() - 0.5, egui::Stroke::new(1.0, divider));
     }
-    if h > 0.0 || o.current || o.is_dragged {
-        let a = if o.is_dragged { 0.12 } else if o.current { 0.07 + 0.05 * h } else { 0.07 * h };
+    if o.current || o.is_dragged {
+        let a = if o.is_dragged { 0.12 } else { 0.07 };
         ui.painter().rect_filled(rect, 8.0, theme::glass(a));
         if o.is_dragged {
             ui.painter().rect_stroke(rect, 8.0, egui::Stroke::new(1.5, theme::with_alpha(o.accent, 0.7)), egui::StrokeKind::Inside);
