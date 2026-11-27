@@ -451,7 +451,7 @@ pub fn sidebar(app: &mut App, ui: &mut Ui) {
                     let w = full_w - 54.0;
                     let fg = theme::label();
                     text_at(ui, pos2(rect.left() + 44.0, rect.center().y - 8.5), &c.title, theme::regular(13.0), fg, w);
-                    egui::Popup::context_menu(&resp).show(|ui| {
+                    widgets::context_menu(&resp, |ui| {
                         ui.set_min_width(170.0);
                         if widgets::menu_action(ui, None, &t!("hide_from_sidebar")) {
                             hide = Some(id.clone());
@@ -519,7 +519,13 @@ pub fn search_field(app: &mut App, ui: &mut Ui, width: f32) {
     let field = field.on_hover_cursor(egui::CursorIcon::Text);
     let focus = theme::anim_bool(ui.ctx(), "search-focus", app.search_focused, 0.2);
     let radius = 10.0;
-    if theme::light() {
+    if crate::renderer::active() == crate::renderer::Renderer::OpenGl {
+        crate::glass::paint(ui, egui::Id::unique("sidebar-search-glass"), rect, crate::glass::control(radius, theme::light(), focus * 0.65, 1.0));
+        if focus > 0.01 {
+            let stroke_color = theme::with_alpha(app.accent_color(), focus);
+            ui.painter().rect_stroke(rect, radius, egui::Stroke::new(1.5, stroke_color), egui::StrokeKind::Inside);
+        }
+    } else if theme::light() {
         ui.painter().rect_filled(rect, radius, theme::glass(0.08));
         if focus > 0.0 {
             let stroke_color = theme::with_alpha(app.accent_color(), focus);
@@ -1472,13 +1478,18 @@ pub fn queue_list(app: &mut App, ui: &mut Ui, salt: &str) {
                 } else {
                     egui::epaint::Shadow { offset: [0, 8], blur: 24, spread: 0, color: Color32::from_black_alpha(150) }
                 };
-                egui::Frame::new()
+                let fallback = egui::Frame::new()
                     .fill(theme::menu_fill())
                     .corner_radius(10)
                     .stroke(stroke)
-                    .shadow(shadow)
-                    .inner_margin(egui::Margin::symmetric(10, 8))
-                    .show(ui, |ui| {
+                    .shadow(shadow);
+                crate::glass::surface(
+                    ui,
+                    egui::Id::unique("queue-drag-preview-glass"),
+                    egui::Margin::symmetric(10, 8),
+                    crate::glass::panel(10.0, theme::light(), 1.0),
+                    fallback,
+                    |ui| {
                         let card_w = 230.0;
                         let card_h = 36.0;
                         let (rect, _) = ui.allocate_exact_size(vec2(card_w, card_h), Sense::hover());
@@ -1496,7 +1507,8 @@ pub fn queue_list(app: &mut App, ui: &mut Ui, salt: &str) {
                         for dy in [-3.5, 0.0, 3.5] {
                             ui.painter().line_segment([pos2(handle_x - 5.0, cy + dy), pos2(handle_x + 5.0, cy + dy)], handle_stroke);
                         }
-                    });
+                    },
+                );
             });
     }
 
@@ -1553,13 +1565,18 @@ pub fn zoom_badge(ctx: &egui::Context, now: f64) {
             } else {
                 egui::Stroke::new(0.5, Color32::from_white_alpha(32))
             };
-            egui::Frame::new()
+            let fallback = egui::Frame::new()
                 .fill(theme::menu_fill())
                 .corner_radius(6)
                 .stroke(stroke)
-                .inner_margin(egui::Margin::symmetric(10, 5))
-                .shadow(egui::epaint::Shadow { offset: [0, 2], blur: 8, spread: 0, color: shadow_color })
-                .show(ui, |ui| {
+                .shadow(egui::epaint::Shadow { offset: [0, 2], blur: 8, spread: 0, color: shadow_color });
+            crate::glass::surface(
+                ui,
+                egui::Id::unique("zoom-badge-glass"),
+                egui::Margin::symmetric(10, 5),
+                crate::glass::control(8.0, theme::light(), 0.0, 1.0),
+                fallback,
+                |ui| {
                     ui.set_min_width(44.0);
                     ui.horizontal(|ui| {
                         ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
@@ -1572,7 +1589,8 @@ pub fn zoom_badge(ctx: &egui::Context, now: f64) {
                             .wrap_mode(egui::TextWrapMode::Extend),
                         );
                     });
-                });
+                },
+            );
         });
     ctx.request_repaint();
 }

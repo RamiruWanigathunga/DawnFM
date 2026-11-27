@@ -261,12 +261,7 @@ pub fn pill(ui: &mut Ui, label: &str, glyph: Option<char>, primary: bool) -> Res
 
     // Liquid Glass capsule fill (no border)
     if !primary && crate::renderer::active() == crate::renderer::Renderer::OpenGl {
-        let tint = if light {
-            Color32::from_white_alpha((44.0 + 28.0 * h) as u8)
-        } else {
-            Color32::from_rgba_unmultiplied(34, 34, 40, (44.0 + 28.0 * h) as u8)
-        };
-        let style = crate::glass::Style::regular(crate::glass::Corner::Capsule, Some(tint), if light { 0.08 } else { 0.90 }, 1.0);
+        let style = crate::glass::control(crate::glass::Corner::Capsule, light, h, 1.0);
         crate::glass::paint(ui, resp.id.with("pill-blur"), r, style);
     } else {
         let shadow_alpha = if light { (25.0 + 10.0 * h) as u8 } else { (42.0 + 14.0 * h) as u8 };
@@ -309,11 +304,21 @@ pub fn pill_destructive(ui: &mut Ui, label: &str, glyph: Option<char>) -> Respon
     let r = rect.shrink(if resp.is_pointer_button_down_on() { 1.0 } else { 0.0 });
     let radius = r.height() / 2.0;
 
-    // Soft drop shadow
-    let shadow_alpha = if light { (25.0 + 10.0 * h) as u8 } else { (42.0 + 14.0 * h) as u8 };
-    ui.painter().rect_filled(r.translate(vec2(0.0, 1.5)), radius, Color32::from_black_alpha(shadow_alpha));
-
-    ui.painter().rect_filled(r, radius, fill);
+    if crate::renderer::active() == crate::renderer::Renderer::OpenGl {
+        let rest = crate::glass::control(crate::glass::Corner::Capsule, light, 0.0, 1.0);
+        let tint = theme::lerp_color(rest.tint.unwrap_or_default(), Color32::from_rgba_unmultiplied(0xD8, 0x24, 0x3B, 232), h);
+        let style = crate::glass::Style {
+            tint: Some(tint),
+            darkness: if light { rest.darkness + 0.35 * h } else { rest.darkness },
+            ..rest
+        };
+        crate::glass::paint(ui, resp.id.with("pill-destr-glass"), r, style);
+    } else {
+        // Soft drop shadow
+        let shadow_alpha = if light { (25.0 + 10.0 * h) as u8 } else { (42.0 + 14.0 * h) as u8 };
+        ui.painter().rect_filled(r.translate(vec2(0.0, 1.5)), radius, Color32::from_black_alpha(shadow_alpha));
+        ui.painter().rect_filled(r, radius, fill);
+    }
 
     let mut x = r.left() + 18.0;
     if let Some(g) = glyph {
@@ -335,32 +340,82 @@ pub fn chip(ui: &mut Ui, label: &str, selected: bool) -> Response {
     let light = theme::light();
     let accent = ui.ctx().data(|d| d.get_temp::<Color32>(egui::Id::unique("accent"))).unwrap_or(theme::BLUE);
 
-    // Soft drop shadow (subtle accent glow when selected)
-    let shadow_alpha = if light { 20 } else { 38 };
-    let shadow_color = if s > 0.01 {
-        theme::lerp_color(Color32::from_black_alpha(shadow_alpha), theme::with_alpha(accent, if light { 0.18 } else { 0.25 }), s)
-    } else {
-        Color32::from_black_alpha(shadow_alpha)
-    };
-    ui.painter().rect_filled(rect.translate(vec2(0.0, 1.2)), radius, shadow_color);
-
-    let (fill, fg) = if light {
+    let (fill, on_fill, fg) = if light {
         let off_fill = theme::lerp_color(Color32::from_black_alpha(12), Color32::from_black_alpha(22), h);
         let on_fill = if h > 0.0 { theme::lerp_color(accent, Color32::BLACK, 0.08) } else { accent };
         let fill = theme::lerp_color(off_fill, on_fill, s);
         let text_c = theme::lerp_color(theme::text(), Color32::WHITE, s);
-        (fill, text_c)
+        (fill, on_fill, text_c)
     } else {
         let off_fill = theme::glass(0.11 + 0.08 * h);
         let on_fill = if h > 0.0 { theme::lerp_color(accent, Color32::WHITE, 0.12) } else { accent };
         let fill = theme::lerp_color(off_fill, on_fill, s);
         let text_c = theme::lerp_color(Color32::from_white_alpha(215), Color32::WHITE, s.max(h * 0.5));
-        (fill, text_c)
+        (fill, on_fill, text_c)
     };
 
-    ui.painter().rect_filled(rect, radius, fill);
+    if crate::renderer::active() == crate::renderer::Renderer::OpenGl {
+        if s < 0.99 {
+            crate::glass::paint(
+                ui,
+                resp.id.with("chip-glass"),
+                rect,
+                crate::glass::control(crate::glass::Corner::Capsule, light, h, 1.0 - s),
+            );
+        }
+        if s > 0.01 {
+            ui.painter().rect_filled(
+                rect.translate(vec2(0.0, 1.2)),
+                radius,
+                theme::with_alpha(accent, if light { 0.18 * s } else { 0.25 * s }),
+            );
+            ui.painter().rect_filled(rect, radius, theme::with_alpha(on_fill, s));
+        }
+    } else {
+        // Soft drop shadow (subtle accent glow when selected)
+        let shadow_alpha = if light { 20 } else { 38 };
+        let shadow_color = if s > 0.01 {
+            theme::lerp_color(Color32::from_black_alpha(shadow_alpha), theme::with_alpha(accent, if light { 0.18 } else { 0.25 }), s)
+        } else {
+            Color32::from_black_alpha(shadow_alpha)
+        };
+        ui.painter().rect_filled(rect.translate(vec2(0.0, 1.2)), radius, shadow_color);
+        ui.painter().rect_filled(rect, radius, fill);
+    }
     ui.painter().galley(rect.center() - text.size() / 2.0, text, fg);
     resp
+}
+
+/// Show a menu popup anchored to `anchor` with Liquid Glass on OpenGL.
+pub fn popup_menu(anchor: &Response, close: Option<egui::PopupCloseBehavior>, add_contents: impl FnOnce(&mut Ui)) {
+    let mut p = egui::Popup::menu(anchor);
+    if let Some(c) = close {
+        p = p.close_behavior(c);
+    }
+    show_glass_popup(p, add_contents);
+}
+
+/// Show a right-click context menu anchored to `anchor` with Liquid Glass on OpenGL.
+pub fn context_menu(anchor: &Response, add_contents: impl FnOnce(&mut Ui)) {
+    show_glass_popup(egui::Popup::context_menu(anchor), add_contents);
+}
+
+fn show_glass_popup(popup: egui::Popup<'_>, add_contents: impl FnOnce(&mut Ui)) {
+    if crate::renderer::active() == crate::renderer::Renderer::OpenGl {
+        let light = theme::light();
+        popup.frame(egui::Frame::NONE).show(|ui| {
+            crate::glass::surface(
+                ui,
+                ui.scope_id().with("popup-glass"),
+                egui::Margin::symmetric(6, 6),
+                crate::glass::panel(12.0, light, 1.0),
+                egui::Frame::NONE,
+                add_contents,
+            );
+        });
+    } else {
+        popup.show(add_contents);
+    }
 }
 
 /// The size to fetch an image at for `px` pixels: rounded up to a few fixed steps, so
@@ -719,7 +774,7 @@ pub fn card(ui: &mut Ui, c: &Card, width: f32, liked: bool, acts: &mut Vec<Actio
         }
     }
     // Right-click anywhere on the tile opens its menu.
-    egui::Popup::context_menu(&resp).show(|ui| card_menu_contents(ui, c, liked, acts));
+    context_menu(&resp, |ui| card_menu_contents(ui, c, liked, acts));
 
     if play_hit {
         match &c.target {
@@ -1226,7 +1281,7 @@ pub fn track_row(ui: &mut Ui, t: &Track, o: &RowOpts, acts: &mut Vec<Action>) ->
                 ui.painter().line_segment([pos2(handle_x - 6.0, cy + dy), pos2(handle_x + 6.0, cy + dy)], stroke);
             }
         }
-        egui::Popup::context_menu(&resp).show(|ui| song_menu(ui, t, o.liked, o.remove, o.remove_queue, acts));
+        context_menu(&resp, |ui| song_menu(ui, t, o.liked, o.remove, o.remove_queue, acts));
         return resp;
     }
     // Other rows: title + artists, then album, then plays when there's room.
@@ -1281,7 +1336,7 @@ pub fn track_row(ui: &mut Ui, t: &Track, o: &RowOpts, acts: &mut Vec<Action>) ->
         }
     }
     // Right-click anywhere on the row opens its menu.
-    egui::Popup::context_menu(&resp).show(|ui| song_menu(ui, t, o.liked, o.remove, o.remove_queue, acts));
+    context_menu(&resp, |ui| song_menu(ui, t, o.liked, o.remove, o.remove_queue, acts));
     resp
 }
 

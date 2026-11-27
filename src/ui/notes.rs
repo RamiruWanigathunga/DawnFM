@@ -234,6 +234,14 @@ pub(super) fn surface() -> egui::Frame {
         .shadow(egui::epaint::Shadow { offset: [0, 24], blur: 70, spread: 0, color: theme::shade(0.55) })
 }
 
+pub(super) fn surface_frame() -> egui::Frame {
+    if crate::renderer::active() == crate::renderer::Renderer::OpenGl {
+        egui::Frame::NONE
+    } else {
+        surface()
+    }
+}
+
 fn hline(ui: &mut Ui) {
     let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 1.0), egui::Sense::hover());
     ui.painter().rect_filled(r, 0.0, rule_color());
@@ -255,59 +263,68 @@ pub fn dialog(app: &mut App, ctx: &egui::Context) {
     let body = app.updater.as_ref().and_then(|u| u.notes(&d.version));
     let (mut close, mut restart) = (false, false);
     let accent = app.accent_color();
-    let modal = egui::Modal::new(egui::Id::unique("release-notes")).frame(surface()).backdrop_color(theme::shade(0.55)).show(ctx, |ui| {
+    let modal = egui::Modal::new(egui::Id::unique("release-notes")).frame(surface_frame()).backdrop_color(theme::shade(0.55)).show(ctx, |ui| {
         let w = 540.0_f32.min(ctx.content_rect().width() - 48.0);
         ui.set_width(w);
         ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
-        egui::Frame::new().inner_margin(Margin { left: 28, right: 28, top: 24, bottom: 18 }).show(ui, |ui| {
-            ui.horizontal(|ui| {
-                widgets::icon_at(ui, ui.cursor().min + vec2(8.0, 8.0), icon::SPARKLES, 15.0, accent);
-                ui.add_space(22.0);
-                let label = if d.ready { "UPDATE READY" } else { "WHAT'S NEW" };
-                let mut j = LayoutJob::default();
-                j.append(label, 0.0, TextFormat { font_id: theme::semibold(12.0), color: theme::text_dim(), extra_letter_spacing: 1.0, ..Default::default() });
-                ui.label(j);
-            });
-            ui.add_space(8.0);
-            ui.label(egui::RichText::new(format!("Dawn FM {}", d.version)).font(theme::bold(26.0)).color(theme::text()));
-            ui.add_space(6.0);
-            let sub = if d.ready {
-                format!("You're on {}. It's downloaded and installs when you close the app.", crate::update::current_version())
-            } else {
-                "The version you're running.".to_owned()
-            };
-            ui.label(egui::RichText::new(sub).font(theme::regular(13.5)).color(theme::text_dim()));
-        });
-        hline(ui);
-        let max_h = (ctx.content_rect().height() - 330.0).clamp(160.0, 460.0);
-        egui::ScrollArea::vertical().max_height(max_h).auto_shrink([false, true]).show(ui, |ui| {
-            egui::Frame::new().inner_margin(Margin { left: 28, right: 28, top: 18, bottom: 18 }).show(ui, |ui| {
-                match &body {
-                    Some(md) => show(ui, &parse(md), 14.0),
-                    None => {
-                        ui.horizontal(|ui| {
-                            ui.spinner();
-                            ui.add_space(8.0);
-                            ui.label(egui::RichText::new("Loading release notes…").color(theme::text_dim()));
-                        });
-                    }
-                }
-                ui.add_space(8.0);
-                github_link(ui);
-            });
-        });
-        hline(ui);
-        egui::Frame::new().inner_margin(Margin { left: 28, right: 28, top: 16, bottom: 16 }).show(ui, |ui| {
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                ui.spacing_mut().item_spacing.x = 10.0;
-                if d.ready {
-                    restart = widgets::pill(ui, "Restart to update", None, true).clicked();
-                    close = widgets::pill(ui, "Later", None, false).clicked();
-                } else {
-                    close = widgets::pill(ui, "Close", None, true).clicked();
-                }
-            });
-        });
+        crate::glass::surface(
+            ui,
+            egui::Id::unique("release-notes-glass"),
+            Margin::ZERO,
+            crate::glass::panel(16.0, theme::light(), 1.0),
+            egui::Frame::NONE,
+            |ui| {
+                egui::Frame::new().inner_margin(Margin { left: 28, right: 28, top: 24, bottom: 18 }).show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        widgets::icon_at(ui, ui.cursor().min + vec2(8.0, 8.0), icon::SPARKLES, 15.0, accent);
+                        ui.add_space(22.0);
+                        let label = if d.ready { "UPDATE READY" } else { "WHAT'S NEW" };
+                        let mut j = LayoutJob::default();
+                        j.append(label, 0.0, TextFormat { font_id: theme::semibold(12.0), color: theme::text_dim(), extra_letter_spacing: 1.0, ..Default::default() });
+                        ui.label(j);
+                    });
+                    ui.add_space(8.0);
+                    ui.label(egui::RichText::new(format!("Dawn FM {}", d.version)).font(theme::bold(26.0)).color(theme::text()));
+                    ui.add_space(6.0);
+                    let sub = if d.ready {
+                        format!("You're on {}. It's downloaded and installs when you close the app.", crate::update::current_version())
+                    } else {
+                        "The version you're running.".to_owned()
+                    };
+                    ui.label(egui::RichText::new(sub).font(theme::regular(13.5)).color(theme::text_dim()));
+                });
+                hline(ui);
+                let max_h = (ctx.content_rect().height() - 330.0).clamp(160.0, 460.0);
+                egui::ScrollArea::vertical().max_height(max_h).auto_shrink([false, true]).show(ui, |ui| {
+                    egui::Frame::new().inner_margin(Margin { left: 28, right: 28, top: 18, bottom: 18 }).show(ui, |ui| {
+                        match &body {
+                            Some(md) => show(ui, &parse(md), 14.0),
+                            None => {
+                                ui.horizontal(|ui| {
+                                    ui.spinner();
+                                    ui.add_space(8.0);
+                                    ui.label(egui::RichText::new("Loading release notes…").color(theme::text_dim()));
+                                });
+                            }
+                        }
+                        ui.add_space(8.0);
+                        github_link(ui);
+                    });
+                });
+                hline(ui);
+                egui::Frame::new().inner_margin(Margin { left: 28, right: 28, top: 16, bottom: 16 }).show(ui, |ui| {
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.spacing_mut().item_spacing.x = 10.0;
+                        if d.ready {
+                            restart = widgets::pill(ui, "Restart to update", None, true).clicked();
+                            close = widgets::pill(ui, "Later", None, false).clicked();
+                        } else {
+                            close = widgets::pill(ui, "Close", None, true).clicked();
+                        }
+                    });
+                });
+            },
+        );
     });
     if close || modal.should_close() {
         app.notes_dialog = None;
@@ -337,45 +354,52 @@ pub fn card(app: &mut App, ctx: &egui::Context) {
         .fixed_pos(at + vec2(0.0, 16.0 * (1.0 - t)))
         .show(ctx, |ui| {
             ui.multiply_opacity(t);
-            surface().corner_radius(14).inner_margin(Margin { left: 18, right: 12, top: 14, bottom: 16 }).show(ui, |ui| {
-                ui.set_width(330.0);
-                ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
-                ui.horizontal_top(|ui| {
-                    ui.vertical(|ui| {
-                        ui.add_space(4.0);
-                        ui.label(egui::RichText::new(format!("Updated to {version}")).font(theme::semibold(15.0)).color(theme::text()));
-                        ui.add_space(3.0);
-                        ui.label(egui::RichText::new("Here's what changed.").font(theme::regular(13.0)).color(theme::text_dim()));
+            crate::glass::surface(
+                ui,
+                egui::Id::unique("whats-new-glass"),
+                Margin { left: 18, right: 12, top: 14, bottom: 16 },
+                crate::glass::panel(14.0, theme::light(), 1.0),
+                surface().corner_radius(14),
+                |ui| {
+                    ui.set_width(330.0);
+                    ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
+                    ui.horizontal_top(|ui| {
+                        ui.vertical(|ui| {
+                            ui.add_space(4.0);
+                            ui.label(egui::RichText::new(format!("Updated to {version}")).font(theme::semibold(15.0)).color(theme::text()));
+                            ui.add_space(3.0);
+                            ui.label(egui::RichText::new("Here's what changed.").font(theme::regular(13.0)).color(theme::text_dim()));
+                        });
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
+                            dismiss = widgets::icon_button(ui, icon::X, 16.0, "Dismiss", false).clicked();
+                        });
                     });
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
-                        dismiss = widgets::icon_button(ui, icon::X, 16.0, "Dismiss", false).clicked();
-                    });
-                });
-                ui.add_space(10.0);
-                let mut lines: Vec<String> = items.clone();
-                if more > 0 {
-                    lines.push(if more == 1 { "+ 1 more change".to_owned() } else { format!("+ {more} more changes") });
-                }
-                for (i, l) in lines.iter().enumerate() {
-                    let faint = more > 0 && i == lines.len() - 1;
-                    let color = if faint { theme::text_dim() } else { body_color() };
-                    let mut j = LayoutJob::single_section(l.clone(), TextFormat { font_id: theme::regular(13.5), color, ..Default::default() });
-                    j.wrap.max_width = 300.0;
-                    j.wrap.max_rows = 1;
-                    let g = ui.fonts_mut(|f| f.layout_job(j));
-                    let (rect, _) = ui.allocate_exact_size(vec2(318.0, 22.0), egui::Sense::hover());
-                    if !faint {
-                        ui.painter().circle_filled(egui::pos2(rect.left() + 5.0, rect.center().y), 2.2, color);
+                    ui.add_space(10.0);
+                    let mut lines: Vec<String> = items.clone();
+                    if more > 0 {
+                        lines.push(if more == 1 { "+ 1 more change".to_owned() } else { format!("+ {more} more changes") });
                     }
-                    ui.painter().galley(egui::pos2(rect.left() + 16.0, rect.center().y - g.size().y / 2.0), g, color);
-                }
-                ui.add_space(12.0);
-                ui.horizontal(|ui| {
-                    ui.spacing_mut().item_spacing.x = 8.0;
-                    all = widgets::pill(ui, "See all notes", None, true).clicked();
-                    dismiss |= widgets::pill(ui, "Got it", None, false).clicked();
-                });
-            });
+                    for (i, l) in lines.iter().enumerate() {
+                        let faint = more > 0 && i == lines.len() - 1;
+                        let color = if faint { theme::text_dim() } else { body_color() };
+                        let mut j = LayoutJob::single_section(l.clone(), TextFormat { font_id: theme::regular(13.5), color, ..Default::default() });
+                        j.wrap.max_width = 300.0;
+                        j.wrap.max_rows = 1;
+                        let g = ui.fonts_mut(|f| f.layout_job(j));
+                        let (rect, _) = ui.allocate_exact_size(vec2(318.0, 22.0), egui::Sense::hover());
+                        if !faint {
+                            ui.painter().circle_filled(egui::pos2(rect.left() + 5.0, rect.center().y), 2.2, color);
+                        }
+                        ui.painter().galley(egui::pos2(rect.left() + 16.0, rect.center().y - g.size().y / 2.0), g, color);
+                    }
+                    ui.add_space(12.0);
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = 8.0;
+                        all = widgets::pill(ui, "See all notes", None, true).clicked();
+                        dismiss |= widgets::pill(ui, "Got it", None, false).clicked();
+                    });
+                },
+            );
         });
     if all {
         app.notes_dialog = Some(NotesDialog { version: version.clone(), ready: false });

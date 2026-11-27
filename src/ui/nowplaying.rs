@@ -1174,7 +1174,7 @@ pub(crate) fn options_menu(
     for dx in [-5.0, 0.0, 5.0] {
         ui.painter().circle_filled(rect.center() + vec2(dx, 0.0), 1.8, dot_col);
     }
-    egui::Popup::menu(&resp).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui| {
+    widgets::popup_menu(&resp, Some(egui::PopupCloseBehavior::CloseOnClickOutside), |ui| {
         ui.set_width(240.0);
         ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
         ui.add_space(2.0);
@@ -1394,7 +1394,7 @@ pub(super) fn audio_badge(app: &App, ui: &mut Ui, at: egui::Pos2, small: bool) -
         x += icon_w + 5.0;
     }
     ui.painter().galley(pos2(x, at.y + (h - g.size().y) / 2.0), g, ink);
-    egui::Popup::menu(&resp).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui| audio_info_menu(ui, info));
+    widgets::popup_menu(&resp, Some(egui::PopupCloseBehavior::CloseOnClickOutside), |ui| audio_info_menu(ui, info));
     w
 }
 
@@ -1415,7 +1415,7 @@ pub(super) fn audio_badge_icon(app: &App, ui: &mut Ui, center: egui::Pos2, small
     let accent = app.accent_color();
     let mark = theme::with_alpha(accent, 0.85 + 0.15 * hover);
     paint_quality_icon(ui, center, gh, info.atmos, mark);
-    egui::Popup::menu(&resp).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui| audio_info_menu(ui, info));
+    widgets::popup_menu(&resp, Some(egui::PopupCloseBehavior::CloseOnClickOutside), |ui| audio_info_menu(ui, info));
 }
 
 /// What the stream is: its source, format and the numbers under those.

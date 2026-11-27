@@ -1461,8 +1461,11 @@ pub fn sidebar_card(app: &mut App, ui: &mut Ui, icon_x: f32) {
         resp = resp.on_hover_text("Some songs need a look before they're added");
     }
     let h = theme::anim_bool(ui.ctx(), resp.id.with("h"), resp.hovered(), 0.15);
-    ui.painter().rect_filled(rect, 12.0, theme::glass(0.06 + 0.04 * h));
-    ui.painter().rect_stroke(rect, 12.0, egui::Stroke::new(1.0, theme::glass(0.10)), egui::StrokeKind::Inside);
+    if crate::renderer::active() == crate::renderer::Renderer::OpenGl {
+        crate::glass::paint(ui, egui::Id::unique("transfer-card-glass"), rect, crate::glass::control(12.0, theme::light(), h, 1.0));
+    } else {
+        ui.painter().rect_filled(rect, 12.0, theme::glass(0.06 + 0.04 * h));
+    }
     let b = Rect::from_center_size(pos2(rect.left() + icon_x, rect.top() + 22.0), vec2(20.0, 20.0));
     badge(ui, b);
     let st = ui.painter().text(pos2(rect.right() - 12.0, rect.top() + 22.0), Align2::RIGHT_CENTER, &status, theme::regular(12.0), if status == "Review" { accent } else { theme::text_dim() });

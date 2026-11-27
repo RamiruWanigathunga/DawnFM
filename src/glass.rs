@@ -178,26 +178,75 @@ impl Style {
     }
 }
 
+/// Liquid Glass preset for interactive controls (pills, chips, search boxes, buttons).
+pub fn control(corner: impl Into<Corner>, light: bool, hover: f32, alpha: f32) -> Style {
+    let h = hover.clamp(0.0, 1.0);
+    let tint = if light {
+        Color32::from_white_alpha((44.0 + 28.0 * h) as u8)
+    } else {
+        Color32::from_rgba_unmultiplied(34, 34, 40, (44.0 + 28.0 * h) as u8)
+    };
+    Style::regular(corner, Some(tint), if light { 0.08 } else { 0.90 }, alpha)
+}
+
+/// Liquid Glass preset for floating surfaces (menus, modals, drag previews, floating bars).
+pub fn panel(corner: impl Into<Corner>, light: bool, alpha: f32) -> Style {
+    let tint = if light {
+        Color32::from_rgba_unmultiplied(245, 245, 248, 128)
+    } else {
+        Color32::from_rgba_unmultiplied(26, 26, 32, 132)
+    };
+    Style::thick(corner, Some(tint), if light { 0.08 } else { 0.90 }, alpha)
+}
+
 /// Paint real Liquid Glass at `rect` into `ui`'s painter.
 ///
 /// Under OpenGL (`glow`), captures the live framebuffer behind `rect`, generates a
 /// 6-level tent-filtered pyramid, and runs the optical refraction + dispersion +
 /// rim shader. Under non-OpenGL renderers, falls back to a clean soft frosted fill.
 pub fn paint(ui: &egui::Ui, id: egui::Id, rect: Rect, style: Style) {
+    ui.painter().add(shape(ui, id, rect, style));
+}
+
+/// Replace a previously reserved [`egui::layers::ShapeIdx`] with Liquid Glass for `rect`.
+pub fn paint_at(ui: &egui::Ui, slot: egui::layers::ShapeIdx, id: egui::Id, rect: Rect, style: Style) {
+    ui.painter().set(slot, shape(ui, id, rect, style));
+}
+
+/// Paint Liquid Glass behind dynamic `add_contents` layout (or `fallback` on non-OpenGL).
+pub fn surface<R>(
+    ui: &mut egui::Ui,
+    id: egui::Id,
+    margin: impl Into<egui::Margin>,
+    style: Style,
+    fallback: egui::Frame,
+    add_contents: impl FnOnce(&mut egui::Ui) -> R,
+) -> egui::InnerResponse<R> {
+    if crate::renderer::active() == crate::renderer::Renderer::OpenGl {
+        let slot = ui.painter().add(egui::Shape::Noop);
+        let inner = egui::Frame::NONE.inner_margin(margin).show(ui, add_contents);
+        paint_at(ui, slot, id, inner.response.rect, style);
+        inner
+    } else {
+        fallback.inner_margin(margin).show(ui, add_contents)
+    }
+}
+
+/// Build an [`egui::Shape`] rendering Liquid Glass at `rect` (or fallback/Noop).
+pub fn shape(ui: &egui::Ui, id: egui::Id, rect: Rect, style: Style) -> egui::Shape {
     let presence = (ui.opacity() * style.alpha).clamp(0.0, 1.0);
     if presence <= 0.001 || !rect.is_positive() {
-        return;
+        return egui::Shape::Noop;
     }
     if crate::renderer::active() != crate::renderer::Renderer::OpenGl {
-        paint_fallback(ui.painter(), rect, style, presence);
-        return;
+        return fallback_shape(rect, style, presence);
     }
 
     let m = style.material;
     let pad_pt = (m.shadow_radius * 1.4 + m.shadow_y.abs() + 4.0).max(16.0);
     let draw_rect = rect.expand(pad_pt).intersect(ui.clip_rect());
     if !draw_rect.is_positive() {
-        return;
+        return egui::Shape::Noop;
     }
 
     let prog_cell: Arc<Mutex<GlPrograms>> = ui.ctx().data_mut(|d| {
@@ -408,21 +457,21 @@ pub fn paint(ui: &egui::Ui, id: egui::Id, rect: Rect, style: Style) {
         }
     });
 
-    ui.painter().add(egui::PaintCallback { rect: draw_rect, callback: Arc::new(cb) });
+    egui::PaintCallback { rect: draw_rect, callback: Arc::new(cb) }.into()
 }
 
-fn paint_fallback(painter: &egui::Painter, rect: Rect, style: Style, presence: f32) {
+fn fallback_shape(rect: Rect, style: Style, presence: f32) -> egui::Shape {
     let size = rect.size().max(Vec2::splat(1.0));
     let (rad, _) = style.corner.resolve(size);
     let r = rad.x.min(rad.y).clamp(0.0, 255.0) as u8;
     let base = if let Some(t) = style.tint {
-        t
+        t.gamma_multiply(presence)
     } else if style.darkness < 0.5 {
         Color32::from_white_alpha((175.0 * presence) as u8)
     } else {
         Color32::from_rgba_unmultiplied(28, 28, 32, (175.0 * presence) as u8)
     };
-    painter.rect_filled(rect, r, base);
+    egui::Shape::rect_filled(rect, r, base)
 }
 
 unsafe fn bound_tex_on(gl: &glow::Context, unit: u32) -> Option<glow::NativeTexture> {

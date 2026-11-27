@@ -642,7 +642,13 @@ pub fn strip(app: &mut App, ui: &mut Ui, now: f64) {
             // A liked song keeps a soft disc behind its star, as the player bar's does.
             let disc = (0.17 * pop + 0.10 * lh).min(0.30);
             if disc > 0.0 {
-                ui.painter().circle_filled(lpos, 16.0, theme::glass(disc));
+                if crate::renderer::active() == crate::renderer::Renderer::OpenGl {
+                    let light = app.bg_is_light();
+                    let style = crate::glass::Style::clear(crate::glass::Corner::Capsule, None, if light { 0.10 } else { 0.88 }, (disc * 3.0).clamp(0.0, 1.0));
+                    crate::glass::paint(ui, egui::Id::unique("mini-like-glass"), Rect::from_center_size(lpos, Vec2::splat(32.0)), style);
+                } else {
+                    ui.painter().circle_filled(lpos, 16.0, theme::glass(disc));
+                }
             }
             let size = 18.0 * (1.0 + 0.25 * (pop * std::f32::consts::PI).sin());
             let tint = theme::lerp_color(theme::lerp_color(theme::text_dim(), theme::text(), lh), app.accent_color(), pop);
@@ -676,7 +682,15 @@ pub fn strip(app: &mut App, ui: &mut Ui, now: f64) {
     let pct = format!("Volume {}%", (vol * 100.0).round());
     let vresp = named(vresp, "Mute").on_hover_text(pct).on_hover_cursor(egui::CursorIcon::PointingHand);
     let vh = theme::anim_bool(&ctx, vresp.id.with("h"), vresp.hovered(), 0.15);
-    ui.painter().circle_filled(vpos, 16.0, theme::glass(0.1 * vh));
+    if vh > 0.0 {
+        if crate::renderer::active() == crate::renderer::Renderer::OpenGl {
+            let light = app.bg_is_light();
+            let style = crate::glass::Style::clear(crate::glass::Corner::Capsule, None, if light { 0.10 } else { 0.88 }, vh);
+            crate::glass::paint(ui, egui::Id::unique("mini-vol-glass"), Rect::from_center_size(vpos, Vec2::splat(32.0)), style);
+        } else {
+            ui.painter().circle_filled(vpos, 16.0, theme::glass(0.1 * vh));
+        }
+    }
     let vglyph = glyphs::VOLUME[glyphs::volume_step(vol)];
     glyphs::draw(ui, vpos, 18.0, vglyph, theme::lerp_color(theme::text_dim(), theme::text(), vh));
     if vresp.hovered() {

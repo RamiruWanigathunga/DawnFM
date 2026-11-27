@@ -641,7 +641,7 @@ pub fn share_more_pill(
         acts.push(Action::Share(target.clone()));
     }
 
-    egui::Popup::menu(&more_resp).show(|ui| {
+    widgets::popup_menu(&more_resp, None, |ui| {
         ui.set_width(200.0);
         ui.add_space(2.0);
         menu(ui, acts, target);
@@ -656,8 +656,11 @@ pub fn metadata_badge(ui: &mut Ui, glyph: Option<char>, label: &str) {
     let badge_w = galley.size().x + icon_w + 18.0;
     let (rect, _) = ui.allocate_exact_size(vec2(badge_w, 24.0), Sense::hover());
     let r = 12.0;
-    ui.painter().rect_filled(rect, r, theme::glass(0.12));
-    ui.painter().rect_stroke(rect, r, egui::Stroke::new(1.0, theme::glass(0.16)), egui::StrokeKind::Inside);
+    if crate::renderer::active() == crate::renderer::Renderer::OpenGl {
+        crate::glass::paint(ui, ui.scope_id().with(("meta-badge", label)), rect, crate::glass::control(crate::glass::Corner::Capsule, theme::light(), 0.0, 1.0));
+    } else {
+        ui.painter().rect_filled(rect, r, theme::glass(0.12));
+    }
     let mut x = rect.left() + 9.0;
     let cy = rect.center().y;
     if let Some(g) = glyph {
@@ -878,12 +881,17 @@ fn selection_bar(app: &mut App, ctx: &egui::Context, page: &Page, area: Rect) {
         .pivot(Align2::CENTER_BOTTOM)
         .fixed_pos(pos2(area.center().x, area.bottom() - 18.0))
         .show(ctx, |ui| {
-            egui::Frame::new()
+            let fallback = egui::Frame::new()
                 .fill(theme::menu_fill())
                 .corner_radius(14)
-                .inner_margin(egui::Margin { left: 20, right: 10, top: 8, bottom: 8 })
-                .shadow(egui::epaint::Shadow { offset: [0, 8], blur: 24, spread: 0, color: theme::shade(0.45) })
-                .show(ui, |ui| {
+                .shadow(egui::epaint::Shadow { offset: [0, 8], blur: 24, spread: 0, color: theme::shade(0.45) });
+            crate::glass::surface(
+                ui,
+                egui::Id::unique("selection-bar-glass"),
+                egui::Margin { left: 20, right: 10, top: 8, bottom: 8 },
+                crate::glass::panel(14.0, theme::light(), 1.0),
+                fallback,
+                |ui| {
                     ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
                         ui.spacing_mut().item_spacing.x = 8.0;
                         let count = if picked.is_empty() { "Select songs".to_owned() } else { format!("{} selected", picked.len()) };
@@ -906,7 +914,8 @@ fn selection_bar(app: &mut App, ctx: &egui::Context, page: &Page, area: Rect) {
                         toggle_all = button(ui, if all { "Select none" } else { "Select all" }, icon::LIST_CHECKS, false).clicked();
                         done |= widgets::icon_button(ui, icon::X, 18.0, "Done selecting", false).clicked();
                     });
-                });
+                },
+            );
         });
     if toggle_all {
         let page = page.clone();
@@ -1226,7 +1235,7 @@ fn recent_searches(ui: &mut Ui, app: &mut App) {
         let x = art.right() + 14.0;
         widgets::text_at(ui, pos2(x, rect.center().y - 17.0), &r.title, theme::semibold(15.0), theme::text(), rect.right() - x - 12.0);
         widgets::text_at(ui, pos2(x, rect.center().y + 4.0), &r.subtitle, theme::regular(13.0), theme::text_dim(), rect.right() - x - 12.0);
-        egui::Popup::context_menu(&resp).show(|ui| {
+        widgets::context_menu(&resp, |ui| {
             ui.set_min_width(190.0);
             if widgets::menu_action(ui, None, "Remove from Recently Searched") {
                 remove = Some(i);
@@ -1435,11 +1444,14 @@ pub fn collection(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
                     // 1. Search pill on the far right (first in right_to_left)
                     let search_w = 190.0f32.min(ui.available_width() - 80.0).max(120.0);
                     let (search_rect, _) = ui.allocate_exact_size(vec2(search_w, 34.0), Sense::hover());
-                    let search_shadow = if light { 18 } else { 35 };
-                    ui.painter().rect_filled(search_rect.translate(vec2(0.0, 1.0)), 17.0, Color32::from_black_alpha(search_shadow));
-                    let search_fill = if light { Color32::from_black_alpha(15) } else { theme::glass(0.12) };
-                    ui.painter().rect_filled(search_rect, 17.0, search_fill);
-                    ui.painter().rect_stroke(search_rect, 17.0, egui::Stroke::new(1.0, if light { Color32::from_black_alpha(25) } else { theme::glass(0.16) }), egui::StrokeKind::Inside);
+                    if crate::renderer::active() == crate::renderer::Renderer::OpenGl {
+                        crate::glass::paint(ui, ui.scope_id().with("col-search-glass"), search_rect, crate::glass::control(crate::glass::Corner::Capsule, light, 0.0, 1.0));
+                    } else {
+                        let search_shadow = if light { 18 } else { 35 };
+                        ui.painter().rect_filled(search_rect.translate(vec2(0.0, 1.0)), 17.0, Color32::from_black_alpha(search_shadow));
+                        let search_fill = if light { Color32::from_black_alpha(15) } else { theme::glass(0.12) };
+                        ui.painter().rect_filled(search_rect, 17.0, search_fill);
+                    }
 
                     widgets::icon_at(ui, pos2(search_rect.left() + 15.0, search_rect.center().y), icon::SEARCH, 13.5, theme::text_dim());
 
@@ -1669,7 +1681,11 @@ fn artist_top_songs_section(ui: &mut Ui, a: &crate::backend::ArtistPage, acts: &
                 let (next_r, next_resp) = ui.allocate_exact_size(Vec2::splat(28.0), Sense::click());
                 let next_resp = named(next_resp, "Next songs").on_hover_cursor(egui::CursorIcon::PointingHand);
                 let nh = if next_resp.hovered() { 1.0 } else { 0.0 };
-                ui.painter().rect_filled(next_r, 6.0, theme::glass(0.12 + 0.08 * nh));
+                if crate::renderer::active() == crate::renderer::Renderer::OpenGl {
+                    crate::glass::paint(ui, next_resp.id.with("glass"), next_r, crate::glass::control(6.0, theme::light(), nh, 1.0));
+                } else {
+                    ui.painter().rect_filled(next_r, 6.0, theme::glass(0.12 + 0.08 * nh));
+                }
                 ui.painter().text(next_r.center(), Align2::CENTER_CENTER, "›", theme::bold(16.0), theme::text());
                 if next_resp.clicked() {
                     nudge = 1;
@@ -1679,7 +1695,11 @@ fn artist_top_songs_section(ui: &mut Ui, a: &crate::backend::ArtistPage, acts: &
                 let (prev_r, prev_resp) = ui.allocate_exact_size(Vec2::splat(28.0), Sense::click());
                 let prev_resp = named(prev_resp, "Previous songs").on_hover_cursor(egui::CursorIcon::PointingHand);
                 let ph = if prev_resp.hovered() { 1.0 } else { 0.0 };
-                ui.painter().rect_filled(prev_r, 6.0, theme::glass(0.12 + 0.08 * ph));
+                if crate::renderer::active() == crate::renderer::Renderer::OpenGl {
+                    crate::glass::paint(ui, prev_resp.id.with("glass"), prev_r, crate::glass::control(6.0, theme::light(), ph, 1.0));
+                } else {
+                    ui.painter().rect_filled(prev_r, 6.0, theme::glass(0.12 + 0.08 * ph));
+                }
                 ui.painter().text(prev_r.center(), Align2::CENTER_CENTER, "‹", theme::bold(16.0), theme::text());
                 if prev_resp.clicked() {
                     nudge = -1;
@@ -1751,7 +1771,7 @@ fn artist_top_songs_section(ui: &mut Ui, a: &crate::backend::ArtistPage, acts: &
                                 if resp.clicked() {
                                     acts.push(Action::Play(top.clone(), global_idx));
                                 }
-                                egui::Popup::context_menu(&resp).show(|ui| {
+                                widgets::context_menu(&resp, |ui| {
                                     widgets::song_menu(ui, t, liked.contains(&t.id), None, None, acts);
                                 });
                             } else {
@@ -1841,19 +1861,30 @@ pub fn artist(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
     // Top-right frosted circular Share button on the hero banner
     let share_rect = Rect::from_min_size(pos2(hero.right() - 54.0, hero.top() + 18.0), vec2(34.0, 34.0));
     let light_hero = theme::light();
-    let share_shadow = if light_hero { 18 } else { 35 };
-    ui.painter().circle_filled(share_rect.center() + vec2(0.0, 1.0), 17.0, Color32::from_black_alpha(share_shadow));
     let share_resp = named(ui.interact(share_rect, ui.scope_id().with(("artist", "share")), Sense::click()), "Share")
         .on_hover_cursor(egui::CursorIcon::PointingHand)
         .on_hover_text("Share");
-    let share_fill = if light_hero {
-        if share_resp.hovered() { Color32::from_black_alpha(26) } else { Color32::from_black_alpha(15) }
-    } else if share_resp.hovered() {
-        theme::glass(0.20)
+    let sh = theme::anim_bool(ui.ctx(), share_resp.id.with("h"), share_resp.hovered(), 0.15);
+    if crate::renderer::active() == crate::renderer::Renderer::OpenGl {
+        let tint = if light_hero {
+            Color32::from_white_alpha((44.0 + 28.0 * sh) as u8)
+        } else {
+            Color32::from_rgba_unmultiplied(26, 28, 34, (44.0 + 28.0 * sh) as u8)
+        };
+        let style = crate::glass::Style::clear(crate::glass::Corner::Capsule, Some(tint), if light_hero { 0.10 } else { 0.88 }, 1.0);
+        crate::glass::paint(ui, share_resp.id.with("glass"), share_rect, style);
     } else {
-        theme::glass(0.12)
-    };
-    ui.painter().circle_filled(share_rect.center(), 17.0, share_fill);
+        let share_shadow = if light_hero { 18 } else { 35 };
+        ui.painter().circle_filled(share_rect.center() + vec2(0.0, 1.0), 17.0, Color32::from_black_alpha(share_shadow));
+        let share_fill = if light_hero {
+            if share_resp.hovered() { Color32::from_black_alpha(26) } else { Color32::from_black_alpha(15) }
+        } else if share_resp.hovered() {
+            theme::glass(0.20)
+        } else {
+            theme::glass(0.12)
+        };
+        ui.painter().circle_filled(share_rect.center(), 17.0, share_fill);
+    }
     let share_fg = if light_hero {
         Color32::from_rgb(0x18, 0x14, 0x1c)
     } else if share_resp.hovered() {
@@ -1922,14 +1953,18 @@ pub fn artist(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
         let pill = Rect::from_min_size(pos2(play_center.x + 24.0 + gap, btn_y - 17.0), vec2(w, 34.0));
         let resp = named(ui.interact(pill, ui.scope_id().with("hero_sub"), Sense::click()), base_label).on_hover_cursor(egui::CursorIcon::PointingHand);
         let h = resp.hovered() as u8 as f32;
-        // Soft drop shadow
-        ui.painter().rect_filled(pill.translate(vec2(0.0, 1.5)), 17.0, Color32::from_black_alpha(if light { 25 } else { 42 }));
-        let fill = if light {
-            theme::lerp_color(Color32::from_black_alpha(15), Color32::from_black_alpha(28), h)
+        if crate::renderer::active() == crate::renderer::Renderer::OpenGl {
+            crate::glass::paint(ui, resp.id.with("glass"), pill, crate::glass::control(crate::glass::Corner::Capsule, light, h, 1.0));
         } else {
-            theme::glass(0.14 + 0.09 * h)
-        };
-        ui.painter().rect_filled(pill, 17.0, fill);
+            // Soft drop shadow
+            ui.painter().rect_filled(pill.translate(vec2(0.0, 1.5)), 17.0, Color32::from_black_alpha(if light { 25 } else { 42 }));
+            let fill = if light {
+                theme::lerp_color(Color32::from_black_alpha(15), Color32::from_black_alpha(28), h)
+            } else {
+                theme::glass(0.14 + 0.09 * h)
+            };
+            ui.painter().rect_filled(pill, 17.0, fill);
+        }
         let mut x = pill.left() + 16.0;
         if sub.subscribed {
             widgets::icon_at(ui, pos2(x + 4.0, btn_y), icon::CHECK, 14.0, theme::text());
@@ -2550,7 +2585,7 @@ fn channel_picker(app: &mut App, ui: &mut Ui) {
     let switching = app.switching_to.is_some();
     let btn = dropdown_button(ui, if switching { "Switching…" } else { &shown }, 220.0, "Channel");
     let mut pick = None;
-    egui::Popup::menu(&btn).show(|ui| {
+    widgets::popup_menu(&btn, None, |ui| {
         ui.set_width(300.0);
         ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
         egui::ScrollArea::vertical().max_height(320.0).show(ui, |ui| {
@@ -2733,7 +2768,7 @@ fn settings_appearance(app: &mut App, ui: &mut Ui) {
         let mut pick = None;
         setting_row(ui, "Mode", Some(desc), |ui| {
             let btn = dropdown_button(ui, app.appearance.label(), 160.0, "Mode");
-            egui::Popup::menu(&btn).show(|ui| {
+            widgets::popup_menu(&btn, None, |ui| {
                 ui.set_width(160.0);
                 ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
                 ui.add_space(4.0);
@@ -2788,7 +2823,11 @@ fn settings_appearance(app: &mut App, ui: &mut Ui) {
                 let (r, resp) = ui.allocate_exact_size(vec2(32.0, 30.0), if on { Sense::click() } else { Sense::hover() });
                 let resp = widgets::named(resp, name).on_hover_text(name);
                 let h = if on && resp.hovered() { 1.0 } else { 0.0 };
-                ui.painter().rect_filled(r, 8.0, theme::glass(0.08 + 0.08 * h));
+                if crate::renderer::active() == crate::renderer::Renderer::OpenGl {
+                    crate::glass::paint(ui, resp.id.with("glass"), r, crate::glass::control(8.0, theme::light(), h, if on { 1.0 } else { 0.55 }));
+                } else {
+                    ui.painter().rect_filled(r, 8.0, theme::glass(0.08 + 0.08 * h));
+                }
                 let stroke = egui::Stroke::new(1.6, theme::with_alpha(theme::text(), if on { 1.0 } else { 0.35 }));
                 ui.painter().hline((r.center().x - 5.0)..=(r.center().x + 5.0), r.center().y, stroke);
                 if up {
@@ -2941,7 +2980,7 @@ fn network(app: &mut App, ui: &mut Ui) {
     let mut pick = None;
     setting_row(ui, "Proxy", Some("Send everything Dawn FM fetches through a proxy: songs, lyrics, sign-in and Listen together."), |ui| {
         let btn = dropdown_button(ui, app.proxy_mode.label(), 220.0, "Proxy");
-        egui::Popup::menu(&btn).show(|ui| {
+        widgets::popup_menu(&btn, None, |ui| {
             ui.set_width(220.0);
             ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
             ui.add_space(4.0);
@@ -3062,7 +3101,7 @@ fn output_device_picker(app: &mut App, ui: &mut Ui) {
         app.output_devices = crate::audio::output_devices();
     }
     let mut pick: Option<Option<(String, String)>> = None;
-    egui::Popup::menu(&btn).show(|ui| {
+    widgets::popup_menu(&btn, None, |ui| {
         ui.set_width(340.0);
         ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
         egui::ScrollArea::vertical().max_height(320.0).show(ui, |ui| {
@@ -3092,7 +3131,11 @@ fn dropdown_button(ui: &mut Ui, value: &str, width: f32, name: &str) -> egui::Re
     let resp = widgets::named(resp, name).on_hover_cursor(egui::CursorIcon::PointingHand);
     let open = egui::Popup::is_id_open(ui.ctx(), egui::Popup::default_response_id(&resp));
     let h = if resp.hovered() || open { 1.0 } else { 0.0 };
-    ui.painter().rect_filled(rect, 10.0, theme::glass(0.08 + 0.05 * h));
+    if crate::renderer::active() == crate::renderer::Renderer::OpenGl {
+        crate::glass::paint(ui, resp.id.with("glass"), rect, crate::glass::control(10.0, theme::light(), h, 1.0));
+    } else {
+        ui.painter().rect_filled(rect, 10.0, theme::glass(0.08 + 0.05 * h));
+    }
     widgets::text_at(ui, pos2(rect.left() + 14.0, rect.center().y - 9.0), value, theme::regular(14.0), theme::text(), rect.width() - 44.0);
     let glyph = if open { theme::icon::CHEVRON_UP } else { theme::icon::CHEVRON_DOWN };
     widgets::icon_at(ui, pos2(rect.right() - 18.0, rect.center().y), glyph, 15.0, theme::lerp_color(theme::text_dim(), theme::text(), h));
@@ -3296,9 +3339,12 @@ fn keycap(ui: &Ui, right: egui::Pos2, key: &str) -> f32 {
     let g = widgets::galley(ui, key, theme::semibold(12.5), theme::text(), 200.0);
     let size = vec2((g.size().x + 18.0).max(30.0), 26.0);
     let rect = Rect::from_min_size(pos2(right.x - size.x, right.y - size.y / 2.0), size);
-    ui.painter().rect_filled(rect, 7.0, theme::glass(0.08));
-    ui.painter().rect_stroke(rect, 7.0, egui::Stroke::new(1.0, theme::glass(0.12)), egui::StrokeKind::Inside);
-    ui.painter().rect_filled(Rect::from_min_max(pos2(rect.left() + 2.0, rect.bottom() - 2.0), pos2(rect.right() - 2.0, rect.bottom())), 2.0, theme::shade(0.25));
+    if crate::renderer::active() == crate::renderer::Renderer::OpenGl {
+        crate::glass::paint(ui, ui.scope_id().with(("keycap", key)), rect, crate::glass::control(7.0, theme::light(), 0.0, 1.0));
+    } else {
+        ui.painter().rect_filled(rect, 7.0, theme::glass(0.08));
+        ui.painter().rect_filled(Rect::from_min_max(pos2(rect.left() + 2.0, rect.bottom() - 2.0), pos2(rect.right() - 2.0, rect.bottom())), 2.0, theme::shade(0.25));
+    }
     ui.painter().galley(rect.center() - g.size() / 2.0, g, theme::text());
     rect.left()
 }

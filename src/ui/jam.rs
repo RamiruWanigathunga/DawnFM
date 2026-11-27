@@ -602,7 +602,11 @@ fn lobby(app: &mut App, ui: &mut Ui) {
         let hint = app.account_name.clone().unwrap_or_else(|| "Guest".to_owned());
         setting_row(ui, "Your name", Some("What others in the jam see."), |ui| {
             let (rect, _) = ui.allocate_exact_size(vec2(200.0, 36.0), Sense::hover());
-            ui.painter().rect_filled(rect, 10.0, theme::glass(0.08));
+            if crate::renderer::active() == crate::renderer::Renderer::OpenGl {
+                crate::glass::paint(ui, egui::Id::unique("jam-name-glass"), rect, crate::glass::control(10.0, theme::light(), 0.0, 1.0));
+            } else {
+                ui.painter().rect_filled(rect, 10.0, theme::glass(0.08));
+            }
             let inner = rect.shrink2(vec2(12.0, 4.0));
             ui.put(
                 inner,
@@ -633,7 +637,11 @@ fn lobby(app: &mut App, ui: &mut Ui) {
             join_now |= pill(ui, "Join", None, true).clicked();
             ui.add_space(10.0);
             let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 42.0), Sense::hover());
-            ui.painter().rect_filled(rect, 10.0, theme::glass(0.08));
+            if crate::renderer::active() == crate::renderer::Renderer::OpenGl {
+                crate::glass::paint(ui, egui::Id::unique("jam-code-glass"), rect, crate::glass::control(10.0, theme::light(), 0.0, 1.0));
+            } else {
+                ui.painter().rect_filled(rect, 10.0, theme::glass(0.08));
+            }
             let inner = rect.shrink2(vec2(14.0, 4.0));
             let edit = ui.put(
                 inner,
