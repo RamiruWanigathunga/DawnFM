@@ -821,12 +821,9 @@ fn list_header(ui: &mut Ui) {
 
 fn song_row(ui: &mut Ui, i: usize, sp: &Track, result: &Search, accent: Color32, acts: &mut Vec<super::Action>) {
     // Same height as the rows `visible_rows` expects.
-    let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 56.0), Sense::hover());
+    let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 56.0), Sense::hover());
     let (num, spx, arrow, ytx, status) = columns(rect);
     let half = arrow - spx - 12.0;
-    if resp.hovered() {
-        ui.painter().rect_filled(rect, 8.0, theme::glass(0.04));
-    }
     ui.painter().text(pos2(num, rect.center().y), Align2::LEFT_CENTER, fmt_n(i + 1), theme::regular(12.5), theme::text_faint());
     let img = Rect::from_min_size(pos2(spx, rect.center().y - 19.0), vec2(38.0, 38.0));
     paint_cover(ui, img, &spotify_thumbs(&sp.art), theme::thumb_radius(), 1.0);
@@ -981,8 +978,9 @@ fn review(app: &mut App, ui: &mut Ui) {
                             let t = &job.tracks[i];
                             let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), ROW), Sense::click());
                             let resp = named(resp, &t.name).on_hover_cursor(egui::CursorIcon::PointingHand);
-                            let h = theme::anim_bool(ui.ctx(), resp.id.with("h"), resp.hovered(), 0.12);
-                            ui.painter().rect_filled(rect, 8.0, theme::glass(if on { 0.08 } else { 0.04 * h }));
+                            if on {
+                                ui.painter().rect_filled(rect, 8.0, theme::glass(0.08));
+                            }
                             let img = Rect::from_min_size(pos2(rect.left() + 6.0, rect.center().y - 17.0), vec2(34.0, 34.0));
                             paint_cover(ui, img, &spotify_thumbs(&t.art), 4.0, 1.0);
                             let mw = if mark.is_empty() { 0.0 } else { 54.0 };
