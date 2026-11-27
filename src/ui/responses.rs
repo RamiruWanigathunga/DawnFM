@@ -689,6 +689,7 @@ impl App {
             picks_loading: false,
             picks_expanded: false,
         });
+        self.home_backdrop_key = None;
         self.home_loading = false;
         if self.page == Page::Home {
             self.loading = false;

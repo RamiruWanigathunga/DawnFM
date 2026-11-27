@@ -492,12 +492,6 @@ pub fn circle_action(ui: &mut Ui, glyph: CircleGlyph, name: &str, active: bool) 
         };
         ui.painter().circle_filled(rect.center(), press, fill);
     }
-    let stroke_col = if light {
-        Color32::from_black_alpha((25.0 + 18.0 * h) as u8)
-    } else {
-        theme::glass(0.16 + 0.12 * h)
-    };
-    ui.painter().circle_stroke(rect.center(), press, egui::Stroke::new(1.0, stroke_col));
 
     let color = if theme::light() {
         Color32::from_rgb(0x18, 0x14, 0x1c)
@@ -610,7 +604,6 @@ pub fn share_more_pill(
         let pill_fill = if light { Color32::from_black_alpha(15) } else { theme::glass(0.12) };
         ui.painter().rect_filled(pill_rect, 17.0, pill_fill);
     }
-    ui.painter().rect_stroke(pill_rect, 17.0, egui::Stroke::new(1.0, if light { Color32::from_black_alpha(25) } else { theme::glass(0.16) }), egui::StrokeKind::Inside);
 
     let mid_x = pill_rect.min.x + 35.0;
     let share_rect = Rect::from_min_max(pill_rect.min, pos2(mid_x, pill_rect.max.y));
@@ -1291,12 +1284,6 @@ fn top_result(ui: &mut Ui, c: &Card, pick: bool, acts: &mut Vec<Action>) {    ui
                 sheen,
                 0.4 + 0.6 * h,
             );
-            let stroke_col = if light {
-                Color32::from_white_alpha(180)
-            } else {
-                Color32::from_white_alpha((55.0 + 25.0 * ph) as u8)
-            };
-            ui.painter().circle_stroke(pc, r, egui::Stroke::new(1.0, stroke_col));
         } else {
             ui.painter().circle_filled(pc, r, theme::with_alpha(Color32::WHITE, 0.4 + 0.6 * h));
         }
@@ -1688,7 +1675,6 @@ fn artist_top_songs_section(ui: &mut Ui, a: &crate::backend::ArtistPage, acts: &
                 let next_resp = named(next_resp, "Next songs").on_hover_cursor(egui::CursorIcon::PointingHand);
                 let nh = if next_resp.hovered() { 1.0 } else { 0.0 };
                 ui.painter().rect_filled(next_r, 6.0, theme::glass(0.12 + 0.08 * nh));
-                ui.painter().rect_stroke(next_r, 6.0, egui::Stroke::new(1.0, theme::glass(0.08)), egui::StrokeKind::Inside);
                 ui.painter().text(next_r.center(), Align2::CENTER_CENTER, "›", theme::bold(16.0), theme::text());
                 if next_resp.clicked() {
                     nudge = 1;
@@ -1699,7 +1685,6 @@ fn artist_top_songs_section(ui: &mut Ui, a: &crate::backend::ArtistPage, acts: &
                 let prev_resp = named(prev_resp, "Previous songs").on_hover_cursor(egui::CursorIcon::PointingHand);
                 let ph = if prev_resp.hovered() { 1.0 } else { 0.0 };
                 ui.painter().rect_filled(prev_r, 6.0, theme::glass(0.12 + 0.08 * ph));
-                ui.painter().rect_stroke(prev_r, 6.0, egui::Stroke::new(1.0, theme::glass(0.08)), egui::StrokeKind::Inside);
                 ui.painter().text(prev_r.center(), Align2::CENTER_CENTER, "‹", theme::bold(16.0), theme::text());
                 if prev_resp.clicked() {
                     nudge = -1;
@@ -1873,9 +1858,7 @@ pub fn artist(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
     } else {
         theme::glass(0.12)
     };
-    let share_stroke = if light_hero { Color32::from_black_alpha(25) } else { theme::glass(0.16) };
     ui.painter().circle_filled(share_rect.center(), 17.0, share_fill);
-    ui.painter().circle_stroke(share_rect.center(), 17.0, egui::Stroke::new(1.0, share_stroke));
     let share_fg = if light_hero {
         Color32::from_rgb(0x18, 0x14, 0x1c)
     } else if share_resp.hovered() {
@@ -1903,23 +1886,20 @@ pub fn artist(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
     let play_h = play_resp.hovered();
     let h_val = play_h as u8 as f32;
     let light = theme::light();
-    let (play_bg, stroke_col, glyph_col) = if light {
+    let (play_bg, glyph_col) = if light {
         (
             theme::lerp_color(Color32::from_rgb(0x18, 0x18, 0x1c), Color32::BLACK, h_val),
-            Color32::from_black_alpha(30),
             Color32::WHITE,
         )
     } else {
         (
             theme::lerp_color(Color32::from_rgb(0xf2, 0xf2, 0xf6), Color32::WHITE, h_val),
-            Color32::from_white_alpha(30),
             Color32::from_rgb(0x14, 0x14, 0x18),
         )
     };
     // Soft drop shadow
     ui.painter().circle_filled(play_center + vec2(0.0, 1.5), 24.0, Color32::from_black_alpha(if light { 25 } else { 45 }));
     ui.painter().circle_filled(play_center, 24.0, play_bg);
-    ui.painter().circle_stroke(play_center, 24.0, egui::Stroke::new(1.0, stroke_col));
     widgets::play_pause_glyph(ui, play_center, 8.5, glyph_col, playing);
     if play_resp.clicked() {
         if active.is_some() {
@@ -1954,13 +1934,7 @@ pub fn artist(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
         } else {
             theme::glass(0.14 + 0.09 * h)
         };
-        let stroke_col = if light {
-            Color32::from_black_alpha(30)
-        } else {
-            theme::glass(0.16 + 0.08 * h)
-        };
         ui.painter().rect_filled(pill, 17.0, fill);
-        ui.painter().rect_stroke(pill, 17.0, egui::Stroke::new(1.0, stroke_col), egui::StrokeKind::Inside);
         let mut x = pill.left() + 16.0;
         if sub.subscribed {
             widgets::icon_at(ui, pos2(x + 4.0, btn_y), icon::CHECK, 14.0, theme::text());

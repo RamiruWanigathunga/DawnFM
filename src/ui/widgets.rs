@@ -233,32 +233,26 @@ pub fn pill(ui: &mut Ui, label: &str, glyph: Option<char>, primary: bool) -> Res
     let resp = named(resp, label).on_hover_cursor(egui::CursorIcon::PointingHand);
     let h = theme::anim_bool(ui.ctx(), resp.id.with("h"), resp.hovered(), 0.15);
     let light = theme::light();
-    let (fill, stroke_color, fg, icon_col) = if light {
+    let (fill, fg, icon_col) = if light {
         if primary {
             let bg = theme::lerp_color(Color32::from_rgb(0x28, 0x24, 0x2c), Color32::from_rgb(0x18, 0x14, 0x1c), h);
-            let stroke = Color32::TRANSPARENT;
             let text_c = Color32::WHITE;
-            let ic = text_c;
-            (bg, stroke, text_c, ic)
+            (bg, text_c, text_c)
         } else {
             let bg = theme::lerp_color(Color32::from_black_alpha(15), Color32::from_black_alpha(28), h);
-            let stroke = Color32::from_black_alpha((25.0 + 18.0 * h) as u8);
             let text_c = theme::text();
-            (bg, stroke, text_c, text_c)
+            (bg, text_c, text_c)
         }
     } else {
         if primary {
             let bg = theme::lerp_color(Color32::from_white_alpha(240), Color32::WHITE, h);
-            let stroke = Color32::TRANSPARENT;
             let text_c = Color32::from_rgb(0x18, 0x14, 0x1c);
-            let ic = text_c;
-            (bg, stroke, text_c, ic)
+            (bg, text_c, text_c)
         } else {
             let bg = theme::glass(0.12 + 0.08 * h);
-            let stroke = theme::glass(0.15 + 0.10 * h);
             let text_c = theme::lerp_color(theme::text_dim(), theme::text(), h);
             let ic = theme::lerp_color(Color32::from_white_alpha(225), Color32::WHITE, h);
-            (bg, stroke, text_c, ic)
+            (bg, text_c, ic)
         }
     };
 
@@ -269,7 +263,7 @@ pub fn pill(ui: &mut Ui, label: &str, glyph: Option<char>, primary: bool) -> Res
     let shadow_alpha = if light { (25.0 + 10.0 * h) as u8 } else { (42.0 + 14.0 * h) as u8 };
     ui.painter().rect_filled(r.translate(vec2(0.0, 1.5)), radius, Color32::from_black_alpha(shadow_alpha));
 
-    // Frosted capsule fill and subtle inside stroke
+    // Frosted capsule fill (no border)
     if !primary && crate::renderer::active() == crate::renderer::Renderer::OpenGl {
         let (tint, tint_alpha, sat, sheen) = if light {
             (Color32::WHITE, 0.52 + 0.12 * h, 1.15, 0.18)
@@ -280,7 +274,6 @@ pub fn pill(ui: &mut Ui, label: &str, glyph: Option<char>, primary: bool) -> Res
     } else {
         ui.painter().rect_filled(r, radius, fill);
     }
-    ui.painter().rect_stroke(r, radius, egui::Stroke::new(1.0, stroke_color), egui::StrokeKind::Inside);
 
     let mut x = r.left() + 18.0;
     if let Some(g) = glyph {
@@ -300,20 +293,18 @@ pub fn pill_destructive(ui: &mut Ui, label: &str, glyph: Option<char>) -> Respon
     let h = theme::anim_bool(ui.ctx(), resp.id.with("h"), resp.hovered(), 0.15);
     let light = theme::light();
 
-    let (fill, stroke_color, fg) = if light {
+    let (fill, fg) = if light {
         let base_bg = Color32::from_black_alpha(15);
         let hover_bg = Color32::from_rgb(0xD8, 0x24, 0x3B);
         let bg = theme::lerp_color(base_bg, hover_bg, h);
-        let stroke = theme::lerp_color(Color32::from_black_alpha(25), hover_bg, h);
         let text_c = theme::lerp_color(theme::text(), Color32::WHITE, h);
-        (bg, stroke, text_c)
+        (bg, text_c)
     } else {
         let base_bg = theme::glass(0.12);
         let hover_bg = Color32::from_rgb(0xD8, 0x24, 0x3B);
         let bg = theme::lerp_color(base_bg, hover_bg, h);
-        let stroke = theme::lerp_color(theme::glass(0.16), hover_bg, h);
         let text_c = theme::lerp_color(Color32::from_white_alpha(225), Color32::WHITE, h);
-        (bg, stroke, text_c)
+        (bg, text_c)
     };
 
     let r = rect.shrink(if resp.is_pointer_button_down_on() { 1.0 } else { 0.0 });
@@ -324,7 +315,6 @@ pub fn pill_destructive(ui: &mut Ui, label: &str, glyph: Option<char>) -> Respon
     ui.painter().rect_filled(r.translate(vec2(0.0, 1.5)), radius, Color32::from_black_alpha(shadow_alpha));
 
     ui.painter().rect_filled(r, radius, fill);
-    ui.painter().rect_stroke(r, radius, egui::Stroke::new(1.0, stroke_color), egui::StrokeKind::Inside);
 
     let mut x = r.left() + 18.0;
     if let Some(g) = glyph {
@@ -355,26 +345,21 @@ pub fn chip(ui: &mut Ui, label: &str, selected: bool) -> Response {
     };
     ui.painter().rect_filled(rect.translate(vec2(0.0, 1.2)), radius, shadow_color);
 
-    let (fill, stroke_color, fg) = if light {
+    let (fill, fg) = if light {
         let off_fill = theme::lerp_color(Color32::from_black_alpha(12), Color32::from_black_alpha(22), h);
         let on_fill = if h > 0.0 { theme::lerp_color(accent, Color32::BLACK, 0.08) } else { accent };
         let fill = theme::lerp_color(off_fill, on_fill, s);
-        let stroke = theme::lerp_color(Color32::from_black_alpha(((25.0 + 15.0 * h) * (1.0 - s)) as u8), Color32::TRANSPARENT, s);
         let text_c = theme::lerp_color(theme::text(), Color32::WHITE, s);
-        (fill, stroke, text_c)
+        (fill, text_c)
     } else {
         let off_fill = theme::glass(0.11 + 0.08 * h);
         let on_fill = if h > 0.0 { theme::lerp_color(accent, Color32::WHITE, 0.12) } else { accent };
         let fill = theme::lerp_color(off_fill, on_fill, s);
-        let stroke = theme::lerp_color(theme::glass(0.15 + 0.10 * h), Color32::TRANSPARENT, s);
         let text_c = theme::lerp_color(Color32::from_white_alpha(215), Color32::WHITE, s.max(h * 0.5));
-        (fill, stroke, text_c)
+        (fill, text_c)
     };
 
     ui.painter().rect_filled(rect, radius, fill);
-    if stroke_color.a() > 0 {
-        ui.painter().rect_stroke(rect, radius, egui::Stroke::new(1.0, stroke_color), egui::StrokeKind::Inside);
-    }
     ui.painter().galley(rect.center() - text.size() / 2.0, text, fg);
     resp
 }
@@ -712,12 +697,6 @@ pub fn card(ui: &mut Ui, c: &Card, width: f32, liked: bool, acts: &mut Vec<Actio
                 sheen,
                 h,
             );
-            let stroke_col = if light {
-                Color32::from_white_alpha((180.0 * h) as u8)
-            } else {
-                Color32::from_white_alpha(((55.0 + 30.0 * ph) * h) as u8)
-            };
-            ui.painter().circle_stroke(center, r, egui::Stroke::new(1.0, stroke_col));
         } else {
             ui.painter().circle_filled(center, r, theme::shade((0.62 + 0.10 * ph) * h));
         }

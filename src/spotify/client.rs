@@ -62,6 +62,10 @@ impl SpotifyClient {
         }
     }
 
+    pub fn saved_username(&self) -> Option<String> {
+        self.auth.saved_username()
+    }
+
     pub async fn restore_if_needed(&self) -> Result<Option<String>> {
         self.auth.restore_if_needed(&proxy::http()).await
     }

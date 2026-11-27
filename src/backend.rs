@@ -1002,7 +1002,13 @@ impl Backend {
                     let username = if self.is_logged_in() {
                         None
                     } else {
-                        self.spotify.restore_if_needed().await.ok().flatten()
+                        match self.spotify.restore_if_needed().await {
+                            Ok(u) => u,
+                            Err(e) => {
+                                log::warn!("spotify restore failed at launch (keeping saved session): {e:#}");
+                                self.spotify.saved_username()
+                            }
+                        }
                     };
                     Resp::SpotifyAuth { username, challenge: None, message: None }
                 }
@@ -2068,6 +2074,10 @@ impl Backend {
 
     pub fn is_logged_in(&self) -> bool {
         self.api.account().is_some()
+    }
+
+    pub fn saved_spotify_user(&self) -> Option<String> {
+        self.spotify.saved_username()
     }
 }
 

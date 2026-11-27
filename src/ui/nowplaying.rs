@@ -76,7 +76,6 @@ pub fn overlay(app: &mut App, ctx: &egui::Context, now: f64, screen: Rect) {
 fn paint_np_capsule(ui: &Ui, rect: Rect) {
     let r = rect.height() / 2.0;
     ui.painter().rect_filled(rect, r, theme::glass(0.14));
-    ui.painter().rect_stroke(rect, r, egui::Stroke::new(1.0, theme::glass(0.22)), egui::StrokeKind::Inside);
 }
 
 fn body(app: &mut App, ui: &mut Ui, now: f64) {
@@ -1094,20 +1093,17 @@ fn synced(app: &mut App, ui: &mut Ui, rect: Rect, id: &str, lyrics: &Lyrics, now
         p.rect_filled(r.translate(vec2(0.0, 1.5)), radius, Color32::from_black_alpha(shadow_alpha));
 
         // Frosted capsule fill matching app UI theme
-        let (fill, stroke_color, fg) = if bg_light {
+        let (fill, fg) = if bg_light {
             let bg_alpha = (235.0 * shown) as u8;
             let fill = theme::lerp_color(Color32::from_white_alpha(bg_alpha), Color32::WHITE, hover);
-            let stroke = Color32::from_black_alpha(((25.0 + 20.0 * hover) * shown) as u8);
-            (fill, stroke, Color32::from_rgb(0x18, 0x14, 0x1c))
+            (fill, Color32::from_rgb(0x18, 0x14, 0x1c))
         } else {
             let base_fill = theme::glass((0.14 + 0.08 * hover) * shown);
-            let stroke = theme::glass((0.16 + 0.12 * hover) * shown);
             let fg = theme::lerp_color(Color32::from_white_alpha((220.0 * shown) as u8), Color32::WHITE, hover);
-            (base_fill, stroke, fg)
+            (base_fill, fg)
         };
 
         p.rect_filled(r, radius, fill);
-        p.rect_stroke(r, radius, egui::Stroke::new(1.0, stroke_color), egui::StrokeKind::Inside);
 
         let at = r.center() - g.size() / 2.0;
         p.galley_with_override_text_color(at, g, fg);

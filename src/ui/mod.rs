@@ -269,20 +269,6 @@ impl Drop for MotionView {
     }
 }
 
-/// Horizontal trackpad points that make a swipe a page turn.
-const SWIPE_POINTS: f32 = 120.0;
-
-/// A two-finger swipe on the trackpad, on its way to turning the page.
-#[derive(Default)]
-struct SwipeNav {
-    /// Horizontal points so far (positive = content moved right).
-    dx: f32,
-    /// When the last scroll event arrived, so a swipe can be told from a new one.
-    at: f64,
-    /// Already went back/forward: the rest of the gesture (and its momentum) is ignored.
-    fired: bool,
-}
-
 pub struct App {
     pub backend: Backend,
     pub audio: AudioHandle,
@@ -323,9 +309,6 @@ pub struct App {
     scroll_top: bool,
     /// Incremented on each page visit so scroll offset resets to the top instead of persisting.
     page_visit: u64,
-    /// The trackpad swipe in progress: horizontal points so far, when it last moved,
-    /// and whether it has already turned the page.
-    swipe: SwipeNav,
     loading: bool,
     /// The current page's request failed with nothing cached: show a retry, not a skeleton.
     load_failed: bool,
@@ -415,6 +398,8 @@ pub struct App {
     // visuals
     art_key: Option<String>,
     art_changed: f64,
+    /// Locked backdrop artwork key for the current Home feed so colors stay steady on Home.
+    home_backdrop_key: Option<String>,
     /// Apple's page for each artist visited (their display name and hero clips).
     apple_artists: std::collections::HashMap<String, Option<crate::apple::Artwork>>,
     /// Album pages' artist photos by artist id (empty while asked for, or when none).
@@ -670,9 +655,13 @@ impl App {
         backend.set_hires_source(&hires_sources.join("\n"));
         let prefer_atmos = get("prefer_atmos").is_some_and(|v| v == "1");
         backend.set_prefer_atmos(prefer_atmos);
-        let spotify_mode = !logged_in && get("spotify_mode").is_some_and(|v| v == "1");
+        let spotify_user = if logged_in { None } else { backend.saved_spotify_user() };
+        let spotify_mode = !logged_in && (spotify_user.is_some() || get("spotify_mode").is_some_and(|v| v == "1"));
         if spotify_mode {
-            backend.request(Req::SpotifyHome);
+            if spotify_user.is_some() {
+                backend.request(Req::SpotifyHome);
+                backend.request(Req::SpotifyLibrary);
+            }
         } else {
             backend.request(Req::Home(None));
         }
@@ -714,7 +703,6 @@ impl App {
             page_changed: 0.0,
             scroll_top: true,
             page_visit: 0,
-            swipe: SwipeNav::default(),
             loading: false,
             load_failed: false,
             search_text: String::new(),
@@ -750,7 +738,7 @@ impl App {
             switching_to: None,
             sidebar_cache: None,
             spotify_mode,
-            spotify_user: None,
+            spotify_user,
             spotify_auth_busy: false,
             spotify_email: String::new(),
             spotify_code: String::new(),
@@ -811,6 +799,7 @@ impl App {
             radio_pending: false,
             seek_drag: None,
             art_key: None,
+            home_backdrop_key: None,
             apple_artists: Default::default(),
             artist_photos: Default::default(),
             apple_covers: Default::default(),
@@ -1018,63 +1007,6 @@ impl App {
             self.back.push(std::mem::replace(&mut self.page, p));
             self.page_loaded();
         }
-    }
-
-    /// Two-finger trackpad swipes walk the page history the way Safari's do: fingers to
-    /// the left go back, to the right forward. The page changes at once (no slide); an
-    /// arrow shows at the side while the swipe is going on.
-    fn swipe_nav(&mut self, ctx: &egui::Context, now: f64) {
-        // Read after the pages are drawn: a horizontal shelf takes its swipe's delta out
-        // of this, so only swipes that no shelf wanted turn the page.
-        let dx = ctx.input(|i| if i.modifiers.any() { 0.0 } else { i.smooth_scroll_delta.x });
-        if dx.abs() > 0.01 {
-            // A pause ends the last gesture, so the next swipe counts from zero.
-            if now - self.swipe.at > 0.35 {
-                self.swipe.dx = 0.0;
-                self.swipe.fired = false;
-            }
-            self.swipe.at = now;
-            self.swipe.dx += dx;
-            if !self.swipe.fired && self.swipe.dx.abs() >= SWIPE_POINTS {
-                self.swipe.fired = true;
-                // The content moves left (negative) for back, right for forward.
-                if self.swipe.dx < 0.0 {
-                    self.nav_back();
-                } else {
-                    self.nav_forward();
-                }
-                // The new page draws on the next frame, at once.
-                ctx.request_repaint();
-            }
-        } else if now - self.swipe.at > 0.35 {
-            self.swipe.dx = 0.0;
-            self.swipe.fired = false;
-        }
-    }
-
-    /// The hint that a swipe is about to turn the page: a dim arrow at the side it goes to.
-    fn paint_swipe_arrow(&self, ctx: &egui::Context, now: f64) {
-        let going = self.swipe.dx.abs();
-        if self.swipe.fired || going < 6.0 || now - self.swipe.at > 0.35 {
-            return;
-        }
-        let screen = ctx.content_rect();
-        let back = self.swipe.dx < 0.0;
-        let p = (going / SWIPE_POINTS).clamp(0.0, 1.0);
-        let a = 0.3 + 0.6 * p;
-        let center = egui::pos2(
-            if back { screen.left() + 30.0 } else { screen.right() - 30.0 },
-            screen.top() + 92.0,
-        );
-        let paint = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::unique("swipe-arrow")));
-        paint.circle_filled(center, 17.0, Color32::from_black_alpha((0.30 * a * 255.0) as u8));
-        paint.circle_stroke(center, 17.0, egui::Stroke::new(1.0, Color32::from_white_alpha((0.22 * a * 255.0) as u8)));
-        let color = Color32::from_white_alpha((0.9 * a * 255.0) as u8);
-        let d = if back { -4.0 } else { 4.0 };
-        let stroke = egui::Stroke::new(2.0, color);
-        paint.line_segment([center + egui::vec2(d, -6.0), center + egui::vec2(-d, 0.0)], stroke);
-        paint.line_segment([center + egui::vec2(-d, 0.0), center + egui::vec2(d, 6.0)], stroke);
-        ctx.request_repaint();
     }
 
     /// Reload the current page's data in place: no page transition, the page stays as
@@ -1423,18 +1355,18 @@ impl App {
                         out.push((key, t.url.clone()));
                     }
                 }
-                out.len() >= 8
+                out.len() >= 16
             };
             match &s.kind {
                 crate::model::ShelfKind::Cards(cards) => {
-                    for c in cards.iter().filter(|c| !c.thumbs.is_empty()).take(8) {
+                    for c in cards.iter().filter(|c| !c.thumbs.is_empty()).take(10) {
                         if push_thumbs(&c.thumbs) {
                             return out;
                         }
                     }
                 }
                 crate::model::ShelfKind::Songs { tracks, .. } => {
-                    for t in tracks.iter().filter(|t| !t.thumbs.is_empty()).take(8) {
+                    for t in tracks.iter().filter(|t| !t.thumbs.is_empty()).take(10) {
                         if push_thumbs(&t.thumbs) {
                             return out;
                         }
@@ -1448,34 +1380,55 @@ impl App {
     fn is_vibrant_art(&self, key: &str) -> bool {
         let Some(&dom) = self.art_colors.get(key) else { return false };
         let (_, s, v) = rgb_to_hsv(dom.r() as f32 / 255.0, dom.g() as f32 / 255.0, dom.b() as f32 / 255.0);
-        // Skip white/pale, near-black, or neutral grayscale covers when picking a vibrant backdrop.
-        s >= 0.22 && v >= 0.14 && !(v > 0.85 && s < 0.30)
-    }
-
-    pub(super) fn home_art_source(&self) -> Option<(String, String)> {
-        let candidates = self.home_art_candidates();
-        if let Some(vibrant) = candidates.iter().find(|(k, _)| self.is_vibrant_art(k)) {
-            return Some(vibrant.clone());
-        }
-        candidates.into_iter().next()
+        // Skip white/pale, near-black, neutral grayscale, or cool blue covers for Home backdrop.
+        !is_blue_hue(dom) && s >= 0.22 && v >= 0.14 && !(v > 0.85 && s < 0.30)
     }
 
     pub(super) fn request_home_art(&mut self) {
+        if self.home_backdrop_key.is_some() {
+            return;
+        }
         let candidates = self.home_art_candidates();
-        for (key, url) in candidates {
-            if self.art_colors.contains_key(&key) {
-                if self.is_vibrant_art(&key) {
+        let mut fallback: Option<String> = None;
+        for (key, url) in &candidates {
+            if self.art_colors.contains_key(key) && self.art_blurs.contains_key(key) {
+                if self.is_vibrant_art(key) {
+                    self.home_backdrop_key = Some(key.clone());
                     return;
+                }
+                if fallback.is_none() && self.art_colors.get(key).is_some_and(|&c| !is_blue_hue(c)) {
+                    fallback = Some(key.clone());
                 }
                 continue;
             }
-            if !self.art_waiting.contains(&key) {
+            if !self.art_waiting.contains(key) {
                 self.art_waiting.insert(key.clone());
-                self.backend.request(crate::backend::Req::Art { key, url });
+                self.backend.request(crate::backend::Req::Art { key: key.clone(), url: url.clone() });
             }
             return;
         }
+        if let Some(k) = fallback {
+            self.home_backdrop_key = Some(k);
+        }
     }
+}
+
+fn is_blue_hue(c: Color32) -> bool {
+    let (h, s, _) = rgb_to_hsv(c.r() as f32 / 255.0, c.g() as f32 / 255.0, c.b() as f32 / 255.0);
+    let h_deg = h * 360.0;
+    s >= 0.14 && (185.0..=262.0).contains(&h_deg)
+}
+
+fn warm_non_blue(c: Color32) -> Color32 {
+    if !is_blue_hue(c) {
+        return c;
+    }
+    let luma = (0.299 * c.r() as f32 + 0.587 * c.g() as f32 + 0.114 * c.b() as f32).clamp(32.0, 220.0);
+    Color32::from_rgb(
+        (luma * 1.05).min(255.0) as u8,
+        (luma * 0.96).min(255.0) as u8,
+        (luma * 0.92).min(255.0) as u8,
+    )
 }
 
 fn rgb_to_hsv(r: f32, g: f32, b: f32) -> (f32, f32, f32) {
@@ -1593,7 +1546,9 @@ impl App {
     /// Paint the window-wide backdrop with warm blurred artwork and alive ambient glow.
     fn paint_page_backdrop(&mut self, ctx: &egui::Context, painter: &egui::Painter, area: egui::Rect, now: f64) {
         let base = self.page_color(ctx);
-        painter.rect_filled(area, 0.0, base);
+        if self.look().id == crate::preset::DEFAULT_ID {
+            painter.rect_filled(area, 0.0, base);
+        }
 
         let is_home = matches!(self.page, Page::Home);
         let home_vis = theme::anim_bool(ctx, "page-backdrop-home", is_home, 0.70);
@@ -1603,25 +1558,19 @@ impl App {
             Page::Artist(id) => format!("artist:{id}"),
             Page::Home => {
                 self.request_home_art();
-                if let Some((k, _)) = self.home_art_source() {
-                    if self.art_blurs.contains_key(&k) {
-                        k
-                    } else if let Some(pk) = self.art_key.clone().filter(|k| self.art_blurs.contains_key(k)) {
-                        pk
-                    } else {
-                        k
-                    }
-                } else if let Some(pk) = self.art_key.clone() {
-                    pk
-                } else {
+                let Some(k) = self.home_backdrop_key.clone() else {
                     return;
-                }
+                };
+                k
             }
             _ => return,
         };
         let Some(&dom) = self.art_colors.get(&key) else {
             return;
         };
+        if is_home && is_blue_hue(dom) {
+            return;
+        }
         let (_, s, v) = rgb_to_hsv(dom.r() as f32 / 255.0, dom.g() as f32 / 255.0, dom.b() as f32 / 255.0);
         if !is_home && (s < 0.17 || v < 0.08) {
             return;
@@ -1638,9 +1587,11 @@ impl App {
 
         let light = theme::light();
         let p = painter.with_clip_rect(area);
+        let glow_h = (area.height() * 0.90).clamp(520.0, 840.0).min(area.height());
 
         if let Some(tex) = blur_tex {
-            let t = if self.playing() { (now * 0.28) as f32 } else { 0.0 };
+            // Keep Home completely calm so the gradient never drifts or shifts colors while browsing Home.
+            let t = if !is_home && self.playing() { (now * 0.28) as f32 } else { 0.0 };
             let dx = t.sin() * 0.045;
             let dy = (t * 0.73).cos() * 0.045;
             let u0 = (0.08 + dx).clamp(0.02, 0.20);
@@ -1648,21 +1599,23 @@ impl App {
             let v0 = (0.08 + dy).clamp(0.02, 0.20);
             let v1 = (0.92 + dy).clamp(0.80, 0.98);
 
-            let glow_h = (area.height() * 0.85).clamp(480.0, 760.0).min(area.height());
             let wash_rect = egui::Rect::from_min_max(area.min, egui::pos2(area.right(), area.top() + glow_h));
 
-            let ys = [0.0f32, 0.18, 0.38, 0.60, 0.82, 1.0];
-            let alphas = match (is_home, light) {
-                (true, true) => [0.38f32, 0.29, 0.18, 0.08, 0.02, 0.0],
-                (true, false) => [0.56f32, 0.44, 0.25, 0.11, 0.03, 0.0],
-                (false, true) => [0.20f32, 0.15, 0.08, 0.03, 0.01, 0.0],
-                (false, false) => [0.52f32, 0.42, 0.22, 0.08, 0.02, 0.0],
+            let max_a = match (is_home, light) {
+                (true, true) => 0.34f32,
+                (true, false) => 0.48f32,
+                (false, true) => 0.20f32,
+                (false, false) => 0.50f32,
             };
-            let xs = [0.0f32, 0.45, 1.0];
-            let x_boost = [1.06f32, 1.02, 0.88];
+            const ROWS: usize = 12;
+            let xs = [0.0f32, 0.5, 1.0];
+            let x_boost = [0.95f32, 1.0, 0.95];
 
             let mut mesh = egui::Mesh::with_texture(tex.id());
-            for (&ty, &base_a) in ys.iter().zip(alphas.iter()) {
+            for row in 0..ROWS {
+                let ty = row as f32 / (ROWS - 1) as f32;
+                let curve = (0.5 * (1.0 + (ty * std::f32::consts::PI).cos())).powf(1.35);
+                let base_a = max_a * curve;
                 let y = wash_rect.top() + ty * wash_rect.height();
                 let v = v0 + ty * (v1 - v0);
                 for (&tx, &xb) in xs.iter().zip(x_boost.iter()) {
@@ -1685,7 +1638,7 @@ impl App {
                 }
             }
             let cols = xs.len() as u32;
-            for r in 0..(ys.len() as u32 - 1) {
+            for r in 0..(ROWS as u32 - 1) {
                 for c in 0..(cols - 1) {
                     let i0 = r * cols + c;
                     let i1 = i0 + 1;
@@ -1698,26 +1651,26 @@ impl App {
             p.add(egui::Shape::mesh(mesh));
         }
 
-        // Warm backlit ambient halo behind the artwork, softly touching the sidebar too.
-        if let Some(&acc) = self.art_accents.get(&key) {
-            if is_home && light {
-                let top_pastel = theme::lerp_color(acc, Color32::WHITE, 0.22);
-                let top_band = egui::Rect::from_min_max(area.min, egui::pos2(area.right(), (area.top() + 360.0).min(area.bottom())));
-                shell::vgradient(&p, top_band, theme::with_alpha(top_pastel, 0.24 * fade), Color32::TRANSPARENT);
-            }
-            let breath = if self.playing() { 1.0 + 0.06 * (now as f32 * 0.8).sin() } else { 1.0 };
-            let warm_acc = theme::lerp_color(acc, Color32::from_rgb(255, 224, 196), 0.16);
-            let center = egui::pos2(area.left() + shell::SIDEBAR_W + 190.0, area.top() + 190.0);
-            let rad_x = (area.width() * 0.46).clamp(320.0, 540.0);
-            let rad_y = 310.0;
+        // Smooth ambient halo softly blending across the top of the page (never blue on Home).
+        if let Some(&raw_acc) = self.art_accents.get(&key) {
+            let acc = if is_home { warm_non_blue(raw_acc) } else { raw_acc };
+            let breath = if !is_home && self.playing() { 1.0 + 0.06 * (now as f32 * 0.8).sin() } else { 1.0 };
+            let warm_acc = if light {
+                theme::lerp_color(acc, Color32::WHITE, 0.20)
+            } else {
+                theme::lerp_color(acc, Color32::from_rgb(255, 224, 196), 0.16)
+            };
+            let center = egui::pos2(area.left() + shell::SIDEBAR_W + (area.width() - shell::SIDEBAR_W) * 0.35, area.top() + 140.0);
+            let rad_x = (area.width() * 0.65).clamp(420.0, 820.0);
+            let rad_y = glow_h * 0.55;
             let mut halo = egui::Mesh::default();
             let halo_alpha = (if light {
-                if is_home { 0.22 } else { 0.08 }
+                if is_home { 0.16 } else { 0.08 }
             } else {
-                0.17
+                if is_home { 0.14 } else { 0.17 }
             }) * fade * breath;
             halo.colored_vertex(center, theme::with_alpha(warm_acc, halo_alpha));
-            const SEGS: usize = 24;
+            const SEGS: usize = 36;
             for i in 0..=SEGS {
                 let ang = (i as f32 / SEGS as f32) * std::f32::consts::TAU;
                 halo.colored_vertex(
@@ -1755,7 +1708,7 @@ impl App {
                 theme::with_alpha(tinted, (alpha + 0.15).clamp(0.35, 0.65))
             }
         } else {
-            let tinted = theme::lerp_color(p_col, Color32::from_rgb(0x1a, 0x1e, 0x24), 0.22);
+            let tinted = theme::lerp_color(p_col, Color32::from_rgb(0x18, 0x18, 0x1a), 0.22);
             if alpha >= 1.0 {
                 tinted
             } else {
@@ -1801,14 +1754,14 @@ impl App {
         }
     }
 
-    /// Height of the bottom player area: the compact capsule's 44 points plus its floating margin.
+    /// Height of the bottom player area: the floating capsule's 52 points plus its floating margin.
     fn bar_height(&self) -> f32 {
         if self.page == Page::Settings {
             0.0
         } else if shell::docked(self) {
             shell::DOCKED_H
         } else {
-            68.0
+            80.0
         }
     }
 
@@ -2045,9 +1998,8 @@ impl eframe::App for App {
             titlebar::drag_strip(ui, side, "sidebar");
         }
         if !np_fullscreen && !covered {
-            // Paint the ambient tint and warm blurred artwork across the entire window
-            // before the sidebar so the frosted sidebar harmonizes with the backdrop.
-            if look.id == crate::preset::DEFAULT_ID {
+            // Paint the smooth ambient artwork gradient across the window (Home in all themes; Album/Artist in default look).
+            if look.id == crate::preset::DEFAULT_ID || matches!(self.page, Page::Home) {
                 self.paint_page_backdrop(&ctx, ui.painter(), screen, now);
             }
             use crate::preset::SidebarStyle;
@@ -2155,13 +2107,6 @@ impl eframe::App for App {
         titlebar::resize_edges(&ctx);
         // Back from the mini player.
         self.mini.fade_in(&ctx, now, shell::base_color(self));
-
-        // The swipe hint sits above the pages, while the gesture is still going.
-        if layout == mini::Layout::Full && !self.np_open && self.dialog.is_none() {
-            // After the pages are drawn, so shelves have taken their own swipes first.
-            self.swipe_nav(&ctx, now);
-            self.paint_swipe_arrow(&ctx, now);
-        }
 
         if dev_var("YTM_THEME_TOUR").is_some() {
             self.theme_tour(&ctx, now);
