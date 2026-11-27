@@ -306,11 +306,8 @@ pub fn sidebar(app: &mut App, ui: &mut Ui) {
 
     {
         icon_row(ui, icon::SEARCH, &t!("search"), Page::Search(String::new()), matches!(p, Page::Search(_)), &mut go_to);
-        ui.add_space(4.0);
-        if section(ui, if app.spotify_mode { "Spotify" } else { "YouTube Music" }) {
-            nav(ui, glyphs::HOME, APPLE, &t!("home"), Page::Home, p == Page::Home, &mut go_to);
-            nav(ui, glyphs::EXPLORE, APPLE, &t!("new"), Page::New, p == Page::New, &mut go_to);
-        }
+        nav(ui, glyphs::HOME, APPLE, &t!("home"), Page::Home, p == Page::Home, &mut go_to);
+        nav(ui, glyphs::EXPLORE, APPLE, &t!("new"), Page::New, p == Page::New, &mut go_to);
         ui.add_space(4.0);
         if section(ui, &t!("library")) {
             let lib = |tab: LibTab| p == Page::Library(tab);
