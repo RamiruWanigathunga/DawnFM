@@ -3777,9 +3777,9 @@ pub(super) fn divider(ui: &mut Ui) {
 
 /// macOS 26/27 Liquid Glass switch (click or drag across the track).
 pub(super) fn toggle(ui: &mut Ui, on: &mut bool, name: &str) -> egui::Response {
-    let (track, _) = ui.allocate_exact_size(vec2(52.0, 26.0), Sense::hover());
+    let (track, _) = ui.allocate_exact_size(vec2(41.0, 18.0), Sense::hover());
     let accent = app_accent(ui);
-    let resp = crate::glass::liquid_toggle(ui, track, on, accent, 1.0, ui.scope_id().with(("toggle", name)), false);
+    let resp = crate::glass::liquid_toggle(ui, track, on, accent, 0.70, ui.scope_id().with(("toggle", name)), false);
     let value = *on;
     resp.widget_info(|| egui::WidgetInfo::selected(egui::Role::CheckBox, ui.is_enabled(), value, name));
     resp

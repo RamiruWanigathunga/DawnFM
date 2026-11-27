@@ -1596,8 +1596,8 @@ fn switch_row(ui: &mut Ui, label: &str, on: &mut bool) {
         Color32::from_rgb(235, 235, 235)
     };
     ui.painter().text(pos2(rect.left() + 10.0, rect.center().y), egui::Align2::LEFT_CENTER, label, theme::regular(13.0), fg);
-    let track = Rect::from_center_size(pos2(rect.right() - 26.0, rect.center().y), vec2(38.0, 19.0));
-    crate::glass::liquid_toggle(ui, track, on, accent, 0.72, resp.id.with("switch"), resp.clicked());
+    let track = Rect::from_center_size(pos2(rect.right() - 27.5, rect.center().y), vec2(41.0, 18.0));
+    crate::glass::liquid_toggle(ui, track, on, accent, 0.70, resp.id.with("switch"), resp.clicked());
 }
 
 /// A small icon button (24 × 24).
