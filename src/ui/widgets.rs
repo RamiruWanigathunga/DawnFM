@@ -263,9 +263,8 @@ pub fn pill(ui: &mut Ui, label: &str, glyph: Option<char>, primary: bool) -> Res
             (bg, text_c, text_c)
         } else {
             let bg = theme::glass(0.12 + 0.08 * h);
-            let text_c = theme::lerp_color(theme::text_dim(), theme::text(), h);
-            let ic = theme::lerp_color(Color32::from_white_alpha(225), Color32::WHITE, h);
-            (bg, text_c, ic)
+            let text_c = theme::lerp_color(Color32::from_white_alpha(232), Color32::WHITE, h);
+            (bg, text_c, text_c)
         }
     };
 
@@ -370,7 +369,7 @@ pub fn chip(ui: &mut Ui, label: &str, selected: bool) -> Response {
         let off_fill = theme::glass(0.11 + 0.08 * h);
         let on_fill = if h > 0.0 { theme::lerp_color(accent, Color32::WHITE, 0.12) } else { accent };
         let fill = theme::lerp_color(off_fill, on_fill, s);
-        let text_c = theme::lerp_color(Color32::from_white_alpha(215), Color32::WHITE, s.max(h * 0.5));
+        let text_c = theme::lerp_color(Color32::from_white_alpha(232), Color32::WHITE, s.max(h * 0.5));
         (fill, on_fill, text_c)
     };
 
