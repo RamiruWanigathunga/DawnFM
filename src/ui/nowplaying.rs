@@ -1193,11 +1193,11 @@ pub(crate) fn options_menu(
         if widgets::menu_action(ui, Some(icon::LIST_PLUS), "Play next") {
             app.actions.push(Action::PlayNext(track.clone()));
         }
-        if widgets::menu_action(ui, Some(icon::LIST_MUSIC), "Add to queue") {
+        if widgets::menu_action(ui, None, "Add to queue") {
             app.actions.push(Action::Enqueue(track.clone()));
         }
         let queue = app.np_tab == NpTab::UpNext;
-        if widgets::menu_action(ui, Some(icon::LIST_MUSIC), if queue { "View lyrics" } else { "View queue" }) {
+        if widgets::menu_action(ui, None, if queue { "View lyrics" } else { "View queue" }) {
             app.np_tab = if queue { NpTab::Lyrics } else { NpTab::UpNext };
         }
         menu_divider(ui);
@@ -1207,10 +1207,10 @@ pub(crate) fn options_menu(
         if hires_playing || !app.hires_sources.is_empty() {
             menu_divider(ui);
             if hires_playing {
-                if widgets::menu_action(ui, Some(icon::MUSIC), "Revert quality") {
+                if widgets::menu_action(ui, None, "Revert quality") {
                     app.actions.push(Action::RevertQuality);
                 }
-            } else if widgets::menu_action(ui, Some(icon::MUSIC), "Upgrade quality") {
+            } else if widgets::menu_action(ui, None, "Upgrade quality") {
                 app.actions.push(Action::UpgradeQuality);
             }
         }

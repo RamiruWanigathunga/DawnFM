@@ -891,14 +891,6 @@ pub fn menu_action(ui: &mut Ui, glyph: Option<char>, label: &str) -> bool {
     }
 }
 
-/// A menu row marked with the app's own star, filled once the song is liked.
-pub fn menu_action_star(ui: &mut Ui, liked: bool, label: &str) -> bool {
-    menu_row(ui, label, Some(|ui: &Ui, at: Pos2, color: Color32| {
-        let glyph = if liked { super::glyphs::STAR_FILLED } else { super::glyphs::STAR };
-        super::glyphs::draw(ui, at, 13.5, glyph, color);
-    }))
-}
-
 /// `remove`: the song's row in the open playlist, when it's yours and the song can come out.
 pub fn song_menu(ui: &mut Ui, t: &Track, liked: bool, remove: Option<usize>, remove_queue: Option<usize>, acts: &mut Vec<Action>) {
     ui.set_width(178.0);
@@ -908,10 +900,10 @@ pub fn song_menu(ui: &mut Ui, t: &Track, liked: bool, remove: Option<usize>, rem
     if menu_action(ui, Some(icon::LIST_PLUS), "Play next") {
         acts.push(Action::PlayNext(t.clone()));
     }
-    if menu_action(ui, Some(icon::LIST_MUSIC), "Add to queue") {
+    if menu_action(ui, None, "Add to queue") {
         acts.push(Action::Enqueue(t.clone()));
     }
-    if menu_action(ui, Some(icon::LIST_MUSIC), "View queue") {
+    if menu_action(ui, None, "View queue") {
         acts.push(Action::ViewQueue);
     }
     ui.add_space(2.0);
@@ -919,34 +911,34 @@ pub fn song_menu(ui: &mut Ui, t: &Track, liked: bool, remove: Option<usize>, rem
 
 /// The song menu's items, for menus that add their own (now playing's options).
 pub fn song_actions(ui: &mut Ui, t: &Track, liked: bool, remove: Option<usize>, remove_queue: Option<usize>, acts: &mut Vec<Action>) {
-    if menu_action_star(ui, liked, if liked { "Remove like" } else { "Like song" }) {
+    if menu_action(ui, None, if liked { "Remove like" } else { "Like song" }) {
         acts.push(Action::Like(t.clone(), !liked));
     }
-    if menu_action(ui, Some(icon::THUMBS_DOWN), "Dislike") {
+    if menu_action(ui, None, "Dislike") {
         acts.push(Action::Dislike(t.clone()));
     }
     menu_separator(ui);
-    if menu_action(ui, Some(icon::LIST_PLUS), "Add to playlist") {
+    if menu_action(ui, None, "Add to playlist") {
         acts.push(Action::AddToPlaylist(vec![t.clone()]));
     }
     if let Some(i) = remove
-        && menu_action(ui, Some(icon::LIST_MINUS), "Remove from playlist")
+        && menu_action(ui, None, "Remove from playlist")
     {
         acts.push(Action::RemoveFromPlaylist(vec![i]));
     }
     if let Some(i) = remove_queue
-        && menu_action(ui, Some(icon::LIST_MINUS), &t!("remove_from_queue"))
+        && menu_action(ui, None, &t!("remove_from_queue"))
     {
         acts.push(Action::QueueRemove(i));
     }
     match crate::downloads::path(&t.id) {
         Some(path) => {
-            if menu_action(ui, Some(icon::FOLDER_OPEN), "Show in folder") {
+            if menu_action(ui, None, "Show in folder") {
                 crate::downloads::show_file(&path);
             }
         }
         None => {
-            if menu_action(ui, Some(icon::DOWNLOAD), "Download") {
+            if menu_action(ui, None, "Download") {
                 acts.push(Action::Download(t.clone()));
             }
         }

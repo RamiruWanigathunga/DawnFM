@@ -692,24 +692,78 @@ pub fn share_more_pill(
         ]));
     }
 
-    if share_resp.hovered() {
-        ui.painter().rect_filled(share_rect, egui::CornerRadius { nw: 17, ne: 0, sw: 17, se: 0 }, if light { Color32::from_black_alpha(22) } else { theme::glass(0.10) });
+    let share_active = share_resp.hovered() || share_resp.is_pointer_button_down_on();
+    let more_active = more_resp.hovered() || more_resp.is_pointer_button_down_on() || more_open;
+    let any_active = share_active || more_active;
+    let hover_id = ui.scope_id().with((id_salt, "pill-hover"));
+    let vis = crate::glass::spring_bool(ui.ctx(), hover_id.with("vis"), any_active, crate::glass::Tuning::SNAP).clamp(0.0, 1.0);
+    let last_dx_id = hover_id.with("last-dx");
+    let target_dx = if any_active {
+        let dx = if more_active {
+            more_rect.center().x - pill_rect.min.x
+        } else {
+            share_rect.center().x - pill_rect.min.x
+        };
+        ui.ctx().data_mut(|d| d.insert_temp(last_dx_id, dx));
+        dx
+    } else {
+        ui.ctx().data(|d| d.get_temp::<f32>(last_dx_id)).unwrap_or(share_rect.center().x - pill_rect.min.x)
+    };
+    let mut thumb = crate::glass::load_thumb(ui.ctx(), hover_id);
+    if any_active && vis <= 0.02 {
+        thumb.pos.value = target_dx;
+        thumb.pos.velocity = 0.0;
     }
-    if more_resp.hovered() || more_open {
-        ui.painter().rect_filled(more_rect, egui::CornerRadius { nw: 0, ne: 17, sw: 0, se: 17 }, if light { Color32::from_black_alpha(22) } else { theme::glass(0.10) });
+    let rest_d = (draw_pill.height() - 6.0).max(20.0);
+    let held_d = (draw_pill.height() - 2.0).max(22.0);
+    let held_side = share_resp.is_pointer_button_down_on() || more_resp.is_pointer_button_down_on();
+    let thumb_frame = thumb.step(
+        ui.ctx(),
+        target_dx,
+        crate::glass::Tuning::SMOOTH,
+        held_side,
+        Vec2::splat(rest_d),
+        Vec2::splat(held_d),
+    );
+    crate::glass::store_thumb(ui.ctx(), hover_id, thumb);
+
+    if vis > 0.01 {
+        let scale = 0.76 + 0.24 * vis;
+        let size = thumb_frame.size * scale;
+        let center = pos2(draw_pill.center().x + (thumb.pos.value - pill_rect.width() * 0.5), draw_pill.center().y);
+        let circle = Rect::from_center_size(center, size);
+        let r = circle.height() * 0.5;
+        let (fill, rim) = if light {
+            (
+                Color32::from_black_alpha((22.0 * vis) as u8),
+                Color32::from_white_alpha((90.0 * vis) as u8),
+            )
+        } else {
+            (
+                Color32::from_white_alpha((34.0 * vis) as u8),
+                Color32::from_white_alpha((30.0 * vis) as u8),
+            )
+        };
+        ui.painter().rect_filled(circle, r, fill);
+        ui.painter().rect_stroke(circle, r, egui::Stroke::new(0.8, rim), egui::StrokeKind::Inside);
     }
 
-    // Divider between Share and More
-    ui.painter().line_segment([pos2(mid_x, draw_pill.min.y + 7.0), pos2(mid_x, draw_pill.max.y - 7.0)], egui::Stroke::new(1.0, if light { Color32::from_black_alpha(20) } else { theme::glass(0.10) }));
+    let shift = draw_pill.center() - pill_rect.center();
+    let share_fg = if light {
+        Color32::from_rgb(0x18, 0x14, 0x1c)
+    } else {
+        theme::lerp_color(theme::lerp_color(theme::text_dim(), theme::text(), 0.5), Color32::WHITE, press_share.hover)
+    };
+    widgets::icon_at(ui, share_rect.center() + shift, icon::SHARE, 15.0 * press_share.scale, share_fg);
 
-    // Share icon
-    let share_fg = if light { Color32::from_rgb(0x18, 0x14, 0x1c) } else if share_resp.hovered() { Color32::WHITE } else { theme::lerp_color(theme::text_dim(), theme::text(), 0.5) };
-    widgets::icon_at(ui, share_rect.center(), icon::SHARE, 15.0 * press_share.scale, share_fg);
-
-    // More dots
-    let more_fg = if light { Color32::from_rgb(0x18, 0x14, 0x1c) } else if more_resp.hovered() || more_open { Color32::WHITE } else { theme::lerp_color(theme::text_dim(), theme::text(), 0.5) };
+    let more_h = press_more.hover.max(more_open as u8 as f32);
+    let more_fg = if light {
+        Color32::from_rgb(0x18, 0x14, 0x1c)
+    } else {
+        theme::lerp_color(theme::lerp_color(theme::text_dim(), theme::text(), 0.5), Color32::WHITE, more_h)
+    };
     for i in -1..=1 {
-        ui.painter().circle_filled(more_rect.center() + vec2(i as f32 * 4.5 * press_more.scale, 0.0), 1.6 * press_more.scale, more_fg);
+        ui.painter().circle_filled(more_rect.center() + shift + vec2(i as f32 * 4.5 * press_more.scale, 0.0), 1.6 * press_more.scale, more_fg);
     }
 
     if share_resp.clicked() {
@@ -1607,15 +1661,14 @@ pub fn collection(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
                                 (false, false) => "Pin playlist",
                                 (false, true) => "Unpin playlist",
                             };
-                            let glyph = if is_pinned { icon::PIN_OFF } else { icon::PIN };
-                            if widgets::menu_action(ui, Some(glyph), label) {
+                            if widgets::menu_action(ui, None, label) {
                                 acts.push(Action::TogglePin(pin_card.clone()));
                             }
                             any = true;
                         }
                         // 2. Add to library (only when not already saved and can be saved)
                         if !auto && !saved && let Some(sid) = &save_id {
-                            if widgets::menu_action(ui, Some(icon::LIBRARY), "Add to library") {
+                            if widgets::menu_action(ui, None, "Add to library") {
                                 acts.push(Action::SaveCollection(sid.clone(), true));
                             }
                             any = true;
@@ -1627,13 +1680,13 @@ pub fn collection(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
                             }
                             any = true;
                             if missing_dl.is_empty() {
-                                if widgets::menu_action(ui, Some(icon::FOLDER_OPEN), "Show in folder") {
+                                if widgets::menu_action(ui, None, "Show in folder") {
                                     crate::downloads::open_folder();
                                 }
-                            } else if widgets::menu_action(ui, Some(icon::DOWNLOAD), "Download") {
+                            } else if widgets::menu_action(ui, None, "Download") {
                                 acts.push(Action::DownloadMany(missing_dl.clone()));
                             }
-                            if widgets::menu_action(ui, Some(icon::LIST_PLUS), "Add to playlist") {
+                            if widgets::menu_action(ui, None, "Add to playlist") {
                                 acts.push(Action::AddToPlaylist(tracks.to_vec()));
                             }
                             if widgets::menu_action(ui, Some(icon::LIST_PLUS), "Play next") {
@@ -1646,11 +1699,11 @@ pub fn collection(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
                                 widgets::menu_separator(ui);
                             }
                             any = true;
-                            if widgets::menu_action_star(ui, is_fav, if is_fav { "Undo favourite" } else { "Favourite" }) {
+                            if widgets::menu_action(ui, None, if is_fav { "Undo favourite" } else { "Favourite" }) {
                                 acts.push(Action::ToggleFavouriteCollection(coll_id.clone()));
                             }
                             if !owned
-                                && widgets::menu_action(ui, Some(icon::THUMBS_DOWN), if is_less { "Undo suggest less" } else { "Suggest less" })
+                                && widgets::menu_action(ui, None, if is_less { "Undo suggest less" } else { "Suggest less" })
                             {
                                 acts.push(Action::SuggestLess(coll_id.clone()));
                             }
@@ -1664,26 +1717,26 @@ pub fn collection(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
                         }
                         if has_select {
                             any = true;
-                            if widgets::menu_action(ui, Some(icon::LIST_CHECKS), if selecting { "Done selecting" } else { "Select" }) {
+                            if widgets::menu_action(ui, None, if selecting { "Done selecting" } else { "Select" }) {
                                 if selecting { stop_select = true } else { start_select = true }
                             }
                         }
                         if owned {
                             any = true;
-                            if widgets::menu_action(ui, Some(icon::MUSIC), "Edit playlist") {
+                            if widgets::menu_action(ui, None, "Edit playlist") {
                                 acts.push(Action::EditPlaylist);
                             }
-                            if widgets::menu_action(ui, Some(icon::USERS), "Collaborate") {
+                            if widgets::menu_action(ui, None, "Collaborate") {
                                 acts.push(Action::Collaborate);
                             }
-                            if widgets::menu_action(ui, Some(icon::TRASH_2), "Delete playlist") {
+                            if widgets::menu_action(ui, None, "Delete playlist") {
                                 acts.push(Action::DeletePlaylist);
                             }
                         }
                         // 8. Delete from library (when saved to library and removable)
                         if !auto && saved && let Some(sid) = &save_id {
                             any = true;
-                            if widgets::menu_action(ui, Some(icon::TRASH_2), "Delete from library") {
+                            if widgets::menu_action(ui, None, "Delete from library") {
                                 acts.push(Action::SaveCollection(sid.clone(), false));
                             }
                         }

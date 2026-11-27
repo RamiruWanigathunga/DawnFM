@@ -358,7 +358,7 @@ pub fn sidebar(app: &mut App, ui: &mut Ui) {
                     text_at(ui, pos2(rect.left() + 44.0, rect.center().y - 8.5), &c.title, theme::regular(13.0), theme::label(), w);
                     widgets::context_menu(&resp, |ui| {
                         ui.set_min_width(150.0);
-                        if widgets::menu_action(ui, Some(icon::PIN_OFF), "Unpin") {
+                        if widgets::menu_action(ui, None, "Unpin") {
                             unpin = Some(c.clone());
                         }
                     });
