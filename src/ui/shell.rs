@@ -941,19 +941,23 @@ pub fn player_bar(app: &mut App, ui: &mut Ui, now: f64, _frosted: bool) {
     let lyr_x = r_base - 3.0 * r_spacing;
     let right_boundary = lyr_x - 18.0;
 
-    // Volume hover slider
-    let slider_w = (r_spacing * 2.0).min(60.0);
+    // Click-to-expand inline volume capsule slider
     let r_vol = Rect::from_center_size(pos2(vol_x, cy), Vec2::splat(28.0));
-    let slider_rect = Rect::from_min_size(pos2(vol_x - slider_w - 6.0, cy - 8.0), vec2(slider_w, 16.0));
-
-    let hover_icon = ui.input(|i| i.pointer.hover_pos()).is_some_and(|p| r_vol.contains(p));
-    let hover_slider = ui.input(|i| i.pointer.hover_pos()).is_some_and(|p| slider_rect.expand2(vec2(6.0, 8.0)).union(r_vol).contains(p));
+    let pill_right = r_vol.right() + 5.0;
+    let expanded_w = (r_spacing * 3.0 + 34.0).clamp(108.0, 128.0);
     let vol_open_id = ui.scope_id().with("bar-vol-open");
-    let was_vol_open = ui.data(|d| d.get_temp::<bool>(vol_open_id).unwrap_or(false));
-    let is_dragging = was_vol_open && ui.input(|i| i.pointer.any_down());
-    let vol_active = hover_icon || (was_vol_open && (hover_slider || is_dragging));
-    ui.data_mut(|d| d.insert_temp(vol_open_id, vol_active));
-    let v_reveal = theme::anim_bool(&ctx, "bar-vol-reveal-inline", vol_active, 0.16);
+    let mut vol_open = ui.data(|d| d.get_temp::<bool>(vol_open_id).unwrap_or(false));
+    let v_reveal = theme::anim_bool(&ctx, "bar-vol-reveal-inline", vol_open, 0.20);
+    let cur_w = egui::lerp(32.0..=expanded_w, v_reveal);
+    let vol_pill_rect = Rect::from_min_max(pos2(pill_right - cur_w, cy - 19.0), pos2(pill_right, cy + 19.0));
+    let slider_rect = Rect::from_min_max(pos2(pill_right - expanded_w + 14.0, cy - 10.0), pos2(r_vol.left() - 6.0, cy + 10.0));
+    if vol_open {
+        let clicked_outside = ui.input(|i| i.pointer.any_pressed())
+            && ui.input(|i| i.pointer.interact_pos()).is_none_or(|p| !vol_pill_rect.contains(p));
+        if clicked_outside || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+            vol_open = false;
+        }
+    }
 
     // ------------------------------------------------------------------ Center Zone: Art + Title/Artist + Scrubber + Options
     let center_avail = (right_boundary - left_boundary).max(80.0);
@@ -1123,44 +1127,22 @@ pub fn player_bar(app: &mut App, ui: &mut Ui, now: f64, _frosted: bool) {
     let like_label = if liked { t!("remove_from_favourites") } else { t!("add_to_favourites") };
     let r_star = Rect::from_center_size(pos2(star_x, cy), Vec2::splat(28.0));
 
-    // When volume is hovered, draw the volume slider to the left of the volume icon
-    if v_reveal > 0.05 {
-        volume_slider(app, ui, slider_rect, "bar-vol-inline");
-    }
-
-    // Volume icon
-    let vol = app.audio.volume();
-    let vol_resp = ui.interact(r_vol, ui.scope_id().with(("bar-r", "vol")), Sense::click());
-    let vol_resp = named(vol_resp, "Volume").on_hover_cursor(egui::CursorIcon::PointingHand);
-    let (vol_hover, vol_scale) = widgets::paint_icon_touch(ui, &vol_resp, r_vol, light_bar);
-    let vol_h = vol_hover.max(if v_reveal > 0.5 { 1.0 } else { 0.0 });
-    let step = glyphs::volume_step(vol);
-    glyphs::draw(ui, r_vol.center(), 17.5 * vol_scale, glyphs::VOLUME[step], ink(vol_h));
-    if vol_resp.hovered() {
-        let scroll = ui.input(|i| i.smooth_scroll_delta.y);
-        if scroll != 0.0 {
-            app.audio.set_volume((vol + scroll / 600.0).clamp(0.0, 1.0));
-        }
-    }
-    if vol_resp.clicked() {
-        let stash = unmute_id();
-        if vol > 0.0 {
-            ui.data_mut(|d| d.insert_temp(stash, vol));
-            app.audio.set_volume(0.0);
-        } else {
-            app.audio.set_volume(ui.data(|d| d.get_temp::<f32>(stash)).unwrap_or(0.6));
-        }
-    }
-
     // Star, Lyrics & Queue fade out when volume slider expands
     if v_reveal < 0.95 {
         let r_alpha = (1.0 - v_reveal).clamp(0.0, 1.0);
         let r_ink = |h: f32| theme::with_alpha(ink(h), r_alpha);
+        let interactive_r = r_alpha > 0.5 && !vol_open;
 
         // Star / Like
-        let star_resp = ui.interact(r_star, ui.scope_id().with(("bar-r", "like")), Sense::click());
-        let star_resp = named(star_resp, &like_label).on_hover_cursor(egui::CursorIcon::PointingHand);
-        let (star_h, star_s) = widgets::paint_icon_touch(ui, &star_resp, r_star, light_bar);
+        let r_star_hit = if interactive_r {
+            let star_resp = ui.interact(r_star, ui.scope_id().with(("bar-r", "like")), Sense::click());
+            let star_resp = named(star_resp, &like_label).on_hover_cursor(egui::CursorIcon::PointingHand);
+            let (star_h, star_s) = widgets::paint_icon_touch(ui, &star_resp, r_star, light_bar);
+            Some((star_resp, star_h, star_s))
+        } else {
+            None
+        };
+        let (star_h, star_s) = r_star_hit.as_ref().map_or((0.0, 1.0), |(_, h, s)| (*h, *s));
         let pop = heard.as_ref().map_or(0.0, |t| theme::anim_bool(&ctx, ("liked", &t.id), liked, 0.3));
         let dim = if heard.is_some() { 1.0 } else { 0.4 };
         let tint = theme::lerp_color(r_ink(star_h), accent, pop).gamma_multiply(dim);
@@ -1169,14 +1151,17 @@ pub fn player_bar(app: &mut App, ui: &mut Ui, now: f64, _frosted: bool) {
         if pop > 0.0 {
             glyphs::draw(ui, r_star.center(), size, glyphs::STAR_FILLED, theme::with_alpha(tint, tint.a() as f32 / 255.0 * pop));
         }
-        if star_resp.clicked() && let Some(t) = heard {
+        if let Some((star_resp, _, _)) = r_star_hit
+            && star_resp.clicked()
+            && let Some(t) = heard
+        {
             app.actions.push(Action::Like(t, !liked));
         }
 
         // Queue / Up Next
         let queue_open = if app.np_open { app.np_tab == NpTab::UpNext } else { app.queue_open };
         let r_q = Rect::from_center_size(pos2(q_x, cy), Vec2::splat(28.0));
-        if r_alpha > 0.5 {
+        if interactive_r {
             let q_resp = ui.interact(r_q, ui.scope_id().with(("bar-r", "queue")), Sense::click());
             let q_resp = named(q_resp, &t!("up_next")).on_hover_cursor(egui::CursorIcon::PointingHand);
             let (q_h, q_s) = widgets::paint_icon_touch(ui, &q_resp, r_q, light_bar);
@@ -1192,14 +1177,14 @@ pub fn player_bar(app: &mut App, ui: &mut Ui, now: f64, _frosted: bool) {
                 }
             }
         } else {
-            glyphs::draw(ui, r_q.center(), 17.5, glyphs::QUEUE, if queue_open { accent } else { r_ink(0.0) });
+            glyphs::draw(ui, r_q.center(), 17.5, glyphs::QUEUE, if queue_open { theme::with_alpha(accent, r_alpha) } else { r_ink(0.0) });
         }
 
         // Lyrics
         let lyrics_on = if app.np_open { app.np_tab == NpTab::Lyrics && !app.no_lyrics() } else { app.lyrics_drawer && !app.queue_open };
         let lyrics_label = format!("{} (⌘L)", t!("lyrics"));
         let r_lyr = Rect::from_center_size(pos2(lyr_x, cy), Vec2::splat(28.0));
-        if r_alpha > 0.5 {
+        if interactive_r {
             let lyr_resp = ui.interact(r_lyr, ui.scope_id().with(("bar-r", "lyrics")), Sense::click());
             let lyr_resp = named(lyr_resp, &lyrics_label).on_hover_cursor(egui::CursorIcon::PointingHand);
             let (lyr_h, lyr_s) = widgets::paint_icon_touch(ui, &lyr_resp, r_lyr, light_bar);
@@ -1208,9 +1193,53 @@ pub fn player_bar(app: &mut App, ui: &mut Ui, now: f64, _frosted: bool) {
                 app.toggle_lyrics();
             }
         } else {
-            glyphs::draw(ui, r_lyr.center(), 17.5, if lyrics_on { glyphs::LYRICS } else { glyphs::LYRICS_OFF }, if lyrics_on { accent } else { r_ink(0.0) });
+            glyphs::draw(ui, r_lyr.center(), 17.5, if lyrics_on { glyphs::LYRICS } else { glyphs::LYRICS_OFF }, if lyrics_on { theme::with_alpha(accent, r_alpha) } else { r_ink(0.0) });
         }
     }
+
+    // Expanded Liquid Glass capsule for the volume slider when clicked open.
+    if v_reveal > 0.01 {
+        if crate::renderer::active() == crate::renderer::Renderer::OpenGl {
+            let style = crate::glass::control(crate::glass::Corner::Capsule, light_bar, 0.35, v_reveal);
+            crate::glass::paint(ui, egui::Id::unique("bar-vol-capsule-glass"), vol_pill_rect, style);
+        } else {
+            let pill_fill = if light_bar {
+                Color32::from_black_alpha((24.0 * v_reveal) as u8)
+            } else {
+                Color32::from_white_alpha((32.0 * v_reveal) as u8)
+            };
+            ui.painter().rect_filled(vol_pill_rect, vol_pill_rect.height() * 0.5, pill_fill);
+        }
+        if v_reveal > 0.25 {
+            let mut slider_ui = ui.new_child(egui::UiBuilder::new().max_rect(vol_pill_rect));
+            slider_ui.set_clip_rect(vol_pill_rect.intersect(ui.clip_rect()));
+            slider_ui.set_opacity(v_reveal);
+            volume_slider(app, &mut slider_ui, slider_rect, "bar-vol-inline");
+        }
+    }
+
+    // Volume icon (click expands/collapses the volume slider capsule; scroll adjusts volume).
+    let vol = app.audio.volume();
+    let vol_resp = ui.interact(r_vol, ui.scope_id().with(("bar-r", "vol")), Sense::click());
+    let vol_resp = named(vol_resp, "Volume").on_hover_cursor(egui::CursorIcon::PointingHand);
+    let (vol_hover, vol_scale) = if v_reveal < 0.05 {
+        widgets::paint_icon_touch(ui, &vol_resp, r_vol, light_bar)
+    } else {
+        (if vol_resp.hovered() { 1.0 } else { 0.0 }, 1.0)
+    };
+    let vol_h = vol_hover.max(if vol_open { 1.0 } else { 0.0 });
+    let step = glyphs::volume_step(vol);
+    glyphs::draw(ui, r_vol.center(), 17.5 * vol_scale, glyphs::VOLUME[step], ink(vol_h));
+    if vol_resp.hovered() {
+        let scroll = ui.input(|i| i.smooth_scroll_delta.y);
+        if scroll != 0.0 {
+            app.audio.set_volume((vol + scroll / 600.0).clamp(0.0, 1.0));
+        }
+    }
+    if vol_resp.clicked() {
+        vol_open = !vol_open;
+    }
+    ui.data_mut(|d| d.insert_temp(vol_open_id, vol_open));
 }
 
 /// The BitChord mark, white, fitted inside `r` (the sleeve slot when nothing plays).
@@ -1251,13 +1280,13 @@ fn volume_slider(app: &mut App, ui: &mut Ui, slider: Rect, salt: &str) {
     let vresp = ui.interact(slider, ui.scope_id().with(salt), Sense::click_and_drag()).on_hover_cursor(egui::CursorIcon::PointingHand);
     vresp.widget_info(|| egui::WidgetInfo::slider(true, vol as f64, "Volume"));
     let vh = theme::anim_bool(ui.ctx(), ui.scope_id().with((salt, "h")), vresp.hovered() || vresp.dragged(), 0.15);
-    let track_r = Rect::from_center_size(slider.center(), vec2(slider.width(), 4.0));
-    ui.painter().rect_filled(track_r, 2.0, theme::glass(0.15));
-    let fill = Rect::from_min_size(track_r.min, vec2(track_r.width() * vol, 4.0));
-    let fill_col = if theme::light() { Color32::BLACK } else { theme::lerp_color(theme::text_dim(), theme::text(), vh) };
-    let knob_col = if theme::light() { Color32::BLACK } else { theme::text() };
-    ui.painter().rect_filled(fill, 2.0, fill_col);
-    ui.painter().circle_filled(pos2(fill.right(), track_r.center().y), 2.0 + 4.5 * vh, knob_col);
+    let thick = 5.5 + 1.5 * vh;
+    let track_r = Rect::from_center_size(slider.center(), vec2(slider.width(), thick));
+    let r = thick * 0.5;
+    ui.painter().rect_filled(track_r, r, theme::glass(0.22));
+    let fill = Rect::from_min_size(track_r.min, vec2(track_r.width() * vol, thick));
+    let fill_col = if theme::light() { Color32::BLACK } else { Color32::WHITE };
+    ui.painter().rect_filled(fill, r, fill_col);
     if let Some(p) = vresp.interact_pointer_pos()
         && (vresp.dragged() || vresp.clicked())
     {
