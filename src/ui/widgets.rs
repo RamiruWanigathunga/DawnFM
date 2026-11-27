@@ -102,6 +102,35 @@ pub fn text_at(ui: &Ui, pos: Pos2, text: &str, font: egui::FontId, color: Color3
     rect
 }
 
+/// Small Apple Music-style `[E]` explicit advisory badge centered at `center`.
+pub fn explicit_badge(ui: &Ui, center: Pos2, size: f32, ink: Color32) {
+    let r = Rect::from_center_size(center, Vec2::splat(size));
+    let radius = (size * 0.22).clamp(2.0, 3.5);
+    let bright_ink = (ink.r() as u16 + ink.g() as u16 + ink.b() as u16) > 380;
+    let bg = theme::with_alpha(ink, if bright_ink { 0.56 } else { 0.52 });
+    let fg = if bright_ink { Color32::from_rgb(0x16, 0x16, 0x18) } else { Color32::WHITE };
+    ui.painter().rect_filled(r, radius, bg);
+    ui.painter().text(r.center(), Align2::CENTER_CENTER, "E", theme::bold((size * 0.74).max(8.0)), fg);
+}
+
+/// Draws a single-line song title with an inline `[E]` badge when `explicit` is true.
+pub fn title_with_explicit(ui: &Ui, pos: Pos2, title: &str, font: egui::FontId, color: Color32, width: f32, explicit: bool) -> Vec2 {
+    if !explicit {
+        let g = galley(ui, title, font, color, width);
+        let size = g.size();
+        ui.painter().galley(pos, g, color);
+        return size;
+    }
+    let badge = (font.size * 0.86).clamp(11.0, 14.0);
+    let gap = 5.0;
+    let reserve = badge + gap;
+    let g = galley(ui, title, font, color, (width - reserve).max(20.0));
+    let tsize = g.size();
+    ui.painter().galley(pos, g, color);
+    explicit_badge(ui, pos2(pos.x + tsize.x + gap + badge * 0.5, pos.y + tsize.y * 0.5), badge, color);
+    vec2((tsize.x + reserve).min(width), tsize.y)
+}
+
 /// Single-line text whose artist names are links: underlined on hover, and a click
 /// opens the artist's page. Names without a channel id stay plain text.
 #[allow(clippy::too_many_arguments)]
@@ -1367,7 +1396,7 @@ pub fn track_row(ui: &mut Ui, t: &Track, o: &RowOpts, acts: &mut Vec<Action>) ->
     };
     let title_y = if sub.is_some() { cy - 18.0 } else { cy - 9.0 };
     let text_max_w = title_w.min(content_right - x).max(20.0);
-    text_at(ui, pos2(x, title_y), &t.title, theme::semibold(14.5), title_col, text_max_w);
+    title_with_explicit(ui, pos2(x, title_y), &t.title, theme::semibold(14.5), title_col, text_max_w, t.explicit);
     if let Some(sub) = &sub {
         linked_text(ui, pos2(x, cy + 2.0), sub, &t.artists, theme::regular(13.0), dim_col, text_max_w, acts);
     }
@@ -1777,6 +1806,7 @@ mod shelf_scroll_tests {
             track_nr: None,
             plays: None,
             music_video: false,
+            explicit: false,
         };
 
         // Reference tracks from media_1794682052828_401d102e.jpg

@@ -22,6 +22,7 @@ pub fn sample_track() -> Track {
         track_nr: Some(9),
         plays: Some(3_500_000_000),
         music_video: false,
+        explicit: false,
     }
 }
 
@@ -40,6 +41,7 @@ pub fn sample_music_video() -> Track {
         track_nr: None,
         plays: Some(850_000_000),
         music_video: true,
+        explicit: false,
     }
 }
 
@@ -62,6 +64,7 @@ pub fn sample_tracks(count: usize) -> Vec<Track> {
             track_nr: Some(((i % 12) + 1) as u16),
             plays: Some(100_000 * ((i as u64) + 1)),
             music_video: i % 7 == 0,
+            explicit: false,
         })
         .collect()
 }
@@ -106,6 +109,7 @@ pub fn sample_album_tracks() -> Vec<Track> {
             track_nr: Some((idx + 1) as u16),
             plays: Some(50_000_000 + (idx as u64 * 10_000_000)),
             music_video: false,
+            explicit: false,
         })
         .collect()
 }

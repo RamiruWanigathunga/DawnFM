@@ -1664,7 +1664,8 @@ fn top_results_grid(ui: &mut Ui, cards: &[Card], liked: &HashSet<String>, pick: 
                     Target::Playlist(_) => "Playlist".to_owned(),
                     Target::Song(_) => c.subtitle.clone(),
                 };
-                widgets::text_at(ui, pos2(x, rect.center().y - 16.0), &c.title, theme::semibold(13.5), theme::text(), text_w);
+                let song_explicit = matches!(&c.target, Target::Song(t) if t.explicit);
+                widgets::title_with_explicit(ui, pos2(x, rect.center().y - 16.0), &c.title, theme::semibold(13.5), theme::text(), text_w, song_explicit);
                 widgets::text_at(ui, pos2(x, rect.center().y + 3.0), &sub, theme::regular(12.0), theme::text_dim(), text_w);
 
                 if is_song {
@@ -3879,6 +3880,7 @@ mod tests {
             track_nr: None,
             plays: None,
             music_video: false,
+            explicit: false,
         };
         let history = vec![row(vec![("A", Some("id-a")), ("Unlinked", None)]), row(vec![("B", Some("id-b")), ("A", Some("id-a"))])];
         let names: Vec<_> = super::played_artists(&history).into_iter().map(|a| a.name).collect();

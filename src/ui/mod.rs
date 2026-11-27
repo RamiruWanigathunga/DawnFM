@@ -913,7 +913,7 @@ impl App {
         let smoke = std::env::var("YTM_SMOKE").ok().filter(|q| !q.is_empty());
         if let Some(ids) = smoke.as_deref().and_then(|q| q.strip_prefix("id:")) {
             // "id:a,b,c" queues several.
-            let track = |id: &str| Track { id: id.to_owned(), title: id.to_owned(), artists: vec![], album: None, duration: None, thumbs: vec![], track_nr: None, plays: None, music_video: false };
+            let track = |id: &str| Track { id: id.to_owned(), title: id.to_owned(), artists: vec![], album: None, duration: None, thumbs: vec![], track_nr: None, plays: None, music_video: false, explicit: false };
             app.play_list(ids.split(',').map(track).collect(), 0);
         } else if let Some(q) = smoke {
             app.go(Page::Search(q.clone()));

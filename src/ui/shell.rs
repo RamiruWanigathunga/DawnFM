@@ -1005,18 +1005,19 @@ pub fn player_bar(app: &mut App, ui: &mut Ui, now: f64, _frosted: bool) {
     let row1_y = center_box.top() + 9.0;
     let row2_y = center_box.top() + 24.0;
 
-    let (title, artists, album) = match &track {
-        Some(t) => (t.title.clone(), t.artists.clone(), t.album.as_ref().map(|a| a.name.clone())),
-        None => ("Dawn FM".to_owned(), Vec::new(), None),
+    let (title, artists, album, explicit) = match &track {
+        Some(t) => (t.title.clone(), t.artists.clone(), t.album.as_ref().map(|a| a.name.clone()), t.explicit),
+        None => ("Dawn FM".to_owned(), Vec::new(), None, false),
     };
 
     // Row 1: Title (bold)
     let title_col = if theme::light() { Color32::BLACK } else { theme::text() };
-    let title_g = widgets::galley(ui, &title, theme::semibold(12.5), title_col, text_w);
-    let title_pos = pos2(text_l, row1_y - title_g.size().y / 2.0);
-    ui.painter().galley(title_pos, title_g.clone(), title_col);
+    let title_font = theme::semibold(12.5);
+    let probe_g = widgets::galley(ui, &title, title_font.clone(), title_col, text_w);
+    let title_pos = pos2(text_l, row1_y - probe_g.size().y / 2.0);
+    let title_sz = widgets::title_with_explicit(ui, title_pos, &title, title_font, title_col, text_w, explicit);
 
-    let title_hit = Rect::from_min_size(title_pos, vec2(title_g.size().x.min(text_w), 15.0));
+    let title_hit = Rect::from_min_size(title_pos, vec2(title_sz.x.min(text_w), 15.0));
     let tre = ui.interact(title_hit, ui.scope_id().with("bar-title"), Sense::click());
     if named(tre, &title).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
         app.actions.push(Action::OpenNowPlaying(true));

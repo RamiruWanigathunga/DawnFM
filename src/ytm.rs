@@ -1452,6 +1452,7 @@ fn two_row(r: &Value) -> Option<Card> {
             track_nr: None,
             plays: None,
             music_video: music_video(&[nav]),
+            explicit: is_explicit(&r["subtitleBadges"]) || is_explicit(&r["badges"]),
         })
     } else if let Some(playlist) = nav["watchPlaylistEndpoint"]["playlistId"].as_str() {
         Target::Playlist(playlist.to_owned())
@@ -1522,6 +1523,11 @@ fn music_video(parts: &[&Value]) -> bool {
     video_type(parts) == Some("MUSIC_VIDEO_TYPE_OMV")
 }
 
+/// Whether a YTM item's badge list includes `MUSIC_EXPLICIT_BADGE`.
+fn is_explicit(badges: &Value) -> bool {
+    arr(badges).iter().any(|b| b["musicInlineBadgeRenderer"]["icon"]["iconType"].as_str() == Some("MUSIC_EXPLICIT_BADGE"))
+}
+
 fn list_item(r: &Value) -> Option<Track> {
     let cols = arr(&r["flexColumns"]);
     let col = |i: usize| cols.get(i).map(|c| &c["musicResponsiveListItemFlexColumnRenderer"]["text"]);
@@ -1582,7 +1588,8 @@ fn list_item(r: &Value) -> Option<Track> {
     }
     let track_nr = text(&r["index"]).and_then(|n| n.parse().ok());
     let music_video = music_video(&[&r["overlay"], &r["flexColumns"][0]]);
-    Some(Track { id, title, artists, album, duration, thumbs: thumbs(&r["thumbnail"]["musicThumbnailRenderer"]), track_nr, plays, music_video })
+    let explicit = is_explicit(&r["badges"]);
+    Some(Track { id, title, artists, album, duration, thumbs: thumbs(&r["thumbnail"]["musicThumbnailRenderer"]), track_nr, plays, music_video, explicit })
 }
 
 /// A song in a radio / up-next panel.
@@ -1609,6 +1616,7 @@ fn panel_item(r: &Value) -> Option<Track> {
         track_nr: None,
         plays: None,
         music_video: music_video(&[&r["navigationEndpoint"]]),
+        explicit: is_explicit(&r["badges"]),
     })
 }
 
@@ -2132,6 +2140,7 @@ mod tests {
             track_nr: None,
             plays: None,
             music_video: false,
+            explicit: false,
         }
     }
 
@@ -2234,7 +2243,7 @@ mod tests {
 
     #[test]
     fn a_radio_is_its_songs_or_its_videos_when_it_has_only_those() {
-        let t = |id: &str| Track { id: id.into(), title: id.into(), artists: Vec::new(), album: None, duration: None, thumbs: Vec::new(), track_nr: None, plays: None, music_video: false };
+        let t = |id: &str| Track { id: id.into(), title: id.into(), artists: Vec::new(), album: None, duration: None, thumbs: Vec::new(), track_nr: None, plays: None, music_video: false, explicit: false };
         let ids = |items: &[(Track, bool)]| radio_tracks(items).map(|t| t.id.clone()).collect::<Vec<_>>();
         assert_eq!(ids(&[(t("a"), false), (t("v"), true), (t("b"), false)]), ["a", "b"]);
         // A music video's radio: music videos only, kept rather than nothing.
@@ -2382,6 +2391,28 @@ mod tests {
         assert_eq!(parsed_plain.sync, crate::lyrics::Sync::None);
         let texts: Vec<&str> = parsed_plain.lines.iter().map(|l| l.text.as_str()).collect();
         assert_eq!(texts, vec!["Line one", "", "Line two"]);
+    }
+
+    #[test]
+    fn explicit_badge_is_read_from_ytm_items() {
+        let explicit_item = json!({
+            "playlistItemData": {"videoId": "v1"},
+            "badges": [{"musicInlineBadgeRenderer": {"icon": {"iconType": "MUSIC_EXPLICIT_BADGE"}}}],
+            "flexColumns": [
+                {"musicResponsiveListItemFlexColumnRenderer": {"text": {"runs": [{"text": "Timeless"}]}}},
+                {"musicResponsiveListItemFlexColumnRenderer": {"text": {"runs": [{"text": "The Weeknd"}]}}}
+            ]
+        });
+        assert!(list_item(&explicit_item).expect("track").explicit);
+
+        let clean_item = json!({
+            "playlistItemData": {"videoId": "v2"},
+            "flexColumns": [
+                {"musicResponsiveListItemFlexColumnRenderer": {"text": {"runs": [{"text": "Blinding Lights"}]}}},
+                {"musicResponsiveListItemFlexColumnRenderer": {"text": {"runs": [{"text": "The Weeknd"}]}}}
+            ]
+        });
+        assert!(!list_item(&clean_item).expect("track").explicit);
     }
 }
 

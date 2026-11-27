@@ -177,7 +177,7 @@ pub fn dev_script(app: &mut App, ctx: &egui::Context, now: f64) {
             "queue=on" => set_control(app, app.jam.control, true),
             "queue=off" => set_control(app, app.jam.control, false),
             a if a.starts_with("add=") => {
-                let track = crate::model::Track { id: a[4..].to_owned(), title: "Test song".into(), artists: vec![], album: None, duration: None, thumbs: vec![], track_nr: None, plays: None, music_video: false };
+                let track = crate::model::Track { id: a[4..].to_owned(), title: "Test song".into(), artists: vec![], album: None, duration: None, thumbs: vec![], track_nr: None, plays: None, music_video: false, explicit: false };
                 app.apply(Action::Enqueue(track));
             }
             a if a.starts_with("seek=") => {

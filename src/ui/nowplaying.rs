@@ -691,9 +691,10 @@ fn sleeve(app: &mut App, ui: &mut Ui, x0: f32, w: f32, info_y: f32, track: &crat
     };
 
     let title_font = theme::semibold(17.0);
-    let gt_shadow = widgets::galley(ui, &track.title, title_font.clone(), text_shadow_color, text_w);
+    let shadow_w = if track.explicit { (text_w - 19.0).max(20.0) } else { text_w };
+    let gt_shadow = widgets::galley(ui, &track.title, title_font.clone(), text_shadow_color, shadow_w);
     ui.painter().galley(pos2(x0, info_y + 1.2), gt_shadow, text_shadow_color);
-    text_at(ui, pos2(x0, info_y), &track.title, title_font, title_color, text_w);
+    widgets::title_with_explicit(ui, pos2(x0, info_y), &track.title, title_font, title_color, text_w, track.explicit);
 
     let line_w = text_w;
     let line_font = theme::regular(15.0);

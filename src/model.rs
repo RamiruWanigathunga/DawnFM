@@ -49,6 +49,9 @@ pub struct Track {
     /// when one is found and that's switched on.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub music_video: bool,
+    /// Explicit content advisory badge (`[E]`).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub explicit: bool,
 }
 
 impl Track {
