@@ -392,6 +392,82 @@ pub fn align_macos_traffic_lights() {
 #[cfg(not(target_os = "macos"))]
 pub fn align_macos_traffic_lights() {}
 
+/// Presents the native macOS `NSSharingServicePicker` anchored to `anchor` (in window points).
+/// Returns `true` if presented, or `false` when unavailable so callers can copy the URL instead.
+#[cfg(target_os = "macos")]
+pub fn show_share_sheet(url: &str, anchor: egui::Rect) -> bool {
+    use std::cell::RefCell;
+    use objc2::msg_send;
+    use objc2::rc::Retained;
+    use objc2::runtime::{AnyObject, Bool};
+    use objc2_foundation::{NSPoint, NSRect, NSSize, NSString};
+
+    thread_local! {
+        static ACTIVE_PICKER: RefCell<Option<Retained<AnyObject>>> = const { RefCell::new(None) };
+    }
+
+    unsafe {
+        let app: Option<Retained<AnyObject>> = msg_send![objc2::class!(NSApplication), sharedApplication];
+        let Some(app) = app else { return false };
+        let key_win: Option<Retained<AnyObject>> = msg_send![&*app, keyWindow];
+        let window = match key_win {
+            Some(w) => w,
+            None => {
+                let windows: Option<Retained<AnyObject>> = msg_send![&*app, windows];
+                let Some(windows) = windows else { return false };
+                let count: usize = msg_send![&*windows, count];
+                if count == 0 {
+                    return false;
+                }
+                let Some(w): Option<Retained<AnyObject>> = msg_send![&*windows, objectAtIndex: 0usize] else {
+                    return false;
+                };
+                w
+            }
+        };
+        let content_view: Option<Retained<AnyObject>> = msg_send![&*window, contentView];
+        let Some(content_view) = content_view else { return false };
+
+        let ns_str = NSString::from_str(url);
+        let ns_url: Option<Retained<AnyObject>> = msg_send![objc2::class!(NSURL), URLWithString: &*ns_str];
+        let items: Option<Retained<AnyObject>> = match ns_url.as_deref() {
+            Some(u) => msg_send![objc2::class!(NSArray), arrayWithObject: u],
+            None => msg_send![objc2::class!(NSArray), arrayWithObject: &*ns_str],
+        };
+        let Some(items) = items else { return false };
+
+        let picker_alloc: *mut AnyObject = msg_send![objc2::class!(NSSharingServicePicker), alloc];
+        if picker_alloc.is_null() {
+            return false;
+        }
+        let picker_ptr: *mut AnyObject = msg_send![picker_alloc, initWithItems: &*items];
+        let Some(picker) = Retained::from_raw(picker_ptr) else { return false };
+
+        let bounds: NSRect = msg_send![&*content_view, bounds];
+        let flipped: Bool = msg_send![&*content_view, isFlipped];
+        let y = if flipped.as_bool() {
+            anchor.top() as f64
+        } else {
+            bounds.size.height - anchor.bottom() as f64
+        };
+        let rect = NSRect::new(
+            NSPoint::new(anchor.left() as f64, y),
+            NSSize::new(anchor.width().max(1.0) as f64, anchor.height().max(1.0) as f64),
+        );
+        // Bottom edge of the button: MaxY (3) when flipped, MinY (1) when unflipped.
+        let edge: usize = if flipped.as_bool() { 3 } else { 1 };
+
+        ACTIVE_PICKER.with(|slot| *slot.borrow_mut() = Some(picker.clone()));
+        let () = msg_send![&*picker, showRelativeToRect: rect, ofView: &*content_view, preferredEdge: edge];
+        true
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn show_share_sheet(_url: &str, _anchor: egui::Rect) -> bool {
+    false
+}
+
 /// The Windows accent colour, in the lighter shade Windows itself uses on dark
 /// surfaces (`AccentPalette`'s second entry), or the base accent if there's no palette.
 /// Read again every couple of seconds, so a new colour picked in Windows' settings

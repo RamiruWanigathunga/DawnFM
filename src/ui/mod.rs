@@ -117,6 +117,7 @@ pub enum Action {
     LikeMany(Vec<Track>, bool),
     Dislike(Track),
     Share(Target),
+    ShareAt(Target, egui::Rect),
     AddToPlaylist(Vec<Track>),
     /// Rows (indices into the open playlist) to take out of it.
     RemoveFromPlaylist(Vec<usize>),
@@ -601,6 +602,7 @@ pub struct App {
     pub actions: Vec<Action>,
     dialog: Option<Dialog>,
     share_pending: Option<String>,
+    share_sheet_pending: Option<(String, egui::Rect)>,
     smoke: Option<String>,
     mouse_last_pos: Option<egui::Pos2>,
     mouse_last_moved: f64,
@@ -895,6 +897,7 @@ impl App {
             actions: Vec::new(),
             dialog: None,
             share_pending: None,
+            share_sheet_pending: None,
             smoke: None,
             mouse_last_pos: None,
             mouse_last_moved: 0.0,
@@ -2172,6 +2175,14 @@ impl eframe::App for App {
         notes::card(self, &ctx);
         notes::dialog(self, &ctx);
         if let Some(url) = self.share_pending.take() { ctx.copy_text(url); }
+        if let Some((url, rect)) = self.share_sheet_pending.take() {
+            let z = ctx.zoom_factor();
+            let scaled = egui::Rect::from_min_max(rect.min * z, rect.max * z);
+            if !theme::show_share_sheet(&url, scaled) {
+                ctx.copy_text(url);
+                self.toast("Link copied");
+            }
+        }
         shell::suggestions(self, &ctx);
         shell::search_results(self, &ctx);
         shell::toast(self, &ctx, now);

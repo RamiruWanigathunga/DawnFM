@@ -742,7 +742,7 @@ pub fn share_more_pill(
     }
 
     if share_resp.clicked() {
-        acts.push(Action::Share(target.clone()));
+        acts.push(Action::ShareAt(target.clone(), share_rect));
     }
 
     widgets::popup_menu(&more_resp, None, |ui| {
@@ -2412,7 +2412,7 @@ pub fn artist(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
     };
     widgets::icon_at(ui, draw_share.center(), icon::SHARE, 15.0 * press_share.scale, share_fg);
     if share_resp.clicked() {
-        acts.push(Action::Share(artist_target.clone()));
+        acts.push(Action::ShareAt(artist_target.clone(), draw_share));
     }
 
     let (below, _) = ui.allocate_exact_size(vec2(w, 58.0), Sense::hover());

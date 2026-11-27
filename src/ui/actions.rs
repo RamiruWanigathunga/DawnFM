@@ -148,6 +148,9 @@ impl App {
                 self.share_pending = Some(share_url(&target));
                 self.toast("Link copied");
             }
+            Action::ShareAt(target, rect) => {
+                self.share_sheet_pending = Some((share_url(&target), rect));
+            }
             Action::Download(track) => {
                 self.toast(format!("Downloading \u{201c}{}\u{201d}", track.title));
                 // The song version playing for a music video: that video plays the file too.
