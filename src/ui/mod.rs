@@ -324,9 +324,9 @@ pub struct App {
     recent_searches: Vec<RecentSearch>,
     /// A search whose results are on screen, waiting for the first result to be opened.
     search_pending: bool,
-    /// The query whose results the search dropdown shows, while it's open.
-    search_drop: Option<String>,
     suggestions: (String, Vec<crate::ytm::Suggestion>),
+    /// Debounce timer for live Search-page queries as the user types.
+    live_search_due: Option<f64>,
     /// Up to 32 query results, oldest first, scoped to the current suggestion round.
     suggest_cache: VecDeque<(String, Vec<crate::ytm::Suggestion>)>,
     /// The suggestion picked with the arrow keys, which Enter searches.
@@ -721,8 +721,8 @@ impl App {
             search_synced: String::new(),
             recent_searches: get("recent_searches").and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default(),
             search_pending: false,
-            search_drop: None,
             suggestions: Default::default(),
+            live_search_due: None,
             suggest_cache: VecDeque::new(),
             suggest_sel: None,
             suggest_round: 0,
@@ -961,17 +961,28 @@ impl App {
     // ---------------------------------------------------------------- navigation
 
     fn go(&mut self, page: Page) {
-        // Searches show in the sidebar's dropdown, not on a page. Choosing a Spotify
-        // transfer match still uses the search page to pick from.
-        if let Page::Search(q) = &page
-            && self.xfer.picking.is_none()
-        {
-            self.open_search(q.clone());
+        self.np_open = false;
+        self.live_search_due = None;
+        if let Page::Search(q) = &page {
+            let trimmed = q.trim().to_owned();
+            let target = Page::Search(trimmed.clone());
+            if trimmed.is_empty() {
+                self.search_refocus = true;
+            }
+            if target == self.page {
+                self.page_visit = self.page_visit.wrapping_add(1);
+                self.scroll_top = true;
+                self.refresh();
+                return;
+            }
+            self.apple_motion.clear();
+            let prev = std::mem::replace(&mut self.page, target);
+            self.back.push(prev);
+            self.forward.clear();
+            self.page_loaded();
             return;
         }
-        self.np_open = false;
         self.search_text.clear();
-        self.search_drop = None;
         self.search_synced.clear();
         if page == self.page {
             // Clicking the page you're on refreshes it and resets scroll to the top.
@@ -986,25 +997,6 @@ impl App {
         self.back.push(prev);
         self.forward.clear();
         self.page_loaded();
-    }
-
-    /// Show `q`'s results in the search dropdown (an empty query just focuses the box).
-    fn open_search(&mut self, q: String) {
-        let q = q.trim().to_owned();
-        self.np_open = false;
-        self.search_text = q.clone();
-        self.suggestions = Default::default();
-        self.suggest_sel = None;
-        if q.is_empty() {
-            self.search_drop = None;
-            self.search_refocus = true;
-            return;
-        }
-        if self.search.as_ref().is_none_or(|s| s.query != q) {
-            self.backend.request(self.search_req(q.clone()));
-        }
-        self.search_pending = true;
-        self.search_drop = Some(q);
     }
 
     fn nav_back(&mut self) {

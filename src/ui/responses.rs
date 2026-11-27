@@ -129,12 +129,25 @@ impl App {
                 self.backend.request(Req::Suggest { query: q, round: self.suggest_round });
             }
         }
+        if self.live_search_due.is_some_and(|d| now >= d) {
+            self.live_search_due = None;
+            if matches!(self.page, Page::Search(_)) {
+                let q = self.search_text.trim().to_owned();
+                if self.page != Page::Search(q.clone()) {
+                    self.page = Page::Search(q.clone());
+                    self.search_synced = q.clone();
+                    if !q.is_empty() && self.search.as_ref().is_none_or(|s| s.query != q) {
+                        self.backend.request(self.search_req(q));
+                    }
+                }
+            }
+        }
     }
 
     /// A search's results are on screen: the first result clicked becomes what
     /// "Recently Searched" remembers, not the words that were typed.
     pub(super) fn expect_search_click(&mut self, query: &str) {
-        if matches!(&self.page, Page::Search(q) if q == query) || self.search_drop.as_deref() == Some(query) {
+        if matches!(&self.page, Page::Search(q) if q == query) {
             self.search_pending = true;
         }
     }
@@ -174,7 +187,7 @@ impl App {
 
     /// Record the thing the search's first click opened, once.
     pub(super) fn remember_search_click(&mut self, a: &Action) {
-        if !self.search_pending || !(matches!(self.page, Page::Search(_)) || self.search_drop.is_some()) {
+        if !self.search_pending || !matches!(self.page, Page::Search(_)) {
             return;
         }
         let Some(entry) = self.search_click_entry(a) else { return };

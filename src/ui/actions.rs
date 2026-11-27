@@ -360,9 +360,17 @@ impl App {
                 cmd(egui::Key::L),
                 i.modifiers.command && i.key_pressed(egui::Key::Comma),
                 cmd(egui::Key::W),
+                cmd(egui::Key::F),
             )
         });
-        let (space, back, fwd, next, prev, lyr, queue, full, esc, vol_up, vol_down, mini, lyr_panel, settings, close_w) = i;
+        let (space, back, fwd, next, prev, lyr, queue, full, esc, vol_up, vol_down, mini, lyr_panel, settings, close_w, find) = i;
+        if find {
+            self.np_open = false;
+            self.search_refocus = true;
+            if !matches!(self.page, Page::Search(_)) {
+                self.go(Page::Search(self.search_text.clone()));
+            }
+        }
         if mini {
             self.actions.push(Action::Mini(!self.mini.target()));
         }
@@ -406,14 +414,18 @@ impl App {
         if (full && self.np_open) || fs_toggled {
             self.set_fullscreen(ctx, !is_fullscreen);
         }
-        let in_search = self.search_focused || !self.search_text.is_empty() || self.search_drop.is_some();
+        let in_search = self.search_focused || !self.search_text.is_empty();
         if esc {
             if in_search {
                 self.search_focused = false;
                 self.search_text.clear();
-                self.search_drop = None;
+                self.search_synced.clear();
+                self.live_search_due = None;
                 self.suggestions = Default::default();
                 self.suggest_sel = None;
+                if matches!(self.page, Page::Search(_)) {
+                    self.page = Page::Search(String::new());
+                }
             } else if is_fullscreen {
                 self.set_fullscreen(ctx, false);
                 ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(false));

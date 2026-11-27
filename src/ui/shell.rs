@@ -293,14 +293,6 @@ pub fn sidebar(app: &mut App, ui: &mut Ui) {
     // A size down from the desktop app's, for the shorter rows.
     const APPLE: f32 = glyphs::APPLE_GLYPH - 3.0;
     const LUCIDE: f32 = glyphs::LUCIDE_GLYPH - 2.0;
-    search_field(app, ui, ui.available_width());
-    ui.add_space(6.0);
-
-    let query_trim = app.search_text.trim();
-    let has_search_drop = app.search_drop.as_deref().is_some_and(|q| !q.trim().is_empty());
-    let has_query = !query_trim.is_empty();
-    let show_suggestions = (app.search_focused || app.forget_held) && !app.suggestions.1.is_empty();
-    let search_active = has_search_drop || has_query || show_suggestions;
 
     // Drag-to-reorder and right-click-to-hide results, applied once the rows are done.
     let mut reorder: Option<(String, String)> = None;
@@ -315,12 +307,9 @@ pub fn sidebar(app: &mut App, ui: &mut Ui) {
     // Room under the list: Settings, the app's sign-off, and the transfer card.
     let bottom_h = (if transferring { 106.0 } else { 42.0 }) + if ready.is_some() { 58.0 } else { 0.0 };
 
-    if search_active {
-        let list_h = (ui.available_height() - bottom_h).max(0.0);
-        ui.allocate_ui(vec2(ui.available_width(), list_h), |ui| {
-            sidebar_search_content(app, ui);
-        });
-    } else {
+    {
+        icon_row(ui, icon::SEARCH, &t!("search"), Page::Search(String::new()), matches!(p, Page::Search(_)), &mut go_to);
+        ui.add_space(4.0);
         if section(ui, if app.spotify_mode { "Spotify" } else { "YouTube Music" }) {
             nav(ui, glyphs::HOME, APPLE, &t!("home"), Page::Home, p == Page::Home, &mut go_to);
             nav(ui, glyphs::EXPLORE, APPLE, &t!("new"), Page::New, p == Page::New, &mut go_to);
@@ -534,11 +523,9 @@ pub fn sidebar(app: &mut App, ui: &mut Ui) {
     }
     if let Some(page) = go_to {
         if matches!(page, Page::Search(_)) {
-            // Search lands on the search page with the caret in the box; already there,
-            // it just brings the box back.
             app.search_refocus = true;
             if !matches!(app.page, Page::Search(_)) {
-                app.actions.push(Action::Go(Page::Search(String::new())));
+                app.actions.push(Action::Go(Page::Search(app.search_text.clone())));
             }
         } else {
             app.actions.push(Action::Go(page));
@@ -546,16 +533,16 @@ pub fn sidebar(app: &mut App, ui: &mut Ui) {
     }
 }
 
-/// The search box: typeahead, suggestions and Enter to search. The Search page draws
-/// it; `app.search_rect` anchors the suggestions under it.
+/// The search box rendered centered at the top of the Search page: live typeahead,
+/// autocomplete suggestions, and Enter to search immediately.
 pub fn search_field(app: &mut App, ui: &mut Ui, width: f32) {
     // Anywhere on it focuses the box, not just on the text area inside it.
-    let (rect, field) = ui.allocate_exact_size(vec2(width, 32.0), Sense::click());
+    let (rect, field) = ui.allocate_exact_size(vec2(width, 36.0), Sense::click());
     let field = field.on_hover_cursor(egui::CursorIcon::Text);
     let focus = theme::anim_bool(ui.ctx(), "search-focus", app.search_focused, 0.2);
-    let radius = 10.0;
+    let radius = 18.0;
     if crate::renderer::active() == crate::renderer::Renderer::OpenGl {
-        crate::glass::paint(ui, egui::Id::unique("sidebar-search-glass"), rect, crate::glass::control(radius, theme::light(), focus * 0.65, 1.0));
+        crate::glass::paint(ui, egui::Id::unique("page-search-glass"), rect, crate::glass::control(crate::glass::Corner::Capsule, theme::light(), focus * 0.65, 1.0));
         if focus > 0.01 {
             let stroke_color = theme::with_alpha(app.accent_color(), focus);
             ui.painter().rect_stroke(rect, radius, egui::Stroke::new(1.5, stroke_color), egui::StrokeKind::Inside);
@@ -573,20 +560,10 @@ pub fn search_field(app: &mut App, ui: &mut Ui, width: f32) {
             ui.painter().rect_stroke(rect, radius, egui::Stroke::new(1.5, stroke_color), egui::StrokeKind::Inside);
         }
     }
-    icon_at(ui, pos2(rect.left() + 17.0, rect.center().y), icon::SEARCH, 15.0, theme::text_dim());
+    icon_at(ui, pos2(rect.left() + 18.0, rect.center().y), icon::SEARCH, 15.0, theme::text_dim());
     let clearable = !app.search_text.is_empty();
-    let inner = Rect::from_min_max(pos2(rect.left() + 34.0, rect.top() + 3.0), pos2(rect.right() - if clearable { 34.0 } else { 12.0 }, rect.bottom() - 3.0));
+    let inner = Rect::from_min_max(pos2(rect.left() + 36.0, rect.top() + 4.0), pos2(rect.right() - if clearable { 36.0 } else { 14.0 }, rect.bottom() - 4.0));
 
-    if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
-        app.search_text.clear();
-        app.search_drop = None;
-        app.suggestions = Default::default();
-        app.suggest_sel = None;
-        app.search_focused = false;
-    }
-    // Up and Down walk the suggestions (past either end back to what was typed). Taken
-    // before the box sees them, where they'd move the caret. Only bare arrows (Shift
-    // selects text), and only suggestions for what's typed now, not ones still being replaced.
     let fresh = app.suggestions.0 == app.search_text.trim();
     let n = if fresh { app.suggestions.1.len() } else { 0 };
     if app.search_focused && n > 0 && ui.input(|i| i.modifiers.is_none()) {
@@ -610,7 +587,7 @@ pub fn search_field(app: &mut App, ui: &mut Ui, width: f32) {
     let edit = ui.put(
         inner,
         egui::TextEdit::singleline(&mut app.search_text)
-            .hint_text(egui::RichText::new(t!("search")).color(theme::text_faint()))
+            .hint_text(egui::RichText::new("Artists, Songs, Albums and Playlists").color(theme::text_faint()))
             .font(theme::regular(13.5))
             .frame(egui::Frame::NONE)
             .align(egui::Align2::LEFT_CENTER)
@@ -631,225 +608,60 @@ pub fn search_field(app: &mut App, ui: &mut Ui, width: f32) {
         }
         icon_at(ui, x.center(), icon::X, 14.0, theme::lerp_color(theme::text_dim(), theme::text(), h));
         if resp.clicked() {
-            // Back to the empty search page: the old results go with the text.
             app.search_text.clear();
             app.search_synced = String::new();
             app.suggestions = Default::default();
             app.suggest_sel = None;
+            app.live_search_due = None;
             cleared = true;
-            app.search_drop = None;
+            app.page = Page::Search(String::new());
             edit.request_focus();
         }
     }
-    if field.clicked() || ui.input(|i| i.modifiers.command && i.key_pressed(egui::Key::F)) {
+    if field.clicked() {
         edit.request_focus();
     }
     if edit.changed() || edit.gained_focus() || cleared {
-        // Typing again swaps the results for suggestions.
-        if edit.changed() || cleared {
-            app.search_drop = None;
-        }
         app.suggest_sel = None;
         let now = ui.input(|i| i.time);
-        // Show cached results immediately, then refresh after a short typing pause.
         let first = app.suggestions.1.is_empty();
-        let query = app.search_text.trim();
+        let query = app.search_text.trim().to_owned();
         app.suggestions = app.suggest_cache.iter()
-            .find(|(q, _)| q == query)
+            .find(|(q, _)| q == &query)
             .cloned()
             .unwrap_or_default();
         let delay = if first || cleared || edit.gained_focus() { 0.0 } else { 0.06 };
         app.suggest_due = Some(now + delay);
+        if edit.changed() {
+            app.live_search_due = if query.is_empty() {
+                app.page = Page::Search(String::new());
+                app.search_synced.clear();
+                None
+            } else {
+                Some(now + 0.28)
+            };
+        }
     }
-    // The event loop can otherwise sleep past the debounce deadline.
-    if let Some(due) = app.suggest_due {
-        let now = ui.input(|i| i.time);
+    // Keep the event loop awake until suggest / live-search debounce deadlines fire.
+    let now = ui.input(|i| i.time);
+    for due in [app.suggest_due, app.live_search_due].into_iter().flatten() {
         ui.ctx().request_repaint_after(std::time::Duration::from_secs_f64((due - now).max(0.0)));
     }
     if edit.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
         let picked = app.suggest_sel.filter(|_| fresh).and_then(|s| app.suggestions.1.get(s)).map(|s| s.text.clone());
         let q = picked.unwrap_or_else(|| app.search_text.trim().to_owned());
+        app.live_search_due = None;
         if !q.is_empty() {
+            app.search_text = q.clone();
             app.suggestions = Default::default();
-            app.search_drop = Some(q.clone());
             app.actions.push(Action::Go(Page::Search(q)));
         }
     }
 }
 
-/// Suggestions are now displayed directly within the sidebar list instead of an external floating menu.
+/// Legacy no-ops (search now lives on its dedicated page).
 pub fn suggestions(_app: &mut App, _ctx: &egui::Context) {}
-
-/// Search results are now displayed directly within the sidebar list instead of an external floating menu.
 pub fn search_results(_app: &mut App, _ctx: &egui::Context) {}
-
-/// Shows search suggestions (typeahead / history) or search results directly in the sidebar list.
-fn sidebar_search_content(app: &mut App, ui: &mut Ui) {
-    let q_opt = app.search_drop.clone().or_else(|| {
-        let t = app.search_text.trim();
-        if !t.is_empty() && app.suggestions.1.is_empty() {
-            Some(t.to_owned())
-        } else {
-            None
-        }
-    });
-
-    if let Some(q) = q_opt {
-        // Search Results inside sidebar
-        egui::ScrollArea::vertical().id_salt("sidebar-search-results").auto_shrink(false).show(ui, |ui| {
-            let Some(r) = app.search.as_ref().filter(|r| r.query == q) else {
-                ui.add_space(36.0);
-                ui.vertical_centered(|ui| {
-                    ui.spinner();
-                    ui.add_space(10.0);
-                    ui.label(egui::RichText::new("Searching…").font(theme::regular(13.0)).color(theme::text_dim()));
-                });
-                return;
-            };
-
-            if r.tracks.is_empty() && r.artists.is_empty() && r.albums.is_empty() && r.playlists.is_empty() {
-                // Exactly matching Image 2
-                ui.add_space(50.0);
-                ui.vertical_centered(|ui| {
-                    let center_x = ui.available_rect_before_wrap().center().x;
-                    let icon_y = ui.cursor().top() + 20.0;
-                    icon_at(ui, pos2(center_x, icon_y), icon::SEARCH, 32.0, theme::text_faint());
-                    ui.add_space(48.0);
-                    ui.label(egui::RichText::new("No Results").font(theme::bold(16.0)).color(theme::text()));
-                    ui.add_space(4.0);
-                    ui.label(egui::RichText::new(format!("No results for \"{}\"", q)).font(theme::regular(12.5)).color(theme::text_dim()));
-                });
-                return;
-            }
-
-            let heading = |ui: &mut Ui, label: &str| {
-                ui.add_space(8.0);
-                ui.label(egui::RichText::new(label).font(theme::semibold(11.0)).color(theme::text_faint()));
-                ui.add_space(2.0);
-            };
-
-            let row = |ui: &mut Ui, title: &str, sub: &str, thumbs: &[crate::model::Thumb], round: bool| -> bool {
-                let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 44.0), Sense::click());
-                let resp = named(resp, title).on_hover_cursor(egui::CursorIcon::PointingHand);
-                let h = if resp.hovered() { 1.0 } else { 0.0 };
-                ui.painter().rect_filled(r, 6.0, theme::glass(0.08 * h));
-                let art = Rect::from_center_size(pos2(r.left() + 18.0, r.center().y), Vec2::splat(28.0));
-                ui.painter().rect_filled(art, if round { 14.0 } else { 4.0 }, theme::glass(0.08));
-                if let Some(th) = thumbs.iter().min_by_key(|t| (t.width as i64 - 80).abs()) {
-                    super::widgets::paint_remote(ui, &th.url, art, if round { 14.0 } else { 4.0 }, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
-                }
-                let text_w = (r.right() - art.right() - 14.0).max(20.0);
-                let line = |s: &str, font: egui::FontId, c: Color32| {
-                    let mut job = egui::text::LayoutJob::simple_singleline(s.to_owned(), font, c);
-                    job.wrap = egui::text::TextWrapping::truncate_at_width(text_w);
-                    ui.fonts_mut(|f| f.layout_job(job))
-                };
-                ui.painter().galley(pos2(art.right() + 10.0, r.top() + 6.0), line(title, theme::semibold(13.0), theme::text()), theme::text());
-                ui.painter().galley(pos2(art.right() + 10.0, r.top() + 23.0), line(sub, theme::regular(11.5), theme::text_dim()), theme::text_dim());
-                resp.clicked()
-            };
-
-            if !r.tracks.is_empty() {
-                heading(ui, "SONGS");
-                for (i, tr) in r.tracks.iter().take(5).enumerate() {
-                    if row(ui, &tr.title, &tr.artist_line(), &tr.thumbs, false) {
-                        app.actions.push(Action::Play(r.tracks.clone(), i));
-                    }
-                }
-            }
-
-            if !r.artists.is_empty() {
-                heading(ui, "ARTISTS");
-                for c in r.artists.iter().take(3) {
-                    if row(ui, &c.title, &super::widgets::card_subtitle(&c.subtitle), &c.thumbs, c.round) {
-                        app.actions.push(Action::Open(c.target.clone()));
-                    }
-                }
-            }
-
-            if !r.albums.is_empty() {
-                heading(ui, "ALBUMS");
-                for c in r.albums.iter().take(3) {
-                    if row(ui, &c.title, &super::widgets::card_subtitle(&c.subtitle), &c.thumbs, c.round) {
-                        app.actions.push(Action::Open(c.target.clone()));
-                    }
-                }
-            }
-
-            if !r.playlists.is_empty() {
-                heading(ui, "PLAYLISTS");
-                for c in r.playlists.iter().take(3) {
-                    if row(ui, &c.title, &super::widgets::card_subtitle(&c.subtitle), &c.thumbs, c.round) {
-                        app.actions.push(Action::Open(c.target.clone()));
-                    }
-                }
-            }
-        });
-    } else {
-        // Suggestions / Searching Menu inside sidebar (Image 1)
-        egui::ScrollArea::vertical().id_salt("sidebar-search-suggestions").auto_shrink(false).show(ui, |ui| {
-            for (i, s) in app.suggestions.1.clone().into_iter().enumerate() {
-                let term = s.text;
-                let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 32.0), Sense::click());
-                let resp = named(resp, &term).on_hover_cursor(egui::CursorIcon::PointingHand);
-                let h = if resp.contains_pointer() || app.suggest_sel == Some(i) { 1.0 } else { 0.0 };
-                ui.painter().rect_filled(r, 6.0, theme::glass(0.08 * h));
-                let glyph = if s.forget.is_some() { icon::HISTORY } else { icon::SEARCH };
-                icon_at(ui, pos2(r.left() + 14.0, r.center().y), glyph, 14.0, theme::text_dim());
-                let room = if s.forget.is_some() { 68.0 } else { 38.0 };
-                let text_w = (r.width() - room).max(10.0);
-
-                // Highlight typed matching prefix
-                let typed = app.search_text.trim();
-                let n = term.chars().zip(typed.chars()).take_while(|(a, b)| a.to_lowercase().eq(b.to_lowercase())).count();
-                let split = if n == typed.chars().count() { term.char_indices().nth(n).map_or(term.len(), |(i, _)| i) } else { 0 };
-                let (bold, rest) = term.split_at(split);
-                let mut job = egui::text::LayoutJob::default();
-                job.append(bold, 0.0, egui::TextFormat { font_id: theme::semibold(13.0), color: theme::text(), ..Default::default() });
-                job.append(rest, 0.0, egui::TextFormat { font_id: theme::regular(13.0), color: theme::text_dim(), ..Default::default() });
-                job.wrap = egui::text::TextWrapping::truncate_at_width(text_w);
-                let g = ui.fonts_mut(|f| f.layout_job(job));
-                ui.painter().galley(pos2(r.left() + 34.0, r.center().y - 8.0), g, theme::text());
-
-                if let Some(token) = s.forget {
-                    let x = Rect::from_center_size(pos2(r.right() - 16.0, r.center().y), Vec2::splat(22.0));
-                    let xr = named(ui.interact(x, resp.id.with("forget"), Sense::click()), "Remove from recent searches")
-                        .on_hover_cursor(egui::CursorIcon::PointingHand);
-                    let xh = if xr.hovered() { 1.0 } else { 0.0 };
-                    icon_at(ui, x.center(), icon::TRASH_2, 13.0, theme::lerp_color(theme::text_faint(), theme::text(), xh));
-                    if xr.clicked() && !app.forget_held {
-                        app.forget_held = true;
-                        app.backend.request(crate::backend::Req::ForgetSearch(token.clone()));
-                        app.suggestions.1.retain(|s| s.forget.as_deref() != Some(token.as_str()));
-                    }
-                }
-
-                if resp.clicked() {
-                    app.search_text = term.clone();
-                    app.search_drop = Some(term.clone());
-                    app.suggestions = Default::default();
-                    app.search_focused = false;
-                    app.actions.push(Action::Go(Page::Search(term)));
-                    break;
-                }
-            }
-        });
-    }
-}
-
-/// A suggestion with what's typed in bold and the rest dimmed, as on music.youtube.com.
-#[allow(dead_code)]
-fn suggestion_text(ui: &Ui, pos: Pos2, text: &str, typed: &str, width: f32) {
-    let n = text.chars().zip(typed.chars()).take_while(|(a, b)| a.to_lowercase().eq(b.to_lowercase())).count();
-    let split = if n == typed.chars().count() { text.char_indices().nth(n).map_or(text.len(), |(i, _)| i) } else { 0 };
-    let (bold, rest) = text.split_at(split);
-    let mut job = egui::text::LayoutJob::default();
-    job.append(bold, 0.0, egui::TextFormat { font_id: theme::semibold(15.0), color: theme::text(), ..Default::default() });
-    job.append(rest, 0.0, egui::TextFormat { font_id: theme::regular(15.0), color: theme::text_dim(), ..Default::default() });
-    job.wrap = egui::text::TextWrapping::truncate_at_width(width.max(10.0));
-    let g = ui.fonts_mut(|f| f.layout_job(job));
-    ui.painter().galley(pos, g, theme::text());
-}
 
 // ------------------------------------------------------------------ player bar
 

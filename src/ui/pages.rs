@@ -371,53 +371,65 @@ fn placeholder_artist(app: &mut App, ui: &mut Ui, now: f64) {
     super::animate(ui.ctx());
 }
 
-/// Search loading skeleton: top result card on the left with top songs on the right,
-/// followed by shelves of matching artists and albums.
+/// Search loading skeleton: 2-row Top Results tiles, followed by Artists, Albums, and Songs.
 fn placeholder_search(app: &mut App, ui: &mut Ui, now: f64) {
     if check_failed(app, ui) {
         return;
     }
-    let skeleton = |ui: &Ui, r: Rect, radius: f32| {
-        widgets::skeleton_rect(ui, r, radius, now);
-    };
-    ui.add_space(14.0);
-    let is_wide = ui.available_width() >= 780.0;
-    if is_wide {
-        ui.horizontal_top(|ui| {
-            ui.vertical(|ui| {
-                let (h, _) = ui.allocate_exact_size(vec2(120.0, 24.0), Sense::hover());
-                skeleton(ui, h, 4.0);
-                ui.add_space(8.0);
-                let (card_r, _) = ui.allocate_exact_size(vec2(420.0, 236.0), Sense::hover());
-                skeleton(ui, card_r, 14.0);
-            });
-            ui.add_space(24.0);
-            ui.vertical(|ui| {
-                let (h, _) = ui.allocate_exact_size(vec2(100.0, 24.0), Sense::hover());
-                skeleton(ui, h, 4.0);
-                ui.add_space(8.0);
-                widgets::skeleton_rows(ui, now, 4);
-            });
+    let sk = |ui: &Ui, r: Rect, radius: f32, off: f64| widgets::skeleton_rect_at(ui, r, radius, now, off);
+    let w = ui.available_width();
+    let cols = ((w + 14.0) / 260.0).floor().clamp(2.0, 4.0) as usize;
+    let tile_w = ((w - (cols as f32 - 1.0) * 14.0) / cols as f32).max(160.0);
+
+    ui.add_space(16.0);
+    let (h, _) = ui.allocate_exact_size(vec2(130.0, 22.0), Sense::hover());
+    sk(ui, h, 4.0, 0.0);
+    ui.add_space(10.0);
+    for row in 0..2 {
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 14.0;
+            for col in 0..cols {
+                let off = (row * cols + col) as f64 * 0.04;
+                let (r, _) = ui.allocate_exact_size(vec2(tile_w, 64.0), Sense::hover());
+                sk(ui, r, 10.0, off);
+            }
         });
-    } else {
-        let (h, _) = ui.allocate_exact_size(vec2(100.0, 24.0), Sense::hover());
-        skeleton(ui, h, 4.0);
-        ui.add_space(8.0);
-        widgets::skeleton_rows(ui, now, 5);
+        ui.add_space(10.0);
     }
-    ui.add_space(26.0);
-    let (shelf_h, _) = ui.allocate_exact_size(vec2(140.0, 22.0), Sense::hover());
-    skeleton(ui, shelf_h, 4.0);
-    ui.add_space(14.0);
+
+    ui.add_space(18.0);
+    let (ah, _) = ui.allocate_exact_size(vec2(110.0, 22.0), Sense::hover());
+    sk(ui, ah, 4.0, 0.08);
+    ui.add_space(12.0);
     ui.horizontal(|ui| {
-        for _ in 0..6 {
-            let (r, _) = ui.allocate_exact_size(vec2(CARD, CARD + 50.0), Sense::hover());
-            let img_r = Rect::from_min_size(r.min, Vec2::splat(CARD));
-            skeleton(ui, img_r, 8.0);
-            let t_r = Rect::from_min_size(r.min + vec2(0.0, CARD + 10.0), vec2(CARD * 0.8, 12.0));
-            skeleton(ui, t_r, 4.0);
+        ui.spacing_mut().item_spacing.x = 20.0;
+        for i in 0..6 {
+            let off = 0.08 + i as f64 * 0.04;
+            let (r, _) = ui.allocate_exact_size(vec2(CARD, CARD + 34.0), Sense::hover());
+            sk(ui, Rect::from_min_size(r.min, Vec2::splat(CARD)), CARD * 0.5, off);
+            sk(ui, Rect::from_min_size(pos2(r.center().x - CARD * 0.35, r.min.y + CARD + 10.0), vec2(CARD * 0.7, 12.0)), 4.0, off);
         }
     });
+
+    ui.add_space(22.0);
+    let (alh, _) = ui.allocate_exact_size(vec2(110.0, 22.0), Sense::hover());
+    sk(ui, alh, 4.0, 0.14);
+    ui.add_space(12.0);
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 20.0;
+        for i in 0..6 {
+            let off = 0.14 + i as f64 * 0.04;
+            let (r, _) = ui.allocate_exact_size(vec2(CARD, CARD + 46.0), Sense::hover());
+            sk(ui, Rect::from_min_size(r.min, Vec2::splat(CARD)), 8.0, off);
+            sk(ui, Rect::from_min_size(r.min + vec2(0.0, CARD + 10.0), vec2(CARD * 0.78, 12.0)), 4.0, off);
+        }
+    });
+
+    ui.add_space(22.0);
+    let (sh, _) = ui.allocate_exact_size(vec2(100.0, 22.0), Sense::hover());
+    sk(ui, sh, 4.0, 0.20);
+    ui.add_space(8.0);
+    widgets::skeleton_rows(ui, now, 3);
     super::animate(ui.ctx());
 }
 
@@ -903,6 +915,11 @@ fn card_row(ui: &mut Ui, id: &str, title: &str, cards: &[Card], acts: &mut Vec<A
 /// song starts its radio. Returns whether the arrows reached the end.
 #[allow(clippy::too_many_arguments)]
 fn song_grid(ui: &mut Ui, rows_ctx: &Rows, liked: &HashSet<String>, acts: &mut Vec<Action>, id: &str, title: &str, strap: Option<&str>, tracks: &[Track], rows: usize) -> bool {
+    song_grid_inner(ui, rows_ctx, liked, acts, id, title, strap, tracks, rows, false)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn song_grid_inner(ui: &mut Ui, rows_ctx: &Rows, liked: &HashSet<String>, acts: &mut Vec<Action>, id: &str, title: &str, strap: Option<&str>, tracks: &[Track], rows: usize, pick: bool) -> bool {
     let (l, r) = shelf_header(ui, id, title, strap, None, true);
     let nudge = r as i32 - l as i32;
     let col_w = feed_tile(ui, false);
@@ -914,7 +931,7 @@ fn song_grid(ui: &mut Ui, rows_ctx: &Rows, liked: &HashSet<String>, acts: &mut V
                 ui.set_width(col_w);
                 ui.vertical(|ui| {
                     for (i, t) in col.iter().enumerate() {
-                        let o = rows_ctx.opts(liked, t, None, false);
+                        let o = RowOpts { pick, ..rows_ctx.opts(liked, t, None, false) };
                         if track_row(ui, t, &o, acts).clicked() {
                             picked = Some(c * rows + i);
                         }
@@ -923,8 +940,10 @@ fn song_grid(ui: &mut Ui, rows_ctx: &Rows, liked: &HashSet<String>, acts: &mut V
             });
         }
     });
-    if let Some(i) = picked {
-        acts.push(Action::Play(tracks.to_vec(), i));
+    if let Some(i) = picked
+        && let Some(t) = tracks.get(i)
+    {
+        acts.push(if pick { Action::TransferPick(t.clone()) } else { Action::Play(tracks.to_vec(), i) });
     }
     reached_end
 }
@@ -1267,189 +1286,472 @@ pub(super) fn page_title(ui: &mut Ui, title: &str) {
 
 fn search(app: &mut App, ui: &mut Ui, q: &str, now: f64) {
     let pick = super::transfer::pick_banner(app, ui);
-    page_title(ui, "Search");
-    ui.add_space(10.0);
-    // Coming from a suggestion, the sidebar or a link, the field says what's shown.
-    // Only when the route changed: clearing the box leaves the route alone until Enter.
+    // Coming from a suggestion, category, or link, keep the box synced on route changes.
     if app.search_synced != q {
         app.search_synced = q.to_owned();
         app.search_text = q.trim().to_owned();
     }
-    super::shell::search_field(app, ui, ui.available_width().min(560.0));
+
+    // Centered pill search bar at the top of the page.
+    let w = ui.available_width();
+    let bar_w = (w * 0.56).clamp(300.0, 520.0).min(w);
+    ui.add_space(6.0);
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 0.0;
+        ui.add_space(((w - bar_w) * 0.5).max(0.0));
+        super::shell::search_field(app, ui, bar_w);
+    });
+
+    // Typeahead suggestion chips directly beneath the bar while focused and typing.
+    let typed = app.search_text.trim().to_owned();
+    let show_chips = !typed.is_empty() && (app.search_focused || app.forget_held) && app.suggestions.0 == typed && !app.suggestions.1.is_empty();
+    if show_chips {
+        ui.add_space(8.0);
+        let terms: Vec<_> = app.suggestions.1.iter().take(6).cloned().collect();
+        let mut clicked_term: Option<String> = None;
+        let mut forgot_token: Option<String> = None;
+        ui.horizontal_wrapped(|ui| {
+            ui.spacing_mut().item_spacing = vec2(8.0, 6.0);
+            for (i, s) in terms.into_iter().enumerate() {
+                let selected = app.suggest_sel == Some(i);
+                let g = widgets::galley(ui, &s.text, theme::regular(12.5), theme::text(), 220.0);
+                let icon_w = 18.0;
+                let forget_w = if s.forget.is_some() { 20.0 } else { 0.0 };
+                let chip_w = icon_w + g.size().x + forget_w + 20.0;
+                let (rect, resp) = ui.allocate_exact_size(vec2(chip_w, 28.0), Sense::click());
+                let resp = named(resp, &s.text).on_hover_cursor(egui::CursorIcon::PointingHand);
+                let h = if resp.hovered() || selected { 1.0 } else { 0.0 };
+                let fill = if selected {
+                    theme::with_alpha(app.accent_color(), 0.28)
+                } else {
+                    theme::glass(0.08 + 0.07 * h)
+                };
+                ui.painter().rect_filled(rect, 14.0, fill);
+                let glyph = if s.forget.is_some() { icon::HISTORY } else { icon::SEARCH };
+                widgets::icon_at(ui, pos2(rect.left() + 14.0, rect.center().y), glyph, 12.5, theme::text_dim());
+                ui.painter().galley(pos2(rect.left() + 26.0, rect.center().y - g.size().y * 0.5), g, theme::text());
+                if let Some(tok) = s.forget {
+                    let xr = Rect::from_center_size(pos2(rect.right() - 12.0, rect.center().y), Vec2::splat(18.0));
+                    let xresp = named(ui.interact(xr, resp.id.with("forget"), Sense::click()), "Remove").on_hover_cursor(egui::CursorIcon::PointingHand);
+                    widgets::icon_at(ui, xr.center(), icon::X, 10.5, if xresp.hovered() { theme::text() } else { theme::text_faint() });
+                    if xresp.clicked() && !app.forget_held {
+                        app.forget_held = true;
+                        forgot_token = Some(tok);
+                    }
+                }
+                if resp.clicked() {
+                    clicked_term = Some(s.text);
+                }
+            }
+        });
+        if let Some(tok) = forgot_token {
+            app.backend.request(crate::backend::Req::ForgetSearch(tok.clone()));
+            app.suggestions.1.retain(|s| s.forget.as_deref() != Some(tok.as_str()));
+        }
+        if let Some(term) = clicked_term {
+            app.search_text = term.clone();
+            app.suggestions = Default::default();
+            app.suggest_sel = None;
+            app.search_focused = false;
+            app.live_search_due = None;
+            app.actions.push(Action::Go(Page::Search(term)));
+        }
+    }
+
     if q.trim().is_empty() {
-        ui.add_space(26.0);
+        ui.add_space(22.0);
         recent_searches(ui, app);
+        browse_categories(app, ui);
         return;
     }
+
     if app.search.as_ref().is_none_or(|r| r.query != q) {
-        ui.add_space(14.0);
+        ui.add_space(10.0);
         placeholder_search(app, ui, now);
         return;
     }
     let rows = Rows::new(app, now);
     let Some(r) = &app.search else { return };
-    let acts = &mut app.actions;
-    let liked = &app.liked;
     if r.tracks.is_empty() && r.artists.is_empty() && r.albums.is_empty() && r.playlists.is_empty() {
-        ui.add_space(18.0);
-        ui.label(RichText::new("No results").font(theme::bold(20.0)).color(theme::text()));
+        ui.add_space(64.0);
+        ui.vertical_centered(|ui| {
+            let (ic, _) = ui.allocate_exact_size(Vec2::splat(36.0), Sense::hover());
+            widgets::icon_at(ui, ic.center(), icon::SEARCH, 32.0, theme::text_faint());
+            ui.add_space(10.0);
+            ui.label(RichText::new("No Results").font(theme::bold(20.0)).color(theme::text()));
+            ui.add_space(4.0);
+            ui.label(RichText::new(format!("No results found for “{}”.", q.trim())).font(theme::regular(13.5)).color(theme::text_dim()));
+        });
         return;
     }
-    ui.add_space(14.0);
-    // Top result: the first artist when the query names one, otherwise the first song.
-    ui.horizontal_top(|ui| {
-        if let Some(top) = r.artists.first().filter(|a| a.title.eq_ignore_ascii_case(q.trim())) {
-            top_result(ui, top, false, acts);
-        } else if let Some(t) = r.tracks.first() {
-            let c = Card {
-                title: t.title.clone(),
-                subtitle: format!("Song • {}", t.artist_line()),
-                thumbs: t.thumbs.clone(),
-                target: Target::Song(t.clone()),
-                round: false,
-                links: t.artists.clone(),
-            };
-            top_result(ui, &c, pick, acts);
-        }
-        ui.add_space(24.0);
-        ui.vertical(|ui| {
-            ui.label(RichText::new("Songs").font(theme::bold(24.0)));
-            ui.add_space(8.0);
-            for (i, t) in r.tracks.iter().take(4).enumerate() {
-                let o = RowOpts { pick, ..rows.opts(liked, t, None, false) };
-                if track_row(ui, t, &o, acts).clicked() {
-                    acts.push(if pick { Action::TransferPick(t.clone()) } else { Action::Play(r.tracks.clone(), i) });
+
+    // 1. Top Results (2-row × up to 4-column grid of compact horizontal tiles)
+    ui.add_space(20.0);
+    let top_cards = build_top_results(q, r);
+    if !top_cards.is_empty() {
+        top_results_grid(ui, &top_cards, &app.liked, pick, &mut app.actions);
+    }
+
+    // 2. Artists
+    card_row(ui, &format!("s-artists-{}", app.page_visit), "Artists", &r.artists, &mut app.actions);
+    // 3. Albums
+    card_row(ui, &format!("s-albums-{}", app.page_visit), "Albums", &r.albums, &mut app.actions);
+    // 4. Songs (multi-column 3-row compact song grid)
+    if !r.tracks.is_empty() {
+        let id_songs = format!("s-songs-{}", app.page_visit);
+        song_grid_inner(ui, &rows, &app.liked, &mut app.actions, &id_songs, "Songs", None, &r.tracks, 3, pick);
+    }
+    // 5. Playlists
+    card_row(ui, &format!("s-pl-{}", app.page_visit), "Playlists", &r.playlists, &mut app.actions);
+}
+
+/// Search landing: Recently Searched horizontal cards with Clear button.
+fn recent_searches(ui: &mut Ui, app: &mut App) {
+    if app.recent_searches.is_empty() {
+        return;
+    }
+    ui.horizontal(|ui| {
+        ui.label(RichText::new("Recently Searched").font(theme::bold(20.0)).color(theme::text()));
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            let clear_g = widgets::galley(ui, "Clear", theme::semibold(13.5), app.accent_color(), 80.0);
+            let (cr, cresp) = ui.allocate_exact_size(clear_g.size() + vec2(8.0, 4.0), Sense::click());
+            let cresp = named(cresp, "Clear recent searches").on_hover_cursor(egui::CursorIcon::PointingHand);
+            let col = if cresp.hovered() { theme::lerp_color(app.accent_color(), theme::text(), 0.2) } else { app.accent_color() };
+            ui.painter().galley(cr.min + vec2(4.0, 2.0), clear_g, col);
+            if cresp.clicked() {
+                app.recent_searches.clear();
+            }
+        });
+    });
+    ui.add_space(12.0);
+
+    let recents = app.recent_searches.clone();
+    let mut remove = None;
+    let liked = app.liked.clone();
+    let acts = &mut app.actions;
+    egui::ScrollArea::horizontal().id_salt("recent-searches-hscroll").scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden).show(ui, |ui| {
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 14.0;
+            for (i, r) in recents.iter().enumerate() {
+                let (rect, resp) = ui.allocate_exact_size(vec2(242.0, 64.0), Sense::click());
+                let resp = named(resp, &r.title).on_hover_cursor(egui::CursorIcon::PointingHand);
+                let h = if resp.hovered() { 1.0 } else { 0.0 };
+                let bg = theme::glass(0.08 + 0.06 * h);
+                ui.painter().rect_filled(rect, 10.0, bg);
+                ui.painter().rect_stroke(rect, 10.0, egui::Stroke::new(0.8, theme::glass(0.06 + 0.06 * h)), egui::StrokeKind::Inside);
+
+                let art = Rect::from_min_size(rect.left_top() + vec2(8.0, 8.0), Vec2::splat(48.0));
+                let radius = if r.round { 24.0 } else { 6.0 };
+                match r.thumb.as_deref().filter(|u| !u.is_empty()) {
+                    Some(url) => {
+                        let thumbs = [crate::model::Thumb { url: url.to_owned(), width: 300, height: 300 }];
+                        paint_cover(ui, art, &thumbs, radius, 1.0);
+                    }
+                    None => {
+                        ui.painter().rect_filled(art, radius, theme::glass(0.10));
+                        widgets::icon_at(ui, art.center(), icon::MUSIC, 18.0, theme::text_faint());
+                    }
+                }
+                let x = art.right() + 12.0;
+                let more_r = Rect::from_center_size(pos2(rect.right() - 18.0, rect.center().y), Vec2::splat(24.0));
+                let text_w = (more_r.left() - x - 4.0).max(40.0);
+                widgets::text_at(ui, pos2(x, rect.center().y - 16.0), &r.title, theme::semibold(13.5), theme::text(), text_w);
+                widgets::text_at(ui, pos2(x, rect.center().y + 3.0), &r.subtitle, theme::regular(12.0), theme::text_dim(), text_w);
+
+                let more_resp = named(ui.interact(more_r, resp.id.with("more"), Sense::click()), "More").on_hover_cursor(egui::CursorIcon::PointingHand);
+                widgets::paint_more_dots(ui.painter(), more_r.center(), 3.6, 1.3, if more_resp.hovered() { theme::text() } else { theme::text_dim() });
+                widgets::popup_menu(&more_resp, None, |ui| {
+                    ui.set_width(196.0);
+                    ui.add_space(2.0);
+                    if let Some(Target::Song(t)) = &r.target {
+                        let is_liked = liked.contains(&t.id);
+                        widgets::song_actions(ui, t, is_liked, None, None, acts);
+                        widgets::menu_separator(ui);
+                    }
+                    if widgets::menu_action(ui, None, "Remove from Recently Searched") {
+                        remove = Some(i);
+                    }
+                    ui.add_space(2.0);
+                });
+                widgets::context_menu(&resp, |ui| {
+                    ui.set_width(196.0);
+                    ui.add_space(2.0);
+                    if widgets::menu_action(ui, None, "Remove from Recently Searched") {
+                        remove = Some(i);
+                    }
+                    ui.add_space(2.0);
+                });
+
+                if resp.clicked() {
+                    acts.push(match &r.target {
+                        Some(t) => Action::Open(t.clone()),
+                        None => Action::Go(Page::Search(r.query.clone())),
+                    });
                 }
             }
         });
     });
-    card_row(ui, "s-artists", "Artists", &r.artists, acts);
-    card_row(ui, "s-albums", "Albums", &r.albums, acts);
-    if r.tracks.len() > 4 {
-        ui.add_space(26.0);
-        ui.label(RichText::new("More songs").font(theme::bold(24.0)));
-        ui.add_space(10.0);
-        for (i, t) in r.tracks.iter().enumerate().skip(4) {
-            let o = RowOpts { pick, ..rows.opts(liked, t, None, true) };
-            if track_row(ui, t, &o, acts).clicked() {
-                acts.push(if pick { Action::TransferPick(t.clone()) } else { Action::Play(r.tracks.clone(), i) });
-            }
-        }
-    }
-    card_row(ui, "s-pl", "Playlists", &r.playlists, acts);
-}
-
-/// Apple's search landing: what was opened from the last few searches, with its artwork.
-fn recent_searches(ui: &mut Ui, app: &mut App) {
-    if app.recent_searches.is_empty() {
-        ui.label(RichText::new("Search for artists, songs, albums and playlists.").font(theme::regular(15.0)).color(theme::text_dim()));
-        return;
-    }
-    ui.label(RichText::new("Recently Searched").font(theme::bold(22.0)).color(theme::text()));
-    ui.add_space(12.0);
-    let w = ui.available_width().min(620.0);
-    // The rows are cloned so a removal can be applied after the list is drawn.
-    let recents = app.recent_searches.clone();
-    let mut remove = None;
-    for (i, r) in recents.iter().enumerate() {
-        let (rect, resp) = ui.allocate_exact_size(vec2(w, 64.0), Sense::click());
-        let resp = named(resp, &r.title).on_hover_cursor(egui::CursorIcon::PointingHand);
-        let h = if resp.contains_pointer() { 1.0 } else { 0.0 };
-        if h > 0.0 {
-            ui.painter().rect_filled(rect, 10.0, theme::glass(0.08 * h));
-        } else {
-            ui.painter().hline((rect.left() + 8.0)..=(rect.right() - 8.0), rect.bottom() - 0.5, egui::Stroke::new(1.0, theme::glass(0.08)));
-        }
-        let art = Rect::from_min_size(rect.left_top() + vec2(8.0, 8.0), Vec2::splat(48.0));
-        let radius = if r.round { 24.0 } else { 6.0 };
-        match r.thumb.as_deref().filter(|u| !u.is_empty()) {
-            Some(url) => {
-                let thumbs = [crate::model::Thumb { url: url.to_owned(), width: 300, height: 300 }];
-                paint_cover(ui, art, &thumbs, radius, 1.0);
-            }
-            None => {
-                ui.painter().rect_filled(art, radius, theme::glass(0.1));
-            }
-        }
-        let x = art.right() + 14.0;
-        widgets::text_at(ui, pos2(x, rect.center().y - 17.0), &r.title, theme::semibold(15.0), theme::text(), rect.right() - x - 12.0);
-        widgets::text_at(ui, pos2(x, rect.center().y + 4.0), &r.subtitle, theme::regular(13.0), theme::text_dim(), rect.right() - x - 12.0);
-        widgets::context_menu(&resp, |ui| {
-            ui.set_min_width(190.0);
-            if widgets::menu_action(ui, None, "Remove from Recently Searched") {
-                remove = Some(i);
-            }
-        });
-        if resp.clicked() {
-            app.actions.push(match &r.target {
-                Some(t) => Action::Open(t.clone()),
-                // An entry from an earlier version kept only the search.
-                None => Action::Go(Page::Search(r.query.clone())),
-            });
-        }
-        ui.add_space(6.0);
-    }
     if let Some(i) = remove {
         app.recent_searches.remove(i);
     }
+    ui.add_space(26.0);
 }
 
-/// `pick`: choosing a transfer match, so clicking a song picks it.
-fn top_result(ui: &mut Ui, c: &Card, pick: bool, acts: &mut Vec<Action>) {    ui.vertical(|ui| {
-        ui.label(RichText::new("Top result").font(theme::bold(24.0)));
-        ui.add_space(8.0);
-        let (rect, resp) = ui.allocate_exact_size(vec2(420.0, 236.0), Sense::click());
-        let resp = named(resp, &c.title).on_hover_cursor(egui::CursorIcon::PointingHand);
-        let h = if resp.contains_pointer() { 1.0 } else { 0.0 };
-        ui.painter().rect_filled(rect, 14.0, theme::glass(0.07 + 0.05 * h));
-        let img = Rect::from_min_size(rect.min + vec2(20.0, 20.0), Vec2::splat(110.0));
-        paint_cover(ui, img, &c.thumbs, if c.round { 55.0 } else { theme::card_radius() }, 1.0);
-        let x = rect.left() + 20.0;
-        widgets::text_at(ui, pos2(x, img.bottom() + 16.0), &c.title, theme::bold(26.0), theme::text(), rect.width() - 40.0);
-        widgets::linked_text(ui, pos2(x, img.bottom() + 52.0), &c.subtitle, &c.links, theme::regular(14.0), theme::text_dim(), rect.width() - 40.0, acts);
-        // Floating play button
-        let pc = rect.right_bottom() + vec2(-44.0, -44.0 + 6.0 * (1.0 - h));
-        let pr = Rect::from_center_size(pc, Vec2::splat(52.0));
-        let active = widgets::active_state(ui, &c.target);
-        let playing = active == Some(true);
-        let label = format!("{} {}", if playing { "Pause" } else { "Play" }, c.title);
-        let p = named(ui.interact(pr, resp.id.with("play"), Sense::click()), &label).on_hover_cursor(egui::CursorIcon::PointingHand);
-        let ph = theme::anim_bool(ui.ctx(), p.id.with("ph"), p.hovered(), 0.15);
-        let r = 26.0 + 2.0 * ph;
-        let play_rect = Rect::from_center_size(pc, Vec2::splat(r * 2.0));
-        let light = theme::light();
-        if crate::renderer::active() == crate::renderer::Renderer::OpenGl {
-            let tint = if light {
-                Color32::from_white_alpha((48.0 + 28.0 * ph) as u8)
-            } else {
-                Color32::from_rgba_unmultiplied(26, 28, 34, (44.0 + 28.0 * ph) as u8)
-            };
-            let style = crate::glass::Style::clear(crate::glass::Corner::Capsule, Some(tint), if light { 0.10 } else { 0.88 }, 0.4 + 0.6 * h);
-            crate::glass::paint(ui, egui::Id::unique("top-result-play-blur"), play_rect, style);
-        } else {
-            ui.painter().circle_filled(pc + vec2(0.0, 2.0), r, Color32::from_black_alpha(if light { 30 } else { 50 }));
-            ui.painter().circle_filled(pc, r, theme::with_alpha(Color32::WHITE, 0.4 + 0.6 * h));
+/// Paints a smooth rounded diagonal gradient rectangle without corner clipping artifacts.
+fn paint_rounded_gradient(painter: &egui::Painter, rect: Rect, radius: f32, c1: Color32, c2: Color32) {
+    let r = radius.min(rect.width() * 0.5).min(rect.height() * 0.5);
+    let sample = |p: egui::Pos2| -> Color32 {
+        let tx = ((p.x - rect.left()) / rect.width().max(1.0)).clamp(0.0, 1.0);
+        let ty = ((p.y - rect.top()) / rect.height().max(1.0)).clamp(0.0, 1.0);
+        theme::lerp_color(c1, c2, (tx * 0.65 + ty * 0.35).clamp(0.0, 1.0))
+    };
+    let mut mesh = egui::Mesh::default();
+    let center = rect.center();
+    mesh.vertices.push(egui::epaint::Vertex { pos: center, uv: egui::epaint::WHITE_UV, color: sample(center) });
+
+    let corners = [
+        (pos2(rect.right() - r, rect.bottom() - r), 0.0f32, std::f32::consts::FRAC_PI_2),
+        (pos2(rect.left() + r, rect.bottom() - r), std::f32::consts::FRAC_PI_2, std::f32::consts::PI),
+        (pos2(rect.left() + r, rect.top() + r), std::f32::consts::PI, 3.0 * std::f32::consts::FRAC_PI_2),
+        (pos2(rect.right() - r, rect.top() + r), 3.0 * std::f32::consts::FRAC_PI_2, std::f32::consts::TAU),
+    ];
+    const SEG: usize = 6;
+    for (cc, a0, a1) in corners {
+        for s in 0..=SEG {
+            let a = egui::lerp(a0..=a1, s as f32 / SEG as f32);
+            let p = pos2(cc.x + r * a.cos(), cc.y + r * a.sin());
+            mesh.vertices.push(egui::epaint::Vertex { pos: p, uv: egui::epaint::WHITE_UV, color: sample(p) });
         }
-        let nudge = if playing { 0.0 } else { 1.5 };
-        let glyph_col = if light {
-            Color32::from_rgb(0x18, 0x14, 0x1c)
-        } else {
-            Color32::WHITE
+    }
+    let rim_count = mesh.vertices.len() as u32 - 1;
+    for i in 1..rim_count {
+        mesh.indices.extend_from_slice(&[0, i, i + 1]);
+    }
+    mesh.indices.extend_from_slice(&[0, rim_count, 1]);
+    painter.add(egui::Shape::mesh(mesh));
+}
+
+/// Search landing: responsive grid of vibrant category cards matching Apple Music.
+fn browse_categories(app: &mut App, ui: &mut Ui) {
+    struct Cat {
+        title: &'static str,
+        query: Option<&'static str>,
+        c1: Color32,
+        c2: Color32,
+        glyph: char,
+    }
+    const CATS: &[Cat] = &[
+        Cat { title: "Charts", query: None, c1: Color32::from_rgb(0x4f, 0x5d, 0x1e), c2: Color32::from_rgb(0x9b, 0xa8, 0x2b), glyph: icon::CROWN },
+        Cat { title: "Pop", query: Some("Pop hits"), c1: Color32::from_rgb(0xd8, 0x1b, 0x60), c2: Color32::from_rgb(0xff, 0x5c, 0x8d), glyph: icon::MUSIC },
+        Cat { title: "Hip-Hop/Rap", query: Some("Hip-Hop Rap"), c1: Color32::from_rgb(0x1e, 0x74, 0xd2), c2: Color32::from_rgb(0x4f, 0xac, 0xfe), glyph: icon::HEADPHONES },
+        Cat { title: "Alternative", query: Some("Alternative rock"), c1: Color32::from_rgb(0xb2, 0xbf, 0x10), c2: Color32::from_rgb(0xde, 0xe8, 0x2a), glyph: icon::RADIO },
+        Cat { title: "K-Pop", query: Some("K-Pop"), c1: Color32::from_rgb(0xe8, 0x43, 0x76), c2: Color32::from_rgb(0xff, 0x75, 0x9b), glyph: icon::SPARKLES },
+        Cat { title: "J-Rock", query: Some("J-Rock"), c1: Color32::from_rgb(0xdf, 0x5e, 0x1b), c2: Color32::from_rgb(0xff, 0x90, 0x45), glyph: icon::DISC_3 },
+        Cat { title: "Rock", query: Some("Rock classics"), c1: Color32::from_rgb(0x9a, 0x18, 0x29), c2: Color32::from_rgb(0xe0, 0x31, 0x49), glyph: icon::MUSIC },
+        Cat { title: "R&B/Soul", query: Some("R&B Soul"), c1: Color32::from_rgb(0x5a, 0x32, 0xb8), c2: Color32::from_rgb(0x95, 0x61, 0xf2), glyph: icon::HEART },
+        Cat { title: "Electronic", query: Some("Electronic dance"), c1: Color32::from_rgb(0x0b, 0x84, 0x77), c2: Color32::from_rgb(0x28, 0xc7, 0xb0), glyph: icon::RADIO },
+        Cat { title: "Indie", query: Some("Indie music"), c1: Color32::from_rgb(0x2d, 0x7a, 0x3e), c2: Color32::from_rgb(0x4c, 0xaf, 0x64), glyph: icon::DISC_3 },
+        Cat { title: "Chill", query: Some("Chill lo-fi"), c1: Color32::from_rgb(0xd4, 0x5d, 0x26), c2: Color32::from_rgb(0x3a, 0xa8, 0xd8), glyph: icon::HEADPHONES },
+        Cat { title: "Workout", query: Some("Workout energy"), c1: Color32::from_rgb(0xd9, 0x1e, 0x3b), c2: Color32::from_rgb(0xff, 0x52, 0x52), glyph: icon::SPARKLES },
+        Cat { title: "Focus", query: Some("Focus instrumental"), c1: Color32::from_rgb(0x1b, 0x4b, 0x7a), c2: Color32::from_rgb(0x3b, 0x82, 0xb6), glyph: icon::HEADPHONES },
+        Cat { title: "Jazz", query: Some("Jazz"), c1: Color32::from_rgb(0x8c, 0x5a, 0x1c), c2: Color32::from_rgb(0xc9, 0x91, 0x3b), glyph: icon::MUSIC },
+        Cat { title: "Classical", query: Some("Classical music"), c1: Color32::from_rgb(0x3c, 0x42, 0x62), c2: Color32::from_rgb(0x6c, 0x75, 0xa0), glyph: icon::MUSIC },
+    ];
+
+    ui.label(RichText::new("Browse Categories").font(theme::bold(20.0)).color(theme::text()));
+    ui.add_space(12.0);
+    let w = ui.available_width();
+    let gap = 16.0;
+    let cols = ((w + gap) / 215.0).floor().clamp(2.0, 5.0) as usize;
+    let tile_w = ((w - (cols as f32 - 1.0) * gap) / cols as f32).max(130.0);
+    let tile_h = (tile_w * 0.56).clamp(92.0, 122.0);
+
+    for chunk in CATS.chunks(cols) {
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = gap;
+            for cat in chunk {
+                let (rect, resp) = ui.allocate_exact_size(vec2(tile_w, tile_h), Sense::click());
+                let resp = named(resp, cat.title).on_hover_cursor(egui::CursorIcon::PointingHand);
+                let press = crate::glass::press(ui, &resp, rect, 0.55);
+                let draw_r = press.rect;
+                let h = press.hover;
+
+                paint_rounded_gradient(ui.painter(), draw_r, 11.0, cat.c1, cat.c2);
+                if h > 0.01 {
+                    ui.painter().rect_filled(draw_r, 11.0, Color32::from_white_alpha((24.0 * h) as u8));
+                }
+                ui.painter().rect_stroke(draw_r, 11.0, egui::Stroke::new(1.0, Color32::from_white_alpha(26)), egui::StrokeKind::Inside);
+
+                // Subtle decorative watermark glyph on the right side
+                let wm_pos = pos2(draw_r.right() - 28.0, draw_r.center().y - 4.0);
+                widgets::icon_at(ui, wm_pos, cat.glyph, 42.0 * press.scale, Color32::from_white_alpha(44));
+
+                let label_pos = pos2(draw_r.left() + 14.0, draw_r.bottom() - 12.0);
+                ui.painter().text(label_pos + vec2(0.0, 1.0), Align2::LEFT_BOTTOM, cat.title, theme::bold(14.5), Color32::from_black_alpha(65));
+                ui.painter().text(label_pos, Align2::LEFT_BOTTOM, cat.title, theme::bold(14.5), Color32::WHITE);
+
+                if resp.clicked() {
+                    if let Some(q) = cat.query {
+                        app.actions.push(Action::Go(Page::Search(q.to_owned())));
+                    } else {
+                        app.actions.push(Action::Go(Page::New));
+                    }
+                }
+            }
+        });
+        ui.add_space(gap);
+    }
+}
+
+/// Assemble up to 8 balanced Top Results (artist + songs + albums + playlists) matching the query.
+fn build_top_results(q: &str, r: &crate::backend::SearchResults) -> Vec<Card> {
+    let mut out: Vec<Card> = Vec::with_capacity(8);
+    let mut seen: HashSet<String> = HashSet::new();
+    let push = |out: &mut Vec<Card>, seen: &mut HashSet<String>, c: Card| {
+        let key = match &c.target {
+            Target::Song(t) => format!("s:{}", t.id),
+            Target::Artist(id) => format!("ar:{id}"),
+            Target::Album(id) => format!("al:{id}"),
+            Target::Playlist(id) => format!("pl:{id}"),
         };
-        widgets::play_pause_glyph(ui, pc + vec2(nudge, 0.0), 10.0, glyph_col, playing);
-        if p.clicked() {
-            acts.push(match &c.target {
-                _ if active.is_some() => Action::TogglePlay,
-                Target::Song(t) => Action::Radio(t.clone()),
-                t => Action::PlayCollection(t.clone(), false),
-            });
-        } else if resp.clicked() {
-            acts.push(match &c.target {
-                Target::Song(t) if pick => Action::TransferPick(t.clone()),
-                t => Action::Open(t.clone()),
-            });
+        if seen.insert(key) {
+            out.push(c);
         }
-    });
+    };
+    let song_card = |t: &Track| Card {
+        title: t.title.clone(),
+        subtitle: format!("Song · {}", t.artist_line()),
+        thumbs: t.thumbs.clone(),
+        target: Target::Song(t.clone()),
+        round: false,
+        links: t.artists.clone(),
+    };
+
+    if let Some(top_ar) = r.artists.first().filter(|a| a.title.eq_ignore_ascii_case(q.trim())) {
+        push(&mut out, &mut seen, top_ar.clone());
+    }
+    let (mut si, mut ali, mut ari, mut pli) = (0usize, 0usize, 0usize, 0usize);
+    while out.len() < 8 {
+        let before = out.len();
+        if let Some(t) = r.tracks.get(si) {
+            push(&mut out, &mut seen, song_card(t));
+            si += 1;
+            if out.len() >= 8 { break; }
+        }
+        if let Some(ar) = r.artists.get(ari) {
+            push(&mut out, &mut seen, ar.clone());
+            ari += 1;
+            if out.len() >= 8 { break; }
+        }
+        if let Some(t) = r.tracks.get(si) {
+            push(&mut out, &mut seen, song_card(t));
+            si += 1;
+            if out.len() >= 8 { break; }
+        }
+        if let Some(al) = r.albums.get(ali) {
+            push(&mut out, &mut seen, al.clone());
+            ali += 1;
+            if out.len() >= 8 { break; }
+        }
+        if let Some(pl) = r.playlists.get(pli) {
+            push(&mut out, &mut seen, pl.clone());
+            pli += 1;
+        }
+        if out.len() == before {
+            break;
+        }
+    }
+    out
+}
+
+/// 2-row × up to 4-column grid of compact horizontal Top Result tiles matching Screenshot 2.
+fn top_results_grid(ui: &mut Ui, cards: &[Card], liked: &HashSet<String>, pick: bool, acts: &mut Vec<Action>) {
+    ui.label(RichText::new("Top Results").font(theme::bold(20.0)).color(theme::text()));
+    ui.add_space(10.0);
+    let w = ui.available_width();
+    let gap = 14.0;
+    let cols = ((w + gap) / 260.0).floor().clamp(2.0, 4.0) as usize;
+    let tile_w = ((w - (cols as f32 - 1.0) * gap) / cols as f32).max(160.0);
+    let max_items = (cols * 2).min(cards.len());
+
+    for row_cards in cards[..max_items].chunks(cols) {
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = gap;
+            for c in row_cards {
+                let (rect, resp) = ui.allocate_exact_size(vec2(tile_w, 64.0), Sense::click());
+                let resp = named(resp, &c.title).on_hover_cursor(egui::CursorIcon::PointingHand);
+                let h = if resp.hovered() { 1.0 } else { 0.0 };
+                ui.painter().rect_filled(rect, 10.0, theme::glass(0.08 + 0.06 * h));
+                ui.painter().rect_stroke(rect, 10.0, egui::Stroke::new(0.8, theme::glass(0.06 + 0.05 * h)), egui::StrokeKind::Inside);
+
+                let art = Rect::from_min_size(rect.left_top() + vec2(8.0, 8.0), Vec2::splat(48.0));
+                let radius = if c.round { 24.0 } else { 6.0 };
+                paint_cover(ui, art, &c.thumbs, radius, 1.0);
+
+                let is_song = matches!(&c.target, Target::Song(_));
+                let action_r = Rect::from_center_size(pos2(rect.right() - 18.0, rect.center().y), Vec2::splat(24.0));
+                let x = art.right() + 12.0;
+                let text_w = (action_r.left() - x - 4.0).max(40.0);
+                let sub = match &c.target {
+                    Target::Artist(_) => "Artist".to_owned(),
+                    Target::Album(_) => {
+                        let s = widgets::card_subtitle(&c.subtitle);
+                        if s.is_empty() { "Album".to_owned() } else { format!("Album · {s}") }
+                    }
+                    Target::Playlist(_) => "Playlist".to_owned(),
+                    Target::Song(_) => c.subtitle.clone(),
+                };
+                widgets::text_at(ui, pos2(x, rect.center().y - 16.0), &c.title, theme::semibold(13.5), theme::text(), text_w);
+                widgets::text_at(ui, pos2(x, rect.center().y + 3.0), &sub, theme::regular(12.0), theme::text_dim(), text_w);
+
+                if is_song {
+                    widgets::paint_more_dots(ui.painter(), action_r.center(), 3.6, 1.3, if h > 0.0 { theme::text() } else { theme::text_dim() });
+                    let more_resp = named(ui.interact(action_r, resp.id.with("more"), Sense::click()), "More").on_hover_cursor(egui::CursorIcon::PointingHand);
+                    let is_liked = matches!(&c.target, Target::Song(t) if liked.contains(&t.id));
+                    widgets::popup_menu(&more_resp, None, |ui| {
+                        if let Target::Song(t) = &c.target {
+                            widgets::song_menu(ui, t, is_liked, None, None, acts);
+                        }
+                    });
+                } else {
+                    widgets::icon_at(ui, action_r.center(), icon::CHEVRON_RIGHT, 14.0, theme::text_faint());
+                }
+
+                let is_liked = matches!(&c.target, Target::Song(t) if liked.contains(&t.id));
+                widgets::context_menu(&resp, |ui| {
+                    match &c.target {
+                        Target::Song(t) => widgets::song_menu(ui, t, is_liked, None, None, acts),
+                        t => {
+                            ui.set_width(178.0);
+                            ui.add_space(2.0);
+                            if widgets::menu_action(ui, Some(icon::PLAY), "Play") {
+                                acts.push(Action::PlayCollection(t.clone(), false));
+                            }
+                            if widgets::menu_action(ui, Some(icon::SHUFFLE), "Shuffle play") {
+                                acts.push(Action::PlayCollection(t.clone(), true));
+                            }
+                            if widgets::menu_action(ui, None, "Open") {
+                                acts.push(Action::Open(t.clone()));
+                            }
+                            widgets::menu_separator(ui);
+                            if widgets::menu_action(ui, None, "Copy link") {
+                                acts.push(Action::Share(t.clone()));
+                            }
+                            ui.add_space(2.0);
+                        }
+                    }
+                });
+
+                if resp.clicked() {
+                    acts.push(match &c.target {
+                        Target::Song(t) if pick => Action::TransferPick(t.clone()),
+                        t => Action::Open(t.clone()),
+                    });
+                }
+            }
+        });
+        ui.add_space(10.0);
+    }
 }
 
 // ------------------------------------------------------------------ album / playlist
@@ -1588,39 +1890,47 @@ pub fn collection(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
 
                     // 1. Search pill on the far right (first in right_to_left)
                     let search_w = 190.0f32.min(ui.available_width() - 80.0).max(120.0);
-                    let (search_rect, _) = ui.allocate_exact_size(vec2(search_w, 34.0), Sense::hover());
-                    if crate::renderer::active() == crate::renderer::Renderer::OpenGl {
-                        crate::glass::paint(ui, ui.scope_id().with("col-search-glass"), search_rect, crate::glass::control(crate::glass::Corner::Capsule, light, 0.0, 1.0));
-                    } else {
-                        let search_shadow = if light { 18 } else { 35 };
-                        ui.painter().rect_filled(search_rect.translate(vec2(0.0, 1.0)), 17.0, Color32::from_black_alpha(search_shadow));
-                        let search_fill = if light { Color32::from_black_alpha(15) } else { theme::glass(0.12) };
-                        ui.painter().rect_filled(search_rect, 17.0, search_fill);
-                    }
+                    let (search_rect, search_hit) = ui.allocate_exact_size(vec2(search_w, 34.0), Sense::click());
+                    let search_hit = search_hit.on_hover_cursor(egui::CursorIcon::Text);
+                    let search_bg_slot = ui.painter().add(egui::Shape::Noop);
 
-                    widgets::icon_at(ui, pos2(search_rect.left() + 15.0, search_rect.center().y), icon::SEARCH, 13.5, theme::text_dim());
+                    widgets::icon_at(ui, pos2(search_rect.left() + 16.0, search_rect.center().y), icon::SEARCH, 13.5, theme::text_dim());
 
                     let mut current_query = match &app.coll_search {
                         Some((fid, q)) if fid == id => q.clone(),
                         _ => String::new(),
                     };
                     let clearable = !current_query.is_empty();
-                    let text_right = if clearable { search_rect.right() - 28.0 } else { search_rect.right() - 10.0 };
-                    let text_rect = Rect::from_min_max(pos2(search_rect.left() + 28.0, search_rect.top() + 4.0), pos2(text_right, search_rect.bottom() - 4.0));
+                    let text_right = if clearable { search_rect.right() - 28.0 } else { search_rect.right() - 12.0 };
+                    let text_rect = Rect::from_min_max(pos2(search_rect.left() + 33.0, search_rect.top() + 3.0), pos2(text_right, search_rect.bottom() - 3.0));
                     let placeholder = if is_album { "Find in Album" } else { "Find in Playlist" };
-                    let mut text_ui = ui.new_child(
-                        egui::UiBuilder::new()
-                            .max_rect(text_rect)
-                            .layout(egui::Layout::centered_and_justified(egui::Direction::TopDown)),
-                    );
-                    let edit_resp = text_ui.add(
+                    let edit_resp = ui.put(
+                        text_rect,
                         egui::TextEdit::singleline(&mut current_query)
                             .hint_text(egui::RichText::new(placeholder).color(theme::text_dim()))
                             .font(theme::regular(13.0))
                             .text_color(theme::text())
                             .frame(egui::Frame::NONE)
+                            .align(egui::Align2::LEFT_CENTER)
                             .desired_width(text_rect.width()),
                     );
+                    if search_hit.clicked() {
+                        edit_resp.request_focus();
+                    }
+                    let search_focus = theme::anim_bool(ui.ctx(), ui.scope_id().with("col-search-focus"), edit_resp.has_focus(), 0.2);
+                    if crate::renderer::active() == crate::renderer::Renderer::OpenGl {
+                        crate::glass::paint_at(ui, search_bg_slot, ui.scope_id().with("col-search-glass"), search_rect, crate::glass::control(crate::glass::Corner::Capsule, light, search_focus * 0.5, 1.0));
+                    } else {
+                        let search_shadow = if light { 18 } else { 35 };
+                        let search_fill = if light { Color32::from_black_alpha(15) } else { theme::glass(0.12) };
+                        ui.painter().set(search_bg_slot, egui::Shape::Vec(vec![
+                            egui::Shape::rect_filled(search_rect.translate(vec2(0.0, 1.0)), 17.0, Color32::from_black_alpha(search_shadow)),
+                            egui::Shape::rect_filled(search_rect, 17.0, search_fill),
+                        ]));
+                    }
+                    if search_focus > 0.01 {
+                        ui.painter().rect_stroke(search_rect, 17.0, egui::Stroke::new(1.5, theme::with_alpha(app_accent(ui), search_focus)), egui::StrokeKind::Inside);
+                    }
                     if edit_resp.changed() {
                         if current_query.is_empty() {
                             app.coll_search = None;
