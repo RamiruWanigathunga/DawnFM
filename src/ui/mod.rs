@@ -2085,21 +2085,11 @@ impl eframe::App for App {
             let section = ui.available_rect_before_wrap();
             const DRAWER_W: f32 = 340.0;
             let q = crate::glass::spring_bool(&ctx, egui::Id::unique("queue-drawer"), self.queue_open && !self.np_open, crate::glass::Tuning::SMOOTH).clamp(0.0, 1.0);
-            if q > 0.01 {
-                let drawer_fill = self.lyrics_panel_fill(&ctx);
-                let r = egui::Panel::right("queue").resizable(false)
-                    .exact_size(DRAWER_W * q)
-                    .frame(egui::Frame::NONE)
-                    .show_separator_line(false)
-                    .show(ui, |ui| {
-                        let tint = theme::with_alpha(drawer_fill, if light { 0.22 } else { 0.30 });
-                        let style = crate::glass::Style::thick(crate::glass::Corner::Circular(0.0), Some(tint), if light { 0.08 } else { 0.90 }, 1.0);
-                        crate::glass::paint(ui, egui::Id::unique("queue-liquid-glass"), ui.max_rect(), style);
-                        egui::Frame::NONE.inner_margin(egui::Margin::symmetric(14, 16)).show(ui, |ui| shell::queue_drawer(self, ui));
-                    });
-                self.scroll_panes.push(r.response.rect);
-            }
-            let main_right = ui.available_rect_before_wrap().right();
+            let l = crate::glass::spring_bool(&ctx, egui::Id::unique("lyrics-drawer"), self.lyrics_drawer && !self.queue_open && !self.np_open, crate::glass::Tuning::SMOOTH).clamp(0.0, 1.0);
+            let active_drawer = q.max(l);
+            let drawer_w = DRAWER_W.min((screen.width() - shell::SIDEBAR_W - 80.0).max(240.0));
+            let drawer_left = screen.right() - drawer_w * active_drawer;
+            ctx.data_mut(|d| d.insert_temp(egui::Id::unique("drawer-left"), drawer_left));
             let is_artist = matches!(self.page, Page::Artist(_));
             let left_margin = if is_artist { 0 } else { 28 };
             let top_margin = if is_artist { 0 } else { titlebar::top_margin(14, 42.0) };
@@ -2113,14 +2103,14 @@ impl eframe::App for App {
                     }
                     pages::page(self, ui, now);
                 });
-            // The player: a frosted strip over the bottom of the main section, above the
-            // pages, so their last rows fade under it instead of stopping at a seam.
+            // The player: a frosted strip over the bottom of the main section, staying left
+            // of any open right-side overlay drawer.
             if self.page != Page::Settings && np < 0.99 {
                 let bar_reveal = (1.0 - np).clamp(0.0, 1.0);
                 let y_offset = np * 70.0;
                 let strip = egui::Rect::from_min_max(
                     egui::pos2(section.left(), screen.bottom() - self.bar_height() + y_offset),
-                    egui::pos2(main_right, screen.bottom() + y_offset),
+                    egui::pos2(drawer_left, screen.bottom() + y_offset),
                 );
                 egui::Area::new(egui::Id::unique("player-bar"))
                     .fixed_pos(strip.min)
@@ -2132,38 +2122,53 @@ impl eframe::App for App {
                         });
                     });
             }
-            // Floating lyrics panel over the right side of the pages; Up next replaces it when open.
-            let l = crate::glass::spring_bool(&ctx, egui::Id::unique("lyrics-drawer"), self.lyrics_drawer && !self.queue_open && !self.np_open, crate::glass::Tuning::SMOOTH).clamp(0.0, 1.0);
-            if l > 0.01 {
+            // Apple Music-style full-height frosted overlay drawers sliding over the right
+            // side of the page without reflowing page content.
+            for (is_queue, t) in [(true, q), (false, l)] {
+                if t <= 0.01 {
+                    continue;
+                }
                 let drawer_fill = self.lyrics_panel_fill(&ctx);
-                let pad_r = 16.0;
-                let top = (titlebar::top_margin(14, 44.0) as f32).max(16.0);
-                let bottom_gap = if self.page == Page::Settings || np >= 0.99 { 16.0 } else { self.bar_height() + 12.0 };
-                let bottom = (screen.bottom() - bottom_gap).max(top + 240.0);
-                let float_w = DRAWER_W.min((screen.width() - shell::SIDEBAR_W - 36.0).max(240.0));
-                let slide = (1.0 - l) * 28.0;
-                let float_rect = egui::Rect::from_min_max(
-                    egui::pos2(screen.right() - pad_r - float_w + slide, top),
-                    egui::pos2(screen.right() - pad_r + slide, bottom),
+                let slide_x = screen.right() - drawer_w * t;
+                let full_rect = egui::Rect::from_min_size(
+                    egui::pos2(slide_x, screen.top()),
+                    egui::vec2(drawer_w, screen.height()),
                 );
-                egui::Area::new(egui::Id::unique("lyrics-drawer"))
-                    .fixed_pos(float_rect.min)
+                let visible_rect = full_rect.intersect(screen);
+                let area_id = if is_queue { "queue" } else { "lyrics-drawer" };
+                let glass_id = if is_queue { "queue-liquid-glass" } else { "lyrics-drawer-liquid-glass" };
+                let top_pad = if is_queue { titlebar::top_margin(14, 32.0) } else { titlebar::top_margin(18, 32.0) };
+                let margin = if is_queue {
+                    egui::Margin { left: 16, right: 16, top: top_pad, bottom: 16 }
+                } else {
+                    egui::Margin { left: 22, right: 20, top: top_pad, bottom: 18 }
+                };
+                egui::Area::new(egui::Id::unique(area_id))
+                    .fixed_pos(full_rect.min)
                     .order(egui::Order::Middle)
                     .show(&ctx, |ui| {
-                        ui.set_opacity(l);
-                        // Swallow clicks outside interactive lyric lines so pages behind don't react.
-                        ui.allocate_rect(float_rect, egui::Sense::click());
-                        let corner = crate::glass::Corner::Radius(theme::panel_radius().max(16) as f32);
+                        ui.set_clip_rect(visible_rect);
+                        ui.set_opacity(t);
+                        ui.allocate_rect(visible_rect, egui::Sense::click());
                         let tint = theme::with_alpha(drawer_fill, if light { 0.24 } else { 0.36 });
-                        let style = crate::glass::Style::thick(corner, Some(tint), if light { 0.08 } else { 0.90 }, 1.0);
-                        crate::glass::paint(ui, egui::Id::unique("lyrics-drawer-liquid-glass"), float_rect, style);
-                        ui.scope_builder(egui::UiBuilder::new().max_rect(float_rect).layout(egui::Layout::top_down(egui::Align::Min)), |ui| {
-                            egui::Frame::NONE
-                                .inner_margin(egui::Margin { left: 20, right: 16, top: 14, bottom: 14 })
-                                .show(ui, |ui| nowplaying::lyrics_drawer(self, ui, now));
+                        let mut style = crate::glass::Style::thick(crate::glass::Corner::Circular(0.0), Some(tint), if light { 0.08 } else { 0.90 }, 1.0);
+                        style.material.rim = 0.0;
+                        style.material.rim_base = 0.0;
+                        style.material.inner_glow = 0.0;
+                        style.material.light_spill = 0.0;
+                        crate::glass::paint(ui, egui::Id::unique(glass_id), full_rect, style);
+                        ui.painter().vline(full_rect.left(), full_rect.y_range(), egui::Stroke::new(1.0, theme::glass(if light { 0.06 } else { 0.08 })));
+                        ui.scope_builder(egui::UiBuilder::new().max_rect(full_rect).layout(egui::Layout::top_down(egui::Align::Min)), |ui| {
+                            egui::Frame::NONE.inner_margin(margin).show(ui, |ui| {
+                                if is_queue {
+                                    shell::queue_drawer(self, ui);
+                                } else {
+                                    nowplaying::lyrics_drawer(self, ui, now);
+                                }
+                            });
                         });
                     });
-                self.scroll_panes.push(float_rect);
+                self.scroll_panes.push(visible_rect);
             }
         }
         if np > 0.001 {

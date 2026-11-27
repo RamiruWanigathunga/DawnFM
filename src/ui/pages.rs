@@ -1854,7 +1854,8 @@ pub fn collection(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
 
     // Top-right floating header controls matching Apple Music: [Share | ...] + [Find in Album/Playlist].
     let screen = ui.ctx().content_rect();
-    let page_right = ui.clip_rect().right().min(screen.right());
+    let drawer_left = ui.ctx().data(|d| d.get_temp::<f32>(egui::Id::unique("drawer-left"))).unwrap_or(screen.right());
+    let page_right = ui.clip_rect().right().min(screen.right()).min(drawer_left);
     let top = screen.top() + super::titlebar::top_margin(6, 32.0) as f32;
     let avail_w = (page_right - (screen.left() + super::shell::SIDEBAR_W)).max(240.0);
     let search_w = 190.0f32.min((avail_w - 116.0).max(120.0));

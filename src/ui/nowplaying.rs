@@ -968,21 +968,11 @@ fn sleeve(app: &mut App, ui: &mut Ui, x0: f32, w: f32, info_y: f32, track: &crat
 
 // ------------------------------------------------------------------ lyrics
 
-/// The floating lyrics panel: the playing song's lyrics in a frosted card over the pages.
+/// The full-height frosted lyrics panel on the right: synced lyrics without a header bar.
 pub(super) fn lyrics_drawer(app: &mut App, ui: &mut Ui, now: f64) {
-    let ink = if theme::light() { Color32::BLACK } else { Color32::WHITE };
-    ui.horizontal(|ui| {
-        ui.label(egui::RichText::new(t!("lyrics")).font(theme::bold(20.0)).color(ink));
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if widgets::icon_button(ui, icon::X, 16.0, "Close lyrics", false).clicked() {
-                app.lyrics_drawer = false;
-            }
-        });
-    });
-    ui.add_space(6.0);
-    let rect = ui.available_rect_before_wrap();
+    let rect = ui.max_rect();
     if app.current().is_none() {
-        ui.add_space(rect.height() * 0.38);
+        ui.add_space(rect.height() * 0.4);
         ui.vertical_centered(|ui| {
             ui.label(egui::RichText::new(t!("play_song_to_see_lyrics")).font(theme::semibold(16.0)).color(theme::text_dim()));
         });

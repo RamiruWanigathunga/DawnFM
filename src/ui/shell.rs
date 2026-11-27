@@ -2,7 +2,7 @@
 
 use egui::{Align2, Color32, Pos2, Rect, Sense, Ui, Vec2, pos2, vec2};
 
-use super::widgets::{self, icon_at, icon_button, named, paint_cover, text_at};
+use super::widgets::{self, icon_at, named, paint_cover, text_at};
 use super::{Action, App, LibTab, NpTab, Page, Repeat, fmt_time, glyphs};
 use crate::i18n::t;
 use crate::model::Target;
@@ -1273,18 +1273,72 @@ fn volume_slider(app: &mut App, ui: &mut Ui, slider: Rect, salt: &str) {
 
 // ------------------------------------------------------------------ queue drawer
 
+/// Draws a crisp infinity glyph (`∞`) centered at `c` with half-span `r`.
+fn paint_infinity(painter: &egui::Painter, c: Pos2, r: f32, stroke: egui::Stroke) {
+    let loop_r = r * 0.42;
+    let dx = r * 0.46;
+    painter.circle_stroke(pos2(c.x - dx, c.y), loop_r, stroke);
+    painter.circle_stroke(pos2(c.x + dx, c.y), loop_r, stroke);
+}
+
+/// Draws the AutoMix overlapping-circles glyph (`◐●`) centered at `c`.
+fn paint_automix_icon(painter: &egui::Painter, c: Pos2, r: f32, col: Color32) {
+    let cr = r * 0.46;
+    let dx = r * 0.36;
+    painter.circle_filled(pos2(c.x - dx, c.y), cr, col);
+    painter.circle_stroke(pos2(c.x + dx, c.y), cr, egui::Stroke::new(1.6, col));
+}
+
+/// Pill toggle button for the Queue panel top row (`AutoPlay` / `AutoMix`).
+fn queue_top_pill(ui: &mut Ui, width: f32, key: &str, tip: &str, active: bool, draw_icon: impl FnOnce(&egui::Painter, Pos2, Color32)) -> bool {
+    let (rect, _) = ui.allocate_exact_size(vec2(width, 30.0), Sense::hover());
+    let resp = ui.interact(rect, ui.scope_id().with(("q-pill", key)), Sense::click());
+    let resp = named(resp, tip).on_hover_text(tip).on_hover_cursor(egui::CursorIcon::PointingHand);
+    let light = theme::light();
+    let press = crate::glass::press(ui, &resp, rect, 0.75);
+    let draw_r = press.rect;
+    let h = press.hover;
+    let s = theme::anim_bool(ui.ctx(), resp.id.with("on"), active, 0.16);
+    let off_fill = if light { Color32::from_black_alpha((24.0 + 14.0 * h) as u8) } else { Color32::from_white_alpha((32.0 + 18.0 * h) as u8) };
+    let on_fill = if light { Color32::from_rgb(0x28, 0x26, 0x2c) } else { Color32::from_white_alpha((200.0 + 25.0 * h) as u8) };
+    let fill = theme::lerp_color(off_fill, on_fill, s);
+    ui.painter().rect_filled(draw_r, draw_r.height() * 0.5, fill);
+    let off_ink = if light { Color32::BLACK } else { Color32::from_white_alpha(230) };
+    let on_ink = if light { Color32::WHITE } else { Color32::from_rgb(0x18, 0x18, 0x1b) };
+    draw_icon(ui.painter(), draw_r.center(), theme::lerp_color(off_ink, on_ink, s));
+    resp.clicked()
+}
+
 pub fn queue_drawer(app: &mut App, ui: &mut Ui) {
     let ink = if theme::light() { Color32::BLACK } else { Color32::WHITE };
+    let right_pad = super::titlebar::right_gap(ui.ctx(), ui.max_rect(), 0.0);
+    let avail = (ui.available_width() - right_pad).max(160.0);
+    let gap = 10.0;
+    let pill_w = ((avail - gap) * 0.5).max(70.0);
     ui.horizontal(|ui| {
-        ui.label(egui::RichText::new("Up next").font(theme::bold(20.0)).color(ink));
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            // Left of the window buttons, which sit over the drawer's top right.
-            ui.add_space(super::titlebar::right_gap(ui.ctx(), ui.max_rect(), 0.0));
-            if icon_button(ui, icon::X, 16.0, "Close queue", false).clicked() {
-                app.queue_open = false;
-            }
-        });
+        ui.spacing_mut().item_spacing.x = gap;
+        if queue_top_pill(ui, pill_w, "autoplay", "AutoPlay", app.autoplay, |p, c, col| {
+            paint_infinity(p, c, 9.5, egui::Stroke::new(1.8, col));
+        }) {
+            app.autoplay = !app.autoplay;
+        }
+        if queue_top_pill(ui, pill_w, "automix", "AutoMix", app.automix, |p, c, col| {
+            paint_automix_icon(p, c, 9.0, col);
+        }) {
+            app.automix = !app.automix;
+            app.set_crossfade();
+        }
     });
+    ui.add_space(12.0);
+    if app.autoplay {
+        let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 20.0), Sense::hover());
+        paint_infinity(ui.painter(), pos2(r.left() + 8.0, r.center().y), 6.5, egui::Stroke::new(1.5, ink));
+        ui.painter().text(pos2(r.left() + 20.0, r.center().y), Align2::LEFT_CENTER, "AutoPlay", theme::semibold(15.0), ink);
+        ui.add_space(2.0);
+        ui.label(egui::RichText::new("Similar songs will play").font(theme::regular(12.0)).color(theme::text_dim()));
+    } else {
+        ui.label(egui::RichText::new("Up next").font(theme::semibold(15.0)).color(ink));
+    }
     ui.add_space(8.0);
     queue_list(app, ui, "drawer");
 }
@@ -1305,8 +1359,10 @@ pub fn queue_list(app: &mut App, ui: &mut Ui, salt: &str) {
             return;
         }
         let start = app.queue.index.unwrap_or(0);
-        ui.checkbox(&mut app.autoplay, egui::RichText::new("Autoplay similar songs").color(ink)).on_hover_cursor(egui::CursorIcon::PointingHand);
-        ui.add_space(6.0);
+        if salt != "drawer" {
+            ui.checkbox(&mut app.autoplay, egui::RichText::new("Autoplay similar songs").color(ink)).on_hover_cursor(egui::CursorIcon::PointingHand);
+            ui.add_space(6.0);
+        }
         let accent = app.accent_color();
         let (queue, liked, acts, has_current, by) = (&app.queue.tracks, &app.liked, &mut app.actions, app.queue.index.is_some(), &app.jam.by);
         widgets::visible_rows(ui, queue.len() - start, |ui, k| {
