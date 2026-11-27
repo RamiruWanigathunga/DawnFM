@@ -2055,7 +2055,7 @@ impl eframe::App for App {
                     .show_separator_line(false)
                     .show(ui, |ui| {
                         let tint = theme::with_alpha(drawer_fill, if light { 0.22 } else { 0.30 });
-                        let style = crate::glass::Style::thick(crate::glass::Corner::Circular(0.0), Some(tint), if light { 0.05 } else { 0.90 }, 1.0);
+                        let style = crate::glass::Style::thick(crate::glass::Corner::Circular(0.0), Some(tint), if light { 0.08 } else { 0.90 }, 1.0);
                         crate::glass::paint(ui, egui::Id::unique("queue-liquid-glass"), ui.max_rect(), style);
                         egui::Frame::NONE.inner_margin(egui::Margin::symmetric(14, 16)).show(ui, |ui| shell::queue_drawer(self, ui));
                     });
@@ -2071,7 +2071,7 @@ impl eframe::App for App {
                     .show_separator_line(false)
                     .show(ui, |ui| {
                         let tint = theme::with_alpha(drawer_fill, if light { 0.22 } else { 0.30 });
-                        let style = crate::glass::Style::thick(crate::glass::Corner::Circular(0.0), Some(tint), if light { 0.05 } else { 0.90 }, 1.0);
+                        let style = crate::glass::Style::thick(crate::glass::Corner::Circular(0.0), Some(tint), if light { 0.08 } else { 0.90 }, 1.0);
                         crate::glass::paint(ui, egui::Id::unique("lyrics-drawer-liquid-glass"), ui.max_rect(), style);
                         egui::Frame::NONE
                             .inner_margin(egui::Margin { left: 20, right: 16, top: 16, bottom: 16 })

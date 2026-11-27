@@ -1101,7 +1101,7 @@ fn synced(app: &mut App, ui: &mut Ui, rect: Rect, id: &str, lyrics: &Lyrics, now
         };
         ui.scope_builder(egui::UiBuilder::new().max_rect(r.expand(6.0)), |ui| {
             ui.set_clip_rect(clip);
-            let mut style = crate::glass::Style::clear(crate::glass::Corner::Capsule, Some(tint), if bg_light { 0.06 } else { 0.88 }, shown);
+            let mut style = crate::glass::Style::clear(crate::glass::Corner::Capsule, Some(tint), if bg_light { 0.10 } else { 0.88 }, shown);
             press.apply(&mut style);
             crate::glass::paint(ui, egui::Id::unique("lyr-resume-liquid-glass"), r, style);
         });

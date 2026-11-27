@@ -223,7 +223,7 @@ fn body_color() -> Color32 {
 
 /// Lines between parts of the card.
 fn rule_color() -> Color32 {
-    if theme::light() { Color32::from_gray(232) } else { Color32::from_gray(44) }
+    if theme::light() { Color32::from_gray(222) } else { Color32::from_gray(44) }
 }
 
 pub(super) fn surface() -> egui::Frame {
@@ -231,12 +231,7 @@ pub(super) fn surface() -> egui::Frame {
         .fill(if theme::light() { theme::surface_fill() } else { Color32::from_gray(28) })
         .stroke(Stroke::new(1.0, rule_color()))
         .corner_radius(16)
-        .shadow(egui::epaint::Shadow {
-            offset: [0, if theme::light() { 10 } else { 24 }],
-            blur: if theme::light() { 32 } else { 70 },
-            spread: 0,
-            color: theme::shade(if theme::light() { 0.14 } else { 0.55 }),
-        })
+        .shadow(egui::epaint::Shadow { offset: [0, 24], blur: 70, spread: 0, color: theme::shade(0.55) })
 }
 
 pub(super) fn surface_frame() -> egui::Frame {

@@ -98,20 +98,20 @@ impl Material {
         corner_dispersion: 0.0,
         blur: 4.2,
         magnify: 1.0,
-        light_range: (0.72, 1.0),
-        dark_range: (0.08, 0.56),
+        light_range: (0.58, 1.0),
+        dark_range: (0.08, 0.58),
         saturation: 1.45,
-        rim: 0.76,
+        rim: 0.72,
         rim_width: 0.85,
         rim_base: 0.34,
-        dark_edge: 0.16,
+        dark_edge: 0.22,
         light_spill: 0.18,
         inner_glow: 0.16,
-        inner_shadow: 0.04,
-        shadow: 0.14,
-        shadow_radius: 15.0,
-        shadow_y: 5.5,
-        shadow_tint: 0.40,
+        inner_shadow: 0.05,
+        shadow: 0.18,
+        shadow_radius: 16.0,
+        shadow_y: 6.0,
+        shadow_tint: 0.35,
         tint_follow: 1.0,
     };
 
@@ -126,9 +126,9 @@ impl Material {
         light_range: (0.12, 1.0),
         dark_range: (0.04, 0.92),
         saturation: 1.25,
-        rim: 0.85,
+        rim: 0.82,
         inner_glow: 0.14,
-        inner_shadow: 0.06,
+        inner_shadow: 0.07,
         ..Self::REGULAR
     };
 
@@ -140,12 +140,12 @@ impl Material {
         outer_depth: 5.0,
         dispersion: 0.10,
         blur: 10.5,
-        light_range: (0.78, 1.0),
+        light_range: (0.66, 1.0),
         dark_range: (0.08, 0.48),
         saturation: 1.55,
-        shadow: 0.22,
-        shadow_radius: 24.0,
-        shadow_y: 9.0,
+        shadow: 0.24,
+        shadow_radius: 26.0,
+        shadow_y: 10.0,
         light_spill: 0.24,
         inner_glow: 0.11,
         ..Self::REGULAR
@@ -257,21 +257,21 @@ impl Style {
 pub fn control(corner: impl Into<Corner>, light: bool, hover: f32, alpha: f32) -> Style {
     let h = hover.clamp(0.0, 1.0);
     let tint = if light {
-        Color32::from_white_alpha((34.0 + 30.0 * h) as u8)
+        Color32::from_white_alpha((44.0 + 28.0 * h) as u8)
     } else {
         Color32::from_rgba_unmultiplied(34, 34, 40, (44.0 + 28.0 * h) as u8)
     };
-    Style::regular(corner, Some(tint), if light { 0.05 } else { 0.90 }, alpha)
+    Style::regular(corner, Some(tint), if light { 0.08 } else { 0.90 }, alpha)
 }
 
 /// Liquid Glass preset for floating surfaces (menus, modals, drag previews, floating bars).
 pub fn panel(corner: impl Into<Corner>, light: bool, alpha: f32) -> Style {
     let tint = if light {
-        Color32::from_rgba_unmultiplied(255, 255, 255, 118)
+        Color32::from_rgba_unmultiplied(245, 245, 248, 128)
     } else {
         Color32::from_rgba_unmultiplied(26, 26, 32, 132)
     };
-    Style::thick(corner, Some(tint), if light { 0.05 } else { 0.90 }, alpha)
+    Style::thick(corner, Some(tint), if light { 0.08 } else { 0.90 }, alpha)
 }
 
 /// Paint real Liquid Glass at `rect` into `ui`'s painter.
@@ -341,10 +341,6 @@ pub fn shape(ui: &egui::Ui, id: egui::Id, rect: Rect, style: Style) -> egui::Sha
     let d = style.darkness.clamp(0.0, 1.0);
     let face_lo = (lerp(m.light_range.0, m.dark_range.0, d) + style.brightness).clamp(0.0, 1.2);
     let face_hi = (lerp(m.light_range.1, m.dark_range.1, d) + style.brightness).clamp(0.0, 1.3);
-    let shadow_op = m.shadow * lerp(0.28, 1.0, d);
-    let shadow_tint = lerp(0.75, m.shadow_tint, d);
-    let dark_edge = (m.dark_edge * lerp(0.22, 1.0, d)).min(0.9);
-    let inner_shadow = m.inner_shadow * lerp(0.30, 1.0, d);
     let (bs, bc) = style.light_bend.sin_cos();
     let light_dir = [-0.45 * bc - (-0.893) * bs, -0.45 * bs + (-0.893) * bc];
     let tint = style.tint.map_or([0.0; 4], |c| {
@@ -505,21 +501,21 @@ pub fn shape(ui: &egui::Ui, id: egui::Id, rect: Rect, style: Style) -> egui::Sha
                 (m.rim * lerp(1.0, 0.72, d)).min(1.0),
                 m.rim_width * ppp.max(1.0),
                 m.rim_base,
-                dark_edge,
+                m.dark_edge.min(0.9),
             );
             gl.uniform_4_f32(
                 u.glow.as_ref(),
                 m.light_spill * presence,
                 m.inner_glow * lerp(1.0, 0.6, d),
-                inner_shadow,
+                m.inner_shadow,
                 0.0,
             );
             gl.uniform_4_f32(
                 u.shadow.as_ref(),
-                shadow_op * presence,
+                m.shadow * presence,
                 m.shadow_radius * ppp,
                 m.shadow_y * ppp,
-                shadow_tint,
+                m.shadow_tint,
             );
             gl.draw_arrays(glow::TRIANGLES, 0, 3);
 

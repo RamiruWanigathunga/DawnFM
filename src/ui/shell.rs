@@ -1474,7 +1474,7 @@ pub fn queue_list(app: &mut App, ui: &mut Ui, salt: &str) {
             .show(ui.ctx(), |ui| {
                 let stroke = egui::Stroke::new(1.0, theme::glass(0.18));
                 let shadow = if theme::light() {
-                    egui::epaint::Shadow { offset: [0, 4], blur: 14, spread: 0, color: Color32::from_black_alpha(18) }
+                    egui::epaint::Shadow { offset: [0, 6], blur: 20, spread: 0, color: Color32::from_black_alpha(45) }
                 } else {
                     egui::epaint::Shadow { offset: [0, 8], blur: 24, spread: 0, color: Color32::from_black_alpha(150) }
                 };
@@ -1556,12 +1556,12 @@ pub fn zoom_badge(ctx: &egui::Context, now: f64) {
         .show(ctx, |ui| {
             ui.set_opacity(t);
             let shadow_color = if theme::light() {
-                Color32::from_black_alpha(10)
+                Color32::from_black_alpha(20)
             } else {
                 Color32::from_black_alpha(60)
             };
             let stroke = if theme::light() {
-                egui::Stroke::new(0.5, Color32::from_black_alpha(18))
+                egui::Stroke::new(0.5, Color32::from_black_alpha(25))
             } else {
                 egui::Stroke::new(0.5, Color32::from_white_alpha(32))
             };
@@ -1614,8 +1614,8 @@ pub fn toast(app: &mut App, ctx: &egui::Context, now: f64) {    let Some((msg, s
             let size = g.size() + vec2(36.0, 20.0);
             let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
             let light = theme::light();
-            let tint = theme::with_alpha(theme::menu_fill(), if light { 0.32 } else { 0.28 });
-            let style = crate::glass::Style::regular(crate::glass::Corner::Capsule, Some(tint), if light { 0.05 } else { 0.90 }, 1.0);
+            let tint = theme::with_alpha(theme::menu_fill(), 0.28);
+            let style = crate::glass::Style::regular(crate::glass::Corner::Capsule, Some(tint), if light { 0.08 } else { 0.90 }, 1.0);
             crate::glass::paint(ui, egui::Id::unique("toast-liquid-glass"), rect, style);
             ui.painter().galley(rect.min + vec2(18.0, 10.0), g, theme::text());
         });

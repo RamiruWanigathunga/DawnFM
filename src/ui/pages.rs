@@ -478,7 +478,7 @@ pub fn circle_action(ui: &mut Ui, glyph: CircleGlyph, name: &str, active: bool) 
         press.apply(&mut style);
         crate::glass::paint(ui, resp.id.with("blur"), draw_r, style);
     } else {
-        let shadow_alpha = if light { (10.0 + 5.0 * h) as u8 } else { (42.0 + 14.0 * h) as u8 };
+        let shadow_alpha = if light { (25.0 + 10.0 * h) as u8 } else { (42.0 + 14.0 * h) as u8 };
         let r = draw_r.height() * 0.5;
         ui.painter().circle_filled(draw_r.center() + vec2(0.0, 1.5), r, Color32::from_black_alpha(shadow_alpha));
         let fill = if light {
@@ -615,7 +615,7 @@ pub fn share_more_pill(
         }
         crate::glass::paint_at(ui, glass_slot, ui.scope_id().with((id_salt, "pill-blur")), draw_pill, style);
     } else {
-        let pill_shadow = if light { 10 } else { 35 };
+        let pill_shadow = if light { 18 } else { 35 };
         let pill_fill = if light { Color32::from_black_alpha(15) } else { theme::glass(0.12) };
         ui.painter().set(glass_slot, egui::Shape::Vec(vec![
             egui::Shape::rect_filled(draw_pill.translate(vec2(0.0, 1.0)), 17.0, Color32::from_black_alpha(pill_shadow)),
@@ -624,14 +624,14 @@ pub fn share_more_pill(
     }
 
     if share_resp.hovered() {
-        ui.painter().rect_filled(share_rect, egui::CornerRadius { nw: 17, ne: 0, sw: 17, se: 0 }, if light { Color32::from_black_alpha(18) } else { theme::glass(0.10) });
+        ui.painter().rect_filled(share_rect, egui::CornerRadius { nw: 17, ne: 0, sw: 17, se: 0 }, if light { Color32::from_black_alpha(22) } else { theme::glass(0.10) });
     }
     if more_resp.hovered() || more_open {
-        ui.painter().rect_filled(more_rect, egui::CornerRadius { nw: 0, ne: 17, sw: 0, se: 17 }, if light { Color32::from_black_alpha(18) } else { theme::glass(0.10) });
+        ui.painter().rect_filled(more_rect, egui::CornerRadius { nw: 0, ne: 17, sw: 0, se: 17 }, if light { Color32::from_black_alpha(22) } else { theme::glass(0.10) });
     }
 
     // Divider between Share and More
-    ui.painter().line_segment([pos2(mid_x, draw_pill.min.y + 7.0), pos2(mid_x, draw_pill.max.y - 7.0)], egui::Stroke::new(1.0, if light { Color32::from_black_alpha(16) } else { theme::glass(0.10) }));
+    ui.painter().line_segment([pos2(mid_x, draw_pill.min.y + 7.0), pos2(mid_x, draw_pill.max.y - 7.0)], egui::Stroke::new(1.0, if light { Color32::from_black_alpha(20) } else { theme::glass(0.10) }));
 
     // Share icon
     let share_fg = if light { Color32::from_rgb(0x18, 0x14, 0x1c) } else if share_resp.hovered() { Color32::WHITE } else { theme::lerp_color(theme::text_dim(), theme::text(), 0.5) };
@@ -890,12 +890,7 @@ fn selection_bar(app: &mut App, ctx: &egui::Context, page: &Page, area: Rect) {
             let fallback = egui::Frame::new()
                 .fill(theme::menu_fill())
                 .corner_radius(14)
-                .shadow(egui::epaint::Shadow {
-                    offset: [0, if theme::light() { 4 } else { 8 }],
-                    blur: if theme::light() { 16 } else { 24 },
-                    spread: 0,
-                    color: theme::shade(if theme::light() { 0.14 } else { 0.45 }),
-                });
+                .shadow(egui::epaint::Shadow { offset: [0, 8], blur: 24, spread: 0, color: theme::shade(0.45) });
             crate::glass::surface(
                 ui,
                 egui::Id::unique("selection-bar-glass"),
@@ -1372,7 +1367,7 @@ pub fn collection(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
             let (img, _) = ui.allocate_exact_size(Vec2::splat(side), Sense::hover());
             let radius = theme::card_radius() + 2.0;
             // Light mode needs a far softer shadow: the dark one reads as a grey halo.
-            let (blur, alpha) = if theme::light() { (18.0, 0.06) } else { (40.0, 0.5) };
+            let (blur, alpha) = if theme::light() { (26.0, 0.14) } else { (40.0, 0.5) };
             widgets::soft_shadow(ui, img, radius, blur, alpha);
             paint_cover(ui, img, &c.thumbs, radius, 1.0);
             if let Some(s) = &sprite {
@@ -1884,11 +1879,11 @@ pub fn artist(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
         } else {
             Color32::from_rgba_unmultiplied(26, 28, 34, (44.0 + 28.0 * sh) as u8)
         };
-        let mut style = crate::glass::Style::clear(crate::glass::Corner::Capsule, Some(tint), if light_hero { 0.06 } else { 0.88 }, 1.0);
+        let mut style = crate::glass::Style::clear(crate::glass::Corner::Capsule, Some(tint), if light_hero { 0.10 } else { 0.88 }, 1.0);
         press_share.apply(&mut style);
         crate::glass::paint(ui, share_resp.id.with("glass"), draw_share, style);
     } else {
-        let share_shadow = if light_hero { 10 } else { 35 };
+        let share_shadow = if light_hero { 18 } else { 35 };
         let r = draw_share.height() * 0.5;
         ui.painter().circle_filled(draw_share.center() + vec2(0.0, 1.0), r, Color32::from_black_alpha(share_shadow));
         let share_fill = if light_hero {
@@ -1939,7 +1934,7 @@ pub fn artist(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
         )
     };
     // Soft drop shadow
-    ui.painter().circle_filled(play_center + vec2(0.0, 1.5), 24.0, Color32::from_black_alpha(if light { 12 } else { 45 }));
+    ui.painter().circle_filled(play_center + vec2(0.0, 1.5), 24.0, Color32::from_black_alpha(if light { 25 } else { 45 }));
     ui.painter().circle_filled(play_center, 24.0, play_bg);
     widgets::play_pause_glyph(ui, play_center, 8.5, glyph_col, playing);
     if play_resp.clicked() {
@@ -1976,7 +1971,7 @@ pub fn artist(app: &mut App, ui: &mut Ui, id: &str, now: f64) {
             crate::glass::paint(ui, resp.id.with("glass"), draw_pill, style);
         } else {
             // Soft drop shadow
-            ui.painter().rect_filled(draw_pill.translate(vec2(0.0, 1.5)), 17.0, Color32::from_black_alpha(if light { 12 } else { 42 }));
+            ui.painter().rect_filled(draw_pill.translate(vec2(0.0, 1.5)), 17.0, Color32::from_black_alpha(if light { 25 } else { 42 }));
             let fill = if light {
                 theme::lerp_color(Color32::from_black_alpha(15), Color32::from_black_alpha(28), h)
             } else {

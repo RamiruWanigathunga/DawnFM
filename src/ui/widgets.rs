@@ -267,7 +267,7 @@ pub fn pill(ui: &mut Ui, label: &str, glyph: Option<char>, primary: bool) -> Res
         press.apply(&mut style);
         crate::glass::paint(ui, resp.id.with("pill-blur"), draw_r, style);
     } else {
-        let shadow_alpha = if light { (10.0 + 5.0 * press.hover) as u8 } else { (42.0 + 14.0 * press.hover) as u8 };
+        let shadow_alpha = if light { (25.0 + 10.0 * press.hover) as u8 } else { (42.0 + 14.0 * press.hover) as u8 };
         ui.painter().rect_filled(draw_r.translate(vec2(0.0, 1.5)), radius, Color32::from_black_alpha(shadow_alpha));
         ui.painter().rect_filled(draw_r, radius, fill);
     }
@@ -320,7 +320,7 @@ pub fn pill_destructive(ui: &mut Ui, label: &str, glyph: Option<char>) -> Respon
         crate::glass::paint(ui, resp.id.with("pill-destr-glass"), r, style);
     } else {
         // Soft drop shadow
-        let shadow_alpha = if light { (10.0 + 5.0 * h) as u8 } else { (42.0 + 14.0 * h) as u8 };
+        let shadow_alpha = if light { (25.0 + 10.0 * h) as u8 } else { (42.0 + 14.0 * h) as u8 };
         ui.painter().rect_filled(r.translate(vec2(0.0, 1.5)), radius, Color32::from_black_alpha(shadow_alpha));
         ui.painter().rect_filled(r, radius, fill);
     }
@@ -371,15 +371,15 @@ pub fn chip(ui: &mut Ui, label: &str, selected: bool) -> Response {
             ui.painter().rect_filled(
                 draw_r.translate(vec2(0.0, 1.2)),
                 radius,
-                theme::with_alpha(accent, if light { 0.10 * s } else { 0.25 * s }),
+                theme::with_alpha(accent, if light { 0.18 * s } else { 0.25 * s }),
             );
             ui.painter().rect_filled(draw_r, radius, theme::with_alpha(on_fill, s));
         }
     } else {
         // Soft drop shadow (subtle accent glow when selected)
-        let shadow_alpha = if light { 10 } else { 38 };
+        let shadow_alpha = if light { 20 } else { 38 };
         let shadow_color = if s > 0.01 {
-            theme::lerp_color(Color32::from_black_alpha(shadow_alpha), theme::with_alpha(accent, if light { 0.10 } else { 0.25 }), s)
+            theme::lerp_color(Color32::from_black_alpha(shadow_alpha), theme::with_alpha(accent, if light { 0.18 } else { 0.25 }), s)
         } else {
             Color32::from_black_alpha(shadow_alpha)
         };
@@ -569,6 +569,7 @@ pub fn paint_cover_fade(ui: &Ui, site: egui::Id, rect: Rect, thumbs: &[Thumb], p
 /// One image into `rect`, its right edge fading from `fade_from` of the width to nothing.
 fn fade_mesh(ui: &Ui, url: &str, rect: Rect, uv: Rect, tint: Color32, fade_from: f32) {
     let Ok(egui::load::TexturePoll::Ready { texture }) = egui::Image::new(url).load_for_size(ui.ctx(), rect.size()) else { return };
+    let uv = cover_uv(uv, texture.size, rect.size());
     let fade_from = fade_from.clamp(0.0, 0.999);
     // Strips along the width, each side's alpha set per vertex: the fade is smooth,
     // not a handful of steps.
@@ -617,6 +618,7 @@ pub fn paint_disc(ui: &Ui, site: egui::Id, center: Pos2, r: f32, thumbs: &[Thumb
 /// One disc, if its texture is ready; false while it downloads (the loader wakes the UI).
 fn disc_at(ui: &Ui, center: Pos2, r: f32, url: &str, uv: Rect, angle: f32, tint: Color32) -> bool {
     let Ok(egui::load::TexturePoll::Ready { texture }) = egui::Image::new(url).load_for_size(ui.ctx(), Vec2::splat(r * 2.0)) else { return false };
+    let uv = cover_uv(uv, texture.size, Vec2::splat(r * 2.0));
     let (uc, uh) = (uv.center(), uv.width() / 2.0);
     let mut mesh = egui::Mesh::with_texture(texture.id);
     mesh.colored_vertex(center, tint);
@@ -741,16 +743,16 @@ pub fn card(ui: &mut Ui, c: &Card, width: f32, liked: bool, acts: &mut Vec<Actio
         let light = theme::light();
         if crate::renderer::active() == crate::renderer::Renderer::OpenGl {
             let tint = if light {
-                Color32::from_white_alpha((44.0 + 28.0 * ph) as u8)
+                Color32::from_white_alpha((48.0 + 28.0 * ph) as u8)
             } else {
                 Color32::from_rgba_unmultiplied(26, 28, 34, (44.0 + 28.0 * ph) as u8)
             };
-            let mut style = crate::glass::Style::clear(crate::glass::Corner::Capsule, Some(tint), if light { 0.06 } else { 0.88 }, h);
+            let mut style = crate::glass::Style::clear(crate::glass::Corner::Capsule, Some(tint), if light { 0.10 } else { 0.88 }, h);
             press.apply(&mut style);
             crate::glass::paint(ui, resp.id.with("card-hover-play-blur"), button_rect, style);
         } else {
             let _ = base_rect;
-            ui.painter().circle_filled(press.rect.center() + vec2(0.0, 1.5), r, Color32::from_black_alpha((if light { 16.0 } else { 36.0 } * h) as u8));
+            ui.painter().circle_filled(press.rect.center() + vec2(0.0, 1.5), r, Color32::from_black_alpha((36.0 * h) as u8));
             ui.painter().circle_filled(press.rect.center(), r, theme::shade((0.62 + 0.10 * ph) * h));
         }
         let glyph_col = if light {
@@ -1520,6 +1522,29 @@ pub fn shimmer_band(ui: &Ui, r: Rect, radius: f32, time: f64) {
     skeleton_rect(ui, r, radius, time);
 }
 
+/// Aspect-fill crop inside `uv` so `tex_size` maps onto `rect_size` without stretching.
+fn cover_uv(uv: Rect, tex_size: Vec2, rect_size: Vec2) -> Rect {
+    if tex_size.x <= 0.0 || tex_size.y <= 0.0 || rect_size.x <= 0.0 || rect_size.y <= 0.0 {
+        return uv;
+    }
+    let uv_aspect = (uv.width() * tex_size.x) / (uv.height() * tex_size.y).max(1e-4);
+    let rect_aspect = rect_size.x / rect_size.y;
+    if (uv_aspect - rect_aspect).abs() < 0.01 {
+        return uv;
+    }
+    if uv_aspect > rect_aspect {
+        let new_w = uv.width() * (rect_aspect / uv_aspect);
+        Rect::from_center_size(uv.center(), vec2(new_w, uv.height()))
+    } else {
+        let new_h = uv.height() * (uv_aspect / rect_aspect);
+        let max_top = (uv.bottom() - new_h).max(uv.top());
+        let center_top = (uv.center().y - new_h * 0.5).clamp(uv.top(), max_top);
+        // Bias slightly upward on tall portraits so heads stay centered inside circles.
+        let y0 = egui::lerp(center_top..=uv.top(), 0.25).clamp(uv.top(), max_top);
+        Rect::from_min_size(pos2(uv.left(), y0), vec2(uv.width(), new_h))
+    }
+}
+
 /// Paint a remote image into `rect`: a pulsing skeleton while it downloads (not
 /// egui's spinner), then a quick fade-in. One already loaded just shows.
 pub fn paint_remote(ui: &Ui, url: &str, rect: Rect, radius: f32, uv: Rect, tint: Color32) {
@@ -1541,6 +1566,7 @@ pub fn paint_remote(ui: &Ui, url: &str, rect: Rect, radius: f32, uv: Rect, tint:
             if a < 1.0 {
                 super::animate(ctx);
             }
+            let uv = cover_uv(uv, texture.size, rect.size());
             egui::Image::from_texture(texture).uv(uv).corner_radius(CornerRadius::same(radius as u8)).tint(tint.gamma_multiply(theme::ease_out(a))).paint_at(ui, rect);
         }
         Ok(egui::load::TexturePoll::Pending { .. }) => {
@@ -1723,5 +1749,19 @@ mod shelf_scroll_tests {
     fn test_quality_icon_aspect() {
         assert!((super::quality_icon_aspect(false) - (86.0 / 60.0)).abs() < 0.001);
         assert!((super::quality_icon_aspect(true) - (78.0 / 60.0)).abs() < 0.001);
+    }
+
+    #[test]
+    fn cover_uv_crops_non_square_images_without_stretching() {
+        use egui::{Rect, pos2, vec2};
+        let unit = Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0));
+        // Wide 16:9 artist photo in a square circle: trims width equally so pixel aspect is 1:1.
+        let wide = super::cover_uv(unit, vec2(1600.0, 900.0), vec2(120.0, 120.0));
+        assert!(((wide.width() * 1600.0) - (wide.height() * 900.0)).abs() < 0.5);
+        assert!((wide.center().x - 0.5).abs() < 0.001);
+        // Portrait artist photo in a square circle: trims height with upward bias so head isn't clipped.
+        let tall = super::cover_uv(unit, vec2(600.0, 900.0), vec2(120.0, 120.0));
+        assert!(((tall.width() * 600.0) - (tall.height() * 900.0)).abs() < 0.5);
+        assert!(tall.top() < (1.0 - tall.bottom()));
     }
 }
